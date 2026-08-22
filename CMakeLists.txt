@@ -59,3 +59,30 @@ if(CUEIN_BUILD_TESTS)
   enable_testing()
   add_subdirectory(test)
 endif()
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+install(TARGETS cuein EXPORT cuEinTargets)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES "${PROJECT_BINARY_DIR}/include/cuein/config.hpp"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cuein)
+install(
+  EXPORT cuEinTargets
+  NAMESPACE cuEin::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cuEin)
+install(FILES cmake/FindcuTENSOR.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cuEin)
+
+configure_package_config_file(
+  cmake/cuEinConfig.cmake.in "${PROJECT_BINARY_DIR}/cuEinConfig.cmake"
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cuEin)
+
+# 0.x minor versions are not compatible with one another.
+write_basic_package_version_file(
+  "${PROJECT_BINARY_DIR}/cuEinConfigVersion.cmake"
+  COMPATIBILITY SameMinorVersion)
+
+install(FILES "${PROJECT_BINARY_DIR}/cuEinConfig.cmake"
+              "${PROJECT_BINARY_DIR}/cuEinConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cuEin)

@@ -1,0 +1,17 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# FindcuTENSOR.cmake is installed beside this file, because cuTENSOR ships no
+# config package for find_dependency to pick up.
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+
+set(cuEin_HAS_CUTENSOR @CUEIN_HAVE_CUTENSOR@)
+if(cuEin_HAS_CUTENSOR)
+  find_dependency(CUDAToolkit)
+  find_dependency(cuTENSOR)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/cuEinTargets.cmake")
+
+check_required_components(cuEin)

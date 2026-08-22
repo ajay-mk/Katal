@@ -48,5 +48,11 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      # Installs into a throwaway prefix and builds test/consumer against it,
+      # which is what catches a broken export or a CUDA header escaping into a
+      # consumer translation unit.
+      - name: Install and build a downstream consumer
+        run: tools/test-install.sh
+
       - name: ccache statistics
         run: ccache --show-stats
