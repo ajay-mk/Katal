@@ -44,16 +44,27 @@ inline constexpr Dtype dtype_of = DtypeOf<T>::value;
 /// arrays are written in, whether or not those strides are dense.
 enum class Layout { RowMajor, ColumnMajor };
 
+/// Extents or strides for one tensor. Fixed capacity, so building a
+/// descriptor allocates nothing.
 using Extents = util::StaticVector<std::int64_t, max_rank>;
 
 /// A tensor cuEin does not own: a pointer plus a shape. Trivially copyable,
 /// passed by value.
 struct TensorRef {
+  /// Device memory, owned by the caller and required to outlive every use.
   void* data = nullptr;
+  /// Element type of `data`, which the compute type may exceed.
   Dtype type = Dtype::F64;
+  /// One extent per mode, in the order the equation names them. The span is a
+  /// view: the array behind it must outlive the reference.
   std::span<const std::int64_t> extent;
-  std::span<const std::int64_t> stride;  ///< empty means dense in `layout`
+  /// Strides in **elements**, not bytes, one per mode. Empty means dense in
+  /// `layout`, which is the usual case.
+  std::span<const std::int64_t> stride;
+  /// Which convention `extent` and `stride` are written in.
   Layout layout = Layout::RowMajor;
+  /// Alignment of `data` in bytes, asserted rather than enforced: a value
+  /// larger than the pointer actually satisfies is a way to get wrong answers.
   std::uint32_t alignment = 256;
 };
 
@@ -82,8 +93,12 @@ inline Extents dense_strides(std::span<const std::int64_t> extent,
 /// Mode labels, extents and strides in the order cuTENSOR expects, with the
 /// first mode varying fastest.
 struct ModeOrder {
+  /// Labels in descriptor order, which is reversed from the equation's order
+  /// for a row-major operand.
   util::Index modes;
+  /// Extents permuted to match `modes`.
   Extents extent;
+  /// Strides permuted to match `modes`, in elements.
   Extents stride;
 };
 

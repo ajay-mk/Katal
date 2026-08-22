@@ -32,15 +32,7 @@ repos:
       - id: clang-tidy
         name: clang-tidy (naming)
         language: system
-        # Runs over the tests rather than the changed files, because every
-        # header is reached through one and headers have no compile command of
-        # their own. -header-filter is passed on the command line because
-        # HeaderFilterRegex in .clang-tidy is loaded but not applied, which
-        # silently leaves every header unchecked.
-        entry: >-
-          bash -c 'test -f build/compile_commands.json ||
-          { echo "configure first: cmake -S . -B build -GNinja"; exit 1; };
-          clang-tidy -p build --quiet -header-filter=".*/(cuein|test)/.*" test/*.cpp'
+        entry: tools/clang-tidy.sh
         pass_filenames: false
         files: \.(c|cc|cpp|h|hpp|cu|cuh)$
 

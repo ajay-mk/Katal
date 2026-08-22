@@ -1,0 +1,55 @@
+#include <mutex>
+
+#include "context_impl.hpp"
+
+#include <cuein/context.hpp>
+
+namespace cuein {
+
+Context::Context(Config config) : impl_(std::make_unique<Impl>(config)) {}
+Context::Context(Context&&) noexcept = default;
+Context& Context::operator=(Context&&) noexcept = default;
+Context::~Context() = default;
+
+int Context::device() const noexcept { return impl_->device(); }
+
+namespace {
+
+std::mutex& process_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+// ponytail: a raw owning pointer, against the no-new rule, because that rule
+// and this one conflict. Destroying the handle from a static destructor would
+// race CUDA's own teardown, so with no finalize() call the handle is leaked on
+// purpose and the operating system reclaims it.
+Context* g_context = nullptr;
+Config g_config;
+
+}  // namespace
+
+void initialize(Config config) {
+  const std::lock_guard<std::mutex> lock(process_mutex());
+  g_config = config;
+  if (g_context == nullptr) g_context = new Context(config);
+}
+
+void finalize() {
+  const std::lock_guard<std::mutex> lock(process_mutex());
+  delete g_context;
+  g_context = nullptr;
+}
+
+bool initialized() noexcept {
+  const std::lock_guard<std::mutex> lock(process_mutex());
+  return g_context != nullptr;
+}
+
+const Context& default_context() {
+  const std::lock_guard<std::mutex> lock(process_mutex());
+  if (g_context == nullptr) g_context = new Context(g_config);
+  return *g_context;
+}
+
+}  // namespace cuein

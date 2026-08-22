@@ -19,9 +19,17 @@ include(Catch)
 file(GLOB CUEIN_TEST_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp")
 
+# The GPU tests need a device to run on, not just cuTENSOR to link against.
+if(NOT CUEIN_HAVE_CUTENSOR)
+  list(FILTER CUEIN_TEST_SOURCES EXCLUDE REGEX "test_gpu")
+endif()
+
 foreach(src IN LISTS CUEIN_TEST_SOURCES)
   cmake_path(GET src STEM name)
   add_executable(${name} ${src})
   target_link_libraries(${name} PRIVATE cuEin::cuein Catch2::Catch2WithMain)
+  if(name MATCHES "test_gpu")
+    target_link_libraries(${name} PRIVATE CUDA::cudart)
+  endif()
   catch_discover_tests(${name})
 endforeach()

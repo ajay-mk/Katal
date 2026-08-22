@@ -35,6 +35,8 @@ class StaticVector {
   }
   constexpr T& operator[](std::size_t i) noexcept { return data_[i]; }
 
+  constexpr const T* data() const noexcept { return data_.data(); }
+
   constexpr auto begin() const noexcept { return data_.begin(); }
   constexpr auto end() const noexcept { return data_.begin() + size_; }
 

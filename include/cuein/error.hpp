@@ -11,13 +11,27 @@ namespace cuein {
 
 /// Classified so a caller can react rather than only report.
 enum class Errc {
+  /// The equation is not well formed: an empty operand, a stray arrow, or a
+  /// label containing one of the characters that separate operands.
   ParseError = 1,
+  /// A label count disagrees with an extent count, or a rank exceeds
+  /// `cuein::max_rank`.
   RankMismatch,
+  /// A label carries two different extents across the operands.
   ExtentMismatch,
+  /// Well formed and correctly shaped, but not something cuEin lowers: a free
+  /// reduction beside a contraction, a broadcast, a diagonal, or more operands
+  /// than the current lowering handles.
   UnsupportedPattern,
+  /// The requested compute type cannot represent the operands, or alpha and
+  /// beta cannot be expressed in it.
   DtypeMismatch,
+  /// The workspace handed to `Plan::execute` is smaller than
+  /// `Plan::workspace_size`.
   WorkspaceTooSmall,
+  /// cuTENSOR returned a failing status; the message carries its own text.
   CutensorError,
+  /// A CUDA runtime call failed.
   CudaError,
 };
 
@@ -66,7 +80,11 @@ class Error : public std::runtime_error {
         code_(code),
         equation_(equation_text) {}
 
+  /// The classification a caller can branch on, as opposed to the message,
+  /// which is for a human.
   Errc code() const noexcept { return code_; }
+
+  /// The equation that failed, empty when the failure had no equation in hand.
   const std::string& equation() const noexcept { return equation_; }
 
  private:

@@ -30,16 +30,30 @@ set(CUEIN_MAX_RANK
 configure_file(cmake/config.hpp.in
                "${PROJECT_BINARY_DIR}/include/cuein/config.hpp" @ONLY)
 
-# Header-only: the parsing and index layers need no CUDA. The cuTENSOR glue is
-# compiled, so callers never include <cutensor.h>.
-add_library(cuein INTERFACE)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+find_package(CUDAToolkit QUIET)
+find_package(cuTENSOR QUIET)
+
+# The parsing and index layers need no CUDA, so without cuTENSOR the library is
+# still usable and testable as headers alone. The cuTENSOR glue is compiled, so
+# callers never include <cutensor.h>.
+if(cuTENSOR_FOUND AND CUDAToolkit_FOUND)
+  set(CUEIN_HAVE_CUTENSOR ON)
+  set(cuein_scope PUBLIC)
+  add_library(cuein src/context.cpp src/plan.cpp)
+  target_link_libraries(cuein PRIVATE cuEin::cutensor CUDA::cudart)
+else()
+  set(CUEIN_HAVE_CUTENSOR OFF)
+  set(cuein_scope INTERFACE)
+  add_library(cuein INTERFACE)
+  message(STATUS "cuEin: cuTENSOR not found, building the header-only layers")
+endif()
+
 add_library(cuEin::cuein ALIAS cuein)
 target_include_directories(
-  cuein
-  INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-            $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
-            $<INSTALL_INTERFACE:include>)
-target_compile_features(cuein INTERFACE cxx_std_20)
+  cuein ${cuein_scope} $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include> $<INSTALL_INTERFACE:include>)
+target_compile_features(cuein ${cuein_scope} cxx_std_20)
 
 if(CUEIN_BUILD_TESTS)
   enable_testing()

@@ -32,20 +32,38 @@ class Equation {
  public:
   Equation() = default;
 
+  /// Throws `Error` with `Errc::ParseError` or `Errc::RankMismatch`.
   static Equation parse(std::string_view text);
+
+  /// Same grammar, reporting through `ec` instead. Returns an equation with no
+  /// operands on failure.
   static Equation parse(std::string_view text, std::error_code& ec) noexcept;
 
   std::size_t n_operands() const noexcept { return operands_.size(); }
+
+  /// Number of labels on one operand, which must match that tensor's extents.
   std::size_t rank(std::size_t operand) const noexcept {
     return operands_[operand].rank();
   }
+
+  /// Labels of one operand, in the order written.
   const util::Index& operand(std::size_t i) const noexcept {
     return operands_[i];
   }
+
+  /// Labels of the result: as written after `->`, or the symmetric difference
+  /// of the operands when the equation omitted it.
   const util::Index& result() const noexcept { return result_; }
+
+  /// The equation exactly as given, which is what error messages quote.
   std::string_view text() const noexcept { return text_; }
 
+  /// Works out how each mode participates and which kernel the equation
+  /// lowers to. Throws `Errc::UnsupportedPattern` for anything cuEin declines
+  /// to lower, naming the labels responsible.
   Classification classify() const;
+
+  /// Same, reporting through `ec`.
   Classification classify(std::error_code& ec) const noexcept;
 
  private:
