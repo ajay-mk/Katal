@@ -1,6 +1,7 @@
 #ifndef CUEIN_PLAN_HPP_
 #define CUEIN_PLAN_HPP_
 
+#include <concepts>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -21,6 +22,54 @@ struct Workspace {
   /// Bytes available at `ptr`, at least `Plan::workspace_size`.
   uint64_t size = 0;
 };
+
+/// Supplies scratch for a plan. A caller with its own device pool implements
+/// this and hands it over instead of cuEin allocating on its own.
+///
+/// Taken by value, so an implementation should be a cheap handle that refers
+/// to the pool rather than owning it.
+template <class A>
+concept WorkspaceAllocator =
+    requires(A allocator, uint64_t bytes, StreamRef stream, Workspace w) {
+      { allocator.allocate(bytes, stream) } -> std::same_as<Workspace>;
+      { allocator.deallocate(w, stream) } -> std::same_as<void>;
+    };
+
+/// The default: stream-ordered cudaMallocAsync and cudaFreeAsync. Its
+/// definitions live in the compiled library so this header stays free of CUDA.
+class CudaAsyncAllocator {
+ public:
+  Workspace allocate(uint64_t bytes, StreamRef stream) const;
+  void deallocate(Workspace workspace, StreamRef stream) const;
+};
+
+namespace util {
+
+/// Releases scratch on scope exit, including when execute throws.
+template <WorkspaceAllocator A>
+class ScopedWorkspace {
+ public:
+  ScopedWorkspace(A allocator, uint64_t bytes, StreamRef stream)
+      : allocator_(allocator), stream_(stream) {
+    if (bytes > 0) workspace_ = allocator_.allocate(bytes, stream);
+  }
+
+  ~ScopedWorkspace() {
+    if (workspace_.ptr != nullptr) allocator_.deallocate(workspace_, stream_);
+  }
+
+  ScopedWorkspace(const ScopedWorkspace&) = delete;
+  ScopedWorkspace& operator=(const ScopedWorkspace&) = delete;
+
+  Workspace get() const noexcept { return workspace_; }
+
+ private:
+  A allocator_;
+  Workspace workspace_;
+  StreamRef stream_;
+};
+
+}  // namespace util
 
 struct PlanOptions {
   /// Accumulation type. Unset follows the output tensor, which is the only
@@ -102,14 +151,30 @@ Plan make_plan(const Context& context, const Equation& equation,
 /// Pays for all of that on every call. Negligible against a large contraction,
 /// dominant for a small one, so a loop over tile-sized work should build a
 /// `Plan` once and execute it instead.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
 void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
             const TensorRef& b, Scalar beta, const TensorRef& d,
-            StreamRef stream = {}, const Context& context = default_context());
+            StreamRef stream = {}, const Context& context = default_context(),
+            A allocator = {}) {
+  const Equation parsed = Equation::parse(equation);
+  const Plan plan = make_plan(context, parsed, a, b, d);
+  const util::ScopedWorkspace<A> scratch(allocator, plan.workspace_size(),
+                                         stream);
+  plan.execute(alpha, a.data, b.data, beta, d.data, d.data, scratch.get(),
+               stream);
+}
 
 /// The one-operand form: a permutation, a reduction, or a copy.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
 void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
             Scalar beta, const TensorRef& d, StreamRef stream = {},
-            const Context& context = default_context());
+            const Context& context = default_context(), A allocator = {}) {
+  const Equation parsed = Equation::parse(equation);
+  const Plan plan = make_plan(context, parsed, a, d);
+  const util::ScopedWorkspace<A> scratch(allocator, plan.workspace_size(),
+                                         stream);
+  plan.execute(alpha, a.data, beta, d.data, d.data, scratch.get(), stream);
+}
 
 }  // namespace cuein
 

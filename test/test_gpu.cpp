@@ -249,6 +249,53 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   cudaFree(scratch);
 }
 
+TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
+  if (!have_gpu()) SKIP("no CUDA device");
+
+  // Counts calls and forwards to plain cudaMalloc, so a failure to route
+  // through the allocator shows up as a zero count rather than a wrong answer.
+  struct CountingAllocator {
+    int* allocations;
+    int* deallocations;
+    cuein::Workspace allocate(std::uint64_t bytes, cuein::StreamRef) {
+      ++*allocations;
+      void* ptr = nullptr;
+      REQUIRE(cudaMalloc(&ptr, bytes) == cudaSuccess);
+      return {ptr, bytes};
+    }
+    void deallocate(cuein::Workspace workspace, cuein::StreamRef) {
+      ++*deallocations;
+      cudaFree(workspace.ptr);
+    }
+  };
+  static_assert(cuein::WorkspaceAllocator<CountingAllocator>);
+
+  const std::array<std::int64_t, 4> ea{2, 3, 4, 5}, eb{4, 5, 6, 7},
+      ed{2, 3, 6, 7};
+  const std::vector<double> a = ramp<double>(elements(ea), 1.0);
+  const std::vector<double> b = ramp<double>(elements(eb), 0.5);
+  const std::vector<double> d(elements(ed), 0.0);
+  DeviceBuffer<double> da(a), db(b), dd(d);
+
+  const cuein::TensorRef ar = cuein::make_ref(da.get(), cuein::Dtype::F64, ea);
+  const cuein::TensorRef br = cuein::make_ref(db.get(), cuein::Dtype::F64, eb);
+  const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::Dtype::F64, ed);
+
+  int allocations = 0, deallocations = 0;
+  cuein::einsum("ijab,abcd->ijcd", 1.0, ar, br, 0.0, dr, {},
+                cuein::default_context(),
+                CountingAllocator{&allocations, &deallocations});
+  REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+
+  // The plan may need no scratch, but if it allocated it must have released.
+  REQUIRE(allocations == deallocations);
+
+  const std::vector<double> got = dd.to_host();
+  bool nonzero = false;
+  for (double v : got) nonzero = nonzero || v != 0.0;
+  REQUIRE(nonzero);
+}
+
 TEST_CASE("gpu rejections name the problem", "[gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
 

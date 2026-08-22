@@ -59,31 +59,6 @@ void check_extents(
     }
 }
 
-/// Frees the scratch the one-shot path allocates, including when execute
-/// throws.
-class ScopedWorkspace {
- public:
-  ScopedWorkspace(uint64_t size, CUstream_st* stream, std::string_view equation)
-      : stream_(stream) {
-    if (size == 0) return;
-    CUEIN_CHECK_CUDA(cudaMallocAsync(&workspace_.ptr, size, stream_), equation);
-    workspace_.size = size;
-  }
-
-  ~ScopedWorkspace() {
-    if (workspace_.ptr != nullptr) cudaFreeAsync(workspace_.ptr, stream_);
-  }
-
-  ScopedWorkspace(const ScopedWorkspace&) = delete;
-  ScopedWorkspace& operator=(const ScopedWorkspace&) = delete;
-
-  Workspace get() const noexcept { return workspace_; }
-
- private:
-  Workspace workspace_;
-  CUstream_st* stream_ = nullptr;
-};
-
 }  // namespace
 
 class Plan::Impl {
@@ -282,25 +257,17 @@ Plan make_plan(const Context& context, const Equation& equation,
   return Plan(std::make_unique<Plan::Impl>(context, equation, a, d, options));
 }
 
-void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
-            Scalar beta, const TensorRef& d, StreamRef stream,
-            const Context& context) {
-  const Equation parsed = Equation::parse(equation);
-  const Plan plan = make_plan(context, parsed, a, d);
-  const ScopedWorkspace workspace(plan.workspace_size(), stream.get(),
-                                  equation);
-  plan.execute(alpha, a.data, beta, d.data, d.data, workspace.get(), stream);
+Workspace CudaAsyncAllocator::allocate(uint64_t bytes, StreamRef stream) const {
+  Workspace workspace;
+  CUEIN_CHECK_CUDA(cudaMallocAsync(&workspace.ptr, bytes, stream.get()), "");
+  workspace.size = bytes;
+  return workspace;
 }
 
-void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
-            const TensorRef& b, Scalar beta, const TensorRef& d,
-            StreamRef stream, const Context& context) {
-  const Equation parsed = Equation::parse(equation);
-  const Plan plan = make_plan(context, parsed, a, b, d);
-  const ScopedWorkspace workspace(plan.workspace_size(), stream.get(),
-                                  equation);
-  plan.execute(alpha, a.data, b.data, beta, d.data, d.data, workspace.get(),
-               stream);
+void CudaAsyncAllocator::deallocate(Workspace workspace,
+                                    StreamRef stream) const {
+  // Destructors are noexcept; a failure here has nowhere useful to go.
+  cudaFreeAsync(workspace.ptr, stream.get());
 }
 
 }  // namespace cuein
