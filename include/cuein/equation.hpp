@@ -126,10 +126,10 @@ inline Equation Equation::parse(std::string_view text) {
   // A structural character inside a label means the equation was misspelled;
   // tokenizing it would silently produce a mode named '-' or ','.
   const auto reject_structural = [&](const util::Index& i) {
-    for (const util::Label& l : i)
-      if (l.view().find_first_of(",->") != std::string_view::npos)
+    for (const util::Label l : i)
+      if (l == ',' || l == '-' || l == '>')
         throw Error(Errc::ParseError, text,
-                    "label \"" + std::string(l.view()) +
+                    "label \"" + std::string(1, l) +
                         "\" contains one of ',', '-' or '>'");
   };
   for (const util::Index& o : eq.operands_) reject_structural(o);
@@ -146,9 +146,9 @@ inline Equation Equation::parse(std::string_view text) {
 
 inline Equation Equation::parse(std::string_view text,
                                 std::error_code& ec) noexcept {
-  // ponytail: the throwing path is the implementation and this wraps it. That
-  // serves -fno-exceptions callers only once these layers sit behind the
-  // compiled library boundary, which is where the guarantee belongs anyway.
+  // The throwing path is the implementation and this wraps it, so no
+  // exception escapes. That serves an -fno-exceptions caller only once these
+  // layers sit behind the compiled library boundary.
   try {
     ec.clear();
     return parse(text);

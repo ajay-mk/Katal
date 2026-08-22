@@ -9,14 +9,12 @@
 
 namespace cuein::util {
 
-/// A sequence with a fixed capacity that never allocates, sized for the
-/// single-digit ranks tensors actually have. It throws rather than growing.
+/// A fixed-capacity sequence that never allocates, sized for the single-digit
+/// ranks tensors actually have. Throws rather than growing.
 ///
-/// This is what C++26 spells std::inplace_vector. Delete this header once the
-/// project can require C++26 and typedef it instead.
-///
-/// `T` must be default-constructible; the whole array is value-initialized so
-/// that instances work in constant evaluation.
+/// C++26 spells this std::inplace_vector; delete this header once that can be
+/// required. `T` must be default-constructible, since the whole array is
+/// value-initialized so instances work in constant evaluation.
 template <class T, std::size_t N>
 class StaticVector {
  public:

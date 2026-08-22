@@ -32,7 +32,7 @@ inline Extents strides_of(const TensorRef& t) {
   return s;
 }
 
-inline std::size_t position_of(const util::Index& idx, const util::Label& l) {
+inline std::size_t position_of(const util::Index& idx, util::Label l) {
   for (std::size_t i = 0; i < idx.rank(); ++i)
     if (idx[i] == l) return i;
   return idx.rank();
@@ -64,7 +64,7 @@ void reference_einsum(const Equation& eq, T alpha,
       const std::size_t k = position_of(all, idx[p]);
       if (extent[k] != 0 && extent[k] != e[p])
         throw Error(Errc::ExtentMismatch, eq.text(),
-                    "label \"" + std::string(idx[p].view()) +
+                    "label \"" + std::string(1, idx[p]) +
                         "\" has two different extents");
       extent[k] = e[p];
     }

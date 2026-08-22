@@ -20,10 +20,9 @@ std::mutex& process_mutex() {
   return mutex;
 }
 
-// ponytail: a raw owning pointer, against the no-new rule, because that rule
-// and this one conflict. Destroying the handle from a static destructor would
-// race CUDA's own teardown, so with no finalize() call the handle is leaked on
-// purpose and the operating system reclaims it.
+// A raw owning pointer on purpose: a smart pointer here would destroy the
+// handle from a static destructor, racing CUDA's own teardown. Without a
+// finalize() call the handle leaks and the operating system reclaims it.
 Context* g_context = nullptr;
 Config g_config;
 

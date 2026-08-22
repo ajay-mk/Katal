@@ -14,10 +14,6 @@ namespace cuein {
 /// big an index is.
 inline constexpr std::size_t max_rank = @CUEIN_MAX_RANK@;
 
-/// Longest mode label, in characters. Not a configure-time knob: rank varies
-/// by problem, label length does not.
-inline constexpr std::size_t max_label_chars = 8;
-
 }  // namespace cuein
 
 #endif  // CUEIN_CONFIG_HPP_

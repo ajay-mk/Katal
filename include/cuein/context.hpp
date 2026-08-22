@@ -60,15 +60,13 @@ class Context {
 };
 
 /// Sets up the process-wide context eagerly. Optional: the first call that
-/// needs a context will do it lazily with default configuration. Calling it
-/// explicitly puts the one-time cuTENSOR initialisation, which costs on the
-/// order of a tenth of a second, somewhere you chose.
+/// needs one does it lazily with default configuration. Calling it explicitly
+/// puts the slow one-time cuTENSOR initialisation somewhere you chose.
 void initialize(Config config = {});
 
 /// Releases the process-wide context while the CUDA context is still alive.
-/// Without this, cuEin deliberately leaks its handle at exit rather than
-/// destroy it from a static destructor, whose order relative to CUDA's own
-/// teardown is undefined.
+/// Without this the handle is leaked on purpose, because destroying it from a
+/// static destructor races CUDA's own teardown.
 void finalize();
 
 bool initialized() noexcept;

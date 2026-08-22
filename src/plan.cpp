@@ -51,7 +51,7 @@ void check_extents(
       const std::int64_t e = tensor->extent[p];
       if (extent[slot] != 0 && extent[slot] != e)
         throw Error(Errc::ExtentMismatch, equation.text(),
-                    "label \"" + std::string((*modes)[p].view()) +
+                    "label \"" + std::string(1, (*modes)[p]) +
                         "\" has extent " + std::to_string(extent[slot]) +
                         " in one operand and " + std::to_string(e) +
                         " in another");
@@ -129,8 +129,8 @@ class Plan::Impl {
   /// beta nor a workspace, so a reduction covers all three unary lowerings
   /// with one code path: reducing over no modes is a permutation.
   ///
-  /// ponytail: a copy therefore runs a reduction kernel rather than
-  /// cudaMemcpyAsync. Add the memcpy path if the copy case ever matters.
+  /// A copy therefore runs a reduction kernel rather than cudaMemcpyAsync.
+  /// Add the memcpy path if the copy case ever matters.
   Impl(const Context& context, const Equation& equation, const TensorRef& a,
        const TensorRef& d, PlanOptions options)
       : handle_(context.impl().handle()),

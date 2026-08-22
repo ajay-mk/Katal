@@ -54,14 +54,12 @@ class Plan {
 
   /// Computes `d = alpha * <equation over a and b> + beta * c`.
   ///
-  /// The pointers are device memory laid out as the TensorRefs the plan was
-  /// built from described; passing differently shaped memory is undefined
-  /// rather than diagnosed. `c` and `d` may be the same pointer, which is the
-  /// usual way to accumulate.
+  /// The pointers are device memory shaped as the TensorRefs this plan was
+  /// built from; anything else is undefined rather than diagnosed. `c` and `d`
+  /// may be the same pointer, which is how to accumulate.
   ///
-  /// Const because executing does not mutate the plan, which is what lets one
-  /// plan be shared across streams. Allocation-free, so it is safe on a hot
-  /// path.
+  /// Const and allocation-free, so one plan can be shared across streams and
+  /// run on a hot path.
   void execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                const void* c, void* d, Workspace workspace,
                StreamRef stream = {}) const;
@@ -83,30 +81,27 @@ class Plan {
   std::unique_ptr<Impl> impl_;
 };
 
-/// Selects a kernel for this equation at these shapes. Costs on the order of
-/// a hundred microseconds the first time and around ten on a cuTENSOR plan
-/// cache hit, so it belongs outside any loop that runs it.
+/// Selects a kernel for this equation at these shapes. Far more expensive than
+/// executing it, so it belongs outside any loop.
 ///
-/// Throws `Error` with `Errc::UnsupportedPattern` for a pattern cuEin does not
-/// lower, `Errc::ExtentMismatch` when a shared label disagrees across
-/// operands, and `Errc::CutensorError` when cuTENSOR refuses the descriptor.
+/// Throws `Errc::UnsupportedPattern` for a pattern cuEin does not lower,
+/// `Errc::ExtentMismatch` when a shared label disagrees across operands, and
+/// `Errc::CutensorError` when cuTENSOR refuses the descriptor.
 Plan make_plan(const Context& context, const Equation& equation,
                const TensorRef& a, const TensorRef& b, const TensorRef& d,
                PlanOptions options = {});
 
-/// The one-operand form. All three unary lowerings -- permutation, reduction
-/// and copy -- go through cuTENSOR's reduction, which is the only one of its
-/// unary entry points that accepts beta.
+/// The one-operand form. Permutation, reduction and copy all go through
+/// cuTENSOR's reduction, its only unary entry point that accepts beta.
 Plan make_plan(const Context& context, const Equation& equation,
                const TensorRef& a, const TensorRef& d,
                PlanOptions options = {});
 
 /// Parse, plan, allocate scratch and run, in one call.
 ///
-/// Convenient, and it pays for parsing and descriptor construction on every
-/// call, plus a stream-ordered allocation for the workspace. That is a small
-/// fraction of a large contraction and most of a small one, so a loop over
-/// tile-sized work should build a `Plan` once and execute it instead.
+/// Pays for all of that on every call. Negligible against a large contraction,
+/// dominant for a small one, so a loop over tile-sized work should build a
+/// `Plan` once and execute it instead.
 void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
             const TensorRef& b, Scalar beta, const TensorRef& d,
             StreamRef stream = {}, const Context& context = default_context());
