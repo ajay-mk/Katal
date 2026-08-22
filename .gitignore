@@ -1,0 +1,7 @@
+build/
+.DS_Store
+compile_commands.json
+
+# Planning documents are not part of the source tree.
+rough_spec.md
+TODO.md

@@ -1,0 +1,21 @@
+// Generated from cmake/config.hpp.in. Do not edit.
+#ifndef CUEIN_CONFIG_HPP_
+#define CUEIN_CONFIG_HPP_
+
+#include <cstddef>
+
+namespace cuein {
+
+/// Largest tensor rank cuEin can describe, and so the inline capacity of an
+/// index. Set it with -DCUEIN_MAX_RANK at configure time. It is generated
+/// rather than left as a plain macro so that a consumer cannot disagree with
+/// the library about how big an index is.
+inline constexpr std::size_t max_rank = @CUEIN_MAX_RANK@;
+
+/// Longest mode label, in characters. Not a configure-time knob: rank varies
+/// by problem, label length does not.
+inline constexpr std::size_t max_label_chars = 8;
+
+}  // namespace cuein
+
+#endif  // CUEIN_CONFIG_HPP_
