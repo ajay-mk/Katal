@@ -1,3 +1,9 @@
+# commit-msg is not installed by a bare `pre-commit install`; listing it here
+# means one `pre-commit install` wires up both stages
+default_install_hook_types: [pre-commit, commit-msg]
+# without this the file-formatting hooks also run against the commit message
+default_stages: [pre-commit]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -37,3 +43,9 @@ repos:
           clang-tidy -p build --quiet -header-filter=".*/cuein/.*" test/*.cpp'
         pass_filenames: false
         files: \.(c|cc|cpp|h|hpp|cu|cuh)$
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
