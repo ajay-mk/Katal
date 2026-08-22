@@ -6,7 +6,7 @@ on:
   pull_request:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build clang clang-tidy
+          sudo apt-get install -y ninja-build clang clang-tidy catch2
 
       # Configure but do not build: the clang-tidy hook needs
       # compile_commands.json and the generated config header, and neither
@@ -30,6 +30,18 @@ jobs:
       # the command lines.
       - name: Configure
         run: cmake -S . -B build -GNinja -DCMAKE_CXX_COMPILER=clang++
+
+      # Most of this job is clang-format and cmake-format building their hook
+      # environments. The python location is in the key because a hook
+      # environment is tied to the interpreter that built it.
+      - name: Cache pre-commit environments
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: >-
+            pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-${{
+            hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-
 
       - run: pip install pre-commit
 

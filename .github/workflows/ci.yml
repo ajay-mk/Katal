@@ -6,27 +6,47 @@ on:
   pull_request:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Deduplicates correctly for both pull requests and direct pushes.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 200M
     steps:
       - uses: actions/checkout@v5
 
+      # catch2 from apt so the tests do not rebuild it from source every run;
+      # if the runner ships Catch2 v2, find_package falls through to
+      # FetchContent and the build still succeeds.
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt-get install -y ninja-build ccache catch2
+
+      - name: Cache compiler output
+        uses: actions/cache@v6
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
 
       # The runner's default g++ and libstdc++, which is the coverage local
       # development on macOS/libc++ does not give.
       - name: Configure
-        run: cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        run: >-
+          cmake -S . -B build -GNinja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
         run: cmake --build build
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      - name: ccache statistics
+        run: ccache --show-stats
