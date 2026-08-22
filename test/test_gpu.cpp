@@ -139,6 +139,79 @@ TEST_CASE("gpu contraction matches the host reference", "[gpu]") {
   }
 }
 
+namespace {
+
+/// The one-operand overloads, against the same host reference.
+template <class T>
+void unary_agrees_with_reference(std::string_view equation,
+                                 std::span<const std::int64_t> ea,
+                                 std::span<const std::int64_t> ed, T alpha,
+                                 T beta, double tolerance) {
+  const std::vector<T> a = ramp<T>(elements(ea), 1.0);
+  const std::vector<T> d0 = ramp<T>(elements(ed), 0.25);
+
+  DeviceBuffer<T> da(a), dd(d0);
+  const cuein::TensorRef ar = cuein::make_ref(da.get(), cuein::dtype_of<T>, ea);
+  const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::dtype_of<T>, ed);
+
+  cuein::einsum(equation, alpha, ar, beta, dr);
+  REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+  const std::vector<T> got = dd.to_host();
+
+  std::vector<T> want = d0;
+  const cuein::TensorRef ha =
+      cuein::make_ref(const_cast<T*>(a.data()), cuein::dtype_of<T>, ea);
+  const cuein::TensorRef hd =
+      cuein::make_ref(want.data(), cuein::dtype_of<T>, ed);
+  const std::array<cuein::TensorRef, 1> in{ha};
+  cuein::test::reference_einsum<T>(cuein::Equation::parse(equation), alpha, in,
+                                   beta, hd);
+
+  REQUIRE(got.size() == want.size());
+  for (std::size_t i = 0; i < got.size(); ++i)
+    REQUIRE_THAT(static_cast<double>(got[i]),
+                 WithinRel(static_cast<double>(want[i]), tolerance));
+}
+
+}  // namespace
+
+TEST_CASE("gpu unary lowerings match the host reference", "[gpu]") {
+  if (!have_gpu()) SKIP("no CUDA device");
+
+  const std::array<std::int64_t, 4> shape{2, 3, 4, 5};
+
+  SECTION("permutation") {
+    const std::array<std::int64_t, 4> ed{2, 4, 3, 5};
+    unary_agrees_with_reference<double>("ijkl->ikjl", shape, ed, 1.0, 0.0,
+                                        1e-12);
+  }
+
+  SECTION("reduction") {
+    const std::array<std::int64_t, 2> ed{2, 3};
+    unary_agrees_with_reference<double>("ijkl->ij", shape, ed, 1.0, 0.0, 1e-12);
+  }
+
+  SECTION("full reduction to a scalar") {
+    unary_agrees_with_reference<double>("ijkl->", shape, {}, 1.0, 0.0, 1e-12);
+  }
+
+  SECTION("copy") {
+    unary_agrees_with_reference<double>("ijkl->ijkl", shape, shape, 1.0, 0.0,
+                                        1e-12);
+  }
+
+  SECTION("reduction accumulating with alpha and beta") {
+    const std::array<std::int64_t, 2> ed{2, 3};
+    unary_agrees_with_reference<double>("ijkl->ij", shape, ed, 2.0, 0.5, 1e-12);
+  }
+
+  SECTION("permutation in single precision") {
+    const std::array<std::int64_t, 4> ed{2, 4, 3, 5};
+    unary_agrees_with_reference<float>("ijkl->ikjl", shape, ed, 1.0F, 0.0F,
+                                       1e-5);
+  }
+}
+
 TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
 
@@ -192,7 +265,11 @@ TEST_CASE("gpu rejections name the problem", "[gpu]") {
   // j is 3 in the first operand and 5 in the second.
   REQUIRE_THROWS_AS(cuein::einsum("ij,jk->ik", 1.0, ar, br, 0.0, dr),
                     cuein::Error);
-  // Reduction is not lowered yet, and must say so rather than compute wrongly.
+  // A free reduction beside a contraction stays rejected.
   REQUIRE_THROWS_AS(cuein::einsum("ijk,kl->il", 1.0, ar, br, 0.0, dr),
+                    cuein::Error);
+  // Arity mismatches between the equation and the overload are caught.
+  REQUIRE_THROWS_AS(cuein::einsum("ij,jk->ik", 1.0, ar, 0.0, dr), cuein::Error);
+  REQUIRE_THROWS_AS(cuein::einsum("ij->ji", 1.0, ar, br, 0.0, dr),
                     cuein::Error);
 }

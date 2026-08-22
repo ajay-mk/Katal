@@ -122,18 +122,44 @@ class Plan::Impl {
                     id.data(), CUTENSOR_OP_IDENTITY, desc_d_, id.data(),
                     util::to_compute(options.compute.value_or(d.type))),
                 equation_);
-    CUEIN_CHECK(
-        cutensorCreatePlanPreference(handle_, &pref_, CUTENSOR_ALGO_DEFAULT,
-                                     CUTENSOR_JIT_MODE_NONE),
-        equation_);
-    CUEIN_CHECK(
-        cutensorEstimateWorkspaceSize(
-            handle_, op_, pref_, CUTENSOR_WORKSPACE_DEFAULT, &workspace_size_),
-        equation_);
-    if (options.workspace_limit != 0) workspace_size_ = options.workspace_limit;
-    CUEIN_CHECK(
-        cutensorCreatePlan(handle_, &plan_, op_, pref_, workspace_size_),
-        equation_);
+    select_kernel(options);
+  }
+
+  /// The one-operand form. cuTENSOR's permutation entry point takes neither
+  /// beta nor a workspace, so a reduction covers all three unary lowerings
+  /// with one code path: reducing over no modes is a permutation.
+  ///
+  /// ponytail: a copy therefore runs a reduction kernel rather than
+  /// cudaMemcpyAsync. Add the memcpy path if the copy case ever matters.
+  Impl(const Context& context, const Equation& equation, const TensorRef& a,
+       const TensorRef& d, PlanOptions options)
+      : handle_(context.impl().handle()),
+        equation_(equation.text()),
+        scalar_type_(d.type),
+        n_operands_(1) {
+    if (equation.classify().kind == Lowering::Contract)
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  "this equation has two operands; use the two-operand form");
+
+    const util::Index all = all_labels(equation);
+    check_extents(equation, all,
+                  {{&equation.operand(0), &a}, {&equation.result(), &d}});
+
+    const ModeOrder ma = mode_order(equation.operand(0), a);
+    const ModeOrder md = mode_order(equation.result(), d);
+    const std::vector<int32_t> ia = mode_ids(ma.modes, all);
+    const std::vector<int32_t> id = mode_ids(md.modes, all);
+
+    describe(&desc_a_, ma, a);
+    describe(&desc_d_, md, d);
+
+    CUEIN_CHECK(cutensorCreateReduction(
+                    handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY,
+                    desc_d_, id.data(), CUTENSOR_OP_IDENTITY, desc_d_,
+                    id.data(), CUTENSOR_OP_ADD,
+                    util::to_compute(options.compute.value_or(d.type))),
+                equation_);
+    select_kernel(options);
   }
 
   ~Impl() {
@@ -151,9 +177,11 @@ class Plan::Impl {
   uint64_t workspace_size() const noexcept { return workspace_size_; }
   std::string_view equation() const noexcept { return equation_; }
 
-  void execute(Scalar alpha, const void* a, const void* b, Scalar beta,
-               const void* c, void* d, Workspace workspace,
-               StreamRef stream) const {
+  std::size_t n_operands() const noexcept { return n_operands_; }
+
+  void contract(Scalar alpha, const void* a, const void* b, Scalar beta,
+                const void* c, void* d, Workspace workspace,
+                StreamRef stream) const {
     // Stack objects, so this path still allocates nothing.
     const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
     const util::ScalarBytes beta_bytes(beta, scalar_type_);
@@ -164,7 +192,35 @@ class Plan::Impl {
                 equation_);
   }
 
+  void reduce(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
+              Workspace workspace, StreamRef stream) const {
+    const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
+    const util::ScalarBytes beta_bytes(beta, scalar_type_);
+
+    CUEIN_CHECK(
+        cutensorReduce(handle_, plan_, alpha_bytes.data(), a, beta_bytes.data(),
+                       c, d, workspace.ptr, workspace.size, stream.get()),
+        equation_);
+  }
+
  private:
+  /// Plan preference, workspace estimate and kernel selection, shared by both
+  /// arities.
+  void select_kernel(const PlanOptions& options) {
+    CUEIN_CHECK(
+        cutensorCreatePlanPreference(handle_, &pref_, CUTENSOR_ALGO_DEFAULT,
+                                     CUTENSOR_JIT_MODE_NONE),
+        equation_);
+    CUEIN_CHECK(
+        cutensorEstimateWorkspaceSize(
+            handle_, op_, pref_, CUTENSOR_WORKSPACE_DEFAULT, &workspace_size_),
+        equation_);
+    if (options.workspace_limit != 0) workspace_size_ = options.workspace_limit;
+    CUEIN_CHECK(
+        cutensorCreatePlan(handle_, &plan_, op_, pref_, workspace_size_),
+        equation_);
+  }
+
   void describe(cutensorTensorDescriptor_t* desc, const ModeOrder& modes,
                 const TensorRef& tensor) {
     CUEIN_CHECK(cutensorCreateTensorDescriptor(
@@ -184,6 +240,7 @@ class Plan::Impl {
   uint64_t workspace_size_ = 0;
   std::string equation_;
   Dtype scalar_type_ = Dtype::F64;
+  std::size_t n_operands_ = 2;
 };
 
 Plan::Plan(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -199,7 +256,18 @@ std::string_view Plan::equation() const noexcept { return impl_->equation(); }
 void Plan::execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                    const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
-  impl_->execute(alpha, a, b, beta, c, d, workspace, stream);
+  if (impl_->n_operands() != 2)
+    throw Error(Errc::UnsupportedPattern, impl_->equation(),
+                "this plan takes one operand; use the one-operand execute");
+  impl_->contract(alpha, a, b, beta, c, d, workspace, stream);
+}
+
+void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
+                   void* d, Workspace workspace, StreamRef stream) const {
+  if (impl_->n_operands() != 1)
+    throw Error(Errc::UnsupportedPattern, impl_->equation(),
+                "this plan takes two operands; use the two-operand execute");
+  impl_->reduce(alpha, a, beta, c, d, workspace, stream);
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
@@ -207,6 +275,21 @@ Plan make_plan(const Context& context, const Equation& equation,
                PlanOptions options) {
   return Plan(
       std::make_unique<Plan::Impl>(context, equation, a, b, d, options));
+}
+
+Plan make_plan(const Context& context, const Equation& equation,
+               const TensorRef& a, const TensorRef& d, PlanOptions options) {
+  return Plan(std::make_unique<Plan::Impl>(context, equation, a, d, options));
+}
+
+void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
+            Scalar beta, const TensorRef& d, StreamRef stream,
+            const Context& context) {
+  const Equation parsed = Equation::parse(equation);
+  const Plan plan = make_plan(context, parsed, a, d);
+  const ScopedWorkspace workspace(plan.workspace_size(), stream.get(),
+                                  equation);
+  plan.execute(alpha, a.data, beta, d.data, d.data, workspace.get(), stream);
 }
 
 void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,

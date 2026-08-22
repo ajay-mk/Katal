@@ -66,12 +66,19 @@ class Plan {
                const void* c, void* d, Workspace workspace,
                StreamRef stream = {}) const;
 
+  /// The one-operand form, for a permutation, a reduction or a copy. Throws
+  /// if this plan was built from two operands.
+  void execute(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
+               Workspace workspace, StreamRef stream = {}) const;
+
   class Impl;
 
  private:
   explicit Plan(std::unique_ptr<Impl> impl);
   friend Plan make_plan(const Context&, const Equation&, const TensorRef&,
                         const TensorRef&, const TensorRef&, PlanOptions);
+  friend Plan make_plan(const Context&, const Equation&, const TensorRef&,
+                        const TensorRef&, PlanOptions);
 
   std::unique_ptr<Impl> impl_;
 };
@@ -87,6 +94,13 @@ Plan make_plan(const Context& context, const Equation& equation,
                const TensorRef& a, const TensorRef& b, const TensorRef& d,
                PlanOptions options = {});
 
+/// The one-operand form. All three unary lowerings -- permutation, reduction
+/// and copy -- go through cuTENSOR's reduction, which is the only one of its
+/// unary entry points that accepts beta.
+Plan make_plan(const Context& context, const Equation& equation,
+               const TensorRef& a, const TensorRef& d,
+               PlanOptions options = {});
+
 /// Parse, plan, allocate scratch and run, in one call.
 ///
 /// Convenient, and it pays for parsing and descriptor construction on every
@@ -96,6 +110,11 @@ Plan make_plan(const Context& context, const Equation& equation,
 void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
             const TensorRef& b, Scalar beta, const TensorRef& d,
             StreamRef stream = {}, const Context& context = default_context());
+
+/// The one-operand form: a permutation, a reduction, or a copy.
+void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
+            Scalar beta, const TensorRef& d, StreamRef stream = {},
+            const Context& context = default_context());
 
 }  // namespace cuein
 
