@@ -13,8 +13,11 @@ namespace cuein::test {
 
 /// Advances a mixed-radix counter. Returns false once it wraps, so a rank-zero
 /// counter runs its body exactly once in a do-while.
-inline bool advance(std::span<std::int64_t> counter,
-                    std::span<const std::int64_t> extent) {
+///
+/// Not named `advance`: both argument types live in namespace std, so an
+/// unqualified call also finds std::advance, which wins on libstdc++.
+inline bool advance_counter(std::span<std::int64_t> counter,
+                            std::span<const std::int64_t> extent) {
   for (std::size_t i = counter.size(); i-- > 0;) {
     if (++counter[i] < extent[i]) return true;
     counter[i] = 0;
@@ -95,7 +98,7 @@ void reference_einsum(const Equation& eq, T alpha,
       std::int64_t off = 0;
       for (std::size_t p = 0; p < c.size(); ++p) off += c[p] * out_stride[p];
       d[off] = (beta == T{}) ? T{} : beta * d[off];
-    } while (advance(c, out.extent));
+    } while (advance_counter(c, out.extent));
   }
 
   std::vector<std::int64_t> c(all.rank(), 0);
@@ -111,7 +114,7 @@ void reference_einsum(const Equation& eq, T alpha,
     for (std::size_t p = 0; p < out_slot.size(); ++p)
       off += c[out_slot[p]] * out_stride[p];
     d[off] += term;
-  } while (advance(c, extent));
+  } while (advance_counter(c, extent));
 }
 
 }  // namespace cuein::test
