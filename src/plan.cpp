@@ -154,17 +154,14 @@ class Plan::Impl {
   void execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                const void* c, void* d, Workspace workspace,
                StreamRef stream) const {
-    // ponytail: fixed buffers, so this path allocates nothing. 16 bytes holds
-    // the widest scalar cuTENSOR takes.
-    alignas(16) unsigned char alpha_bytes[16];
-    alignas(16) unsigned char beta_bytes[16];
-    alpha.write_as(scalar_type_, alpha_bytes);
-    beta.write_as(scalar_type_, beta_bytes);
+    // Stack objects, so this path still allocates nothing.
+    const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
+    const util::ScalarBytes beta_bytes(beta, scalar_type_);
 
-    CUEIN_CHECK(
-        cutensorContract(handle_, plan_, alpha_bytes, a, b, beta_bytes, c, d,
-                         workspace.ptr, workspace.size, stream.get()),
-        equation_);
+    CUEIN_CHECK(cutensorContract(handle_, plan_, alpha_bytes.data(), a, b,
+                                 beta_bytes.data(), c, d, workspace.ptr,
+                                 workspace.size, stream.get()),
+                equation_);
   }
 
  private:

@@ -1,7 +1,10 @@
 #ifndef CUEIN_SCALAR_HPP_
 #define CUEIN_SCALAR_HPP_
 
+#include <array>
 #include <complex>
+#include <cstddef>
+#include <cstring>
 
 #include <cuein/error.hpp>
 #include <cuein/tensor_ref.hpp>
@@ -23,23 +26,33 @@ class Scalar {
   Dtype type() const noexcept { return type_; }
   std::complex<double> value() const noexcept { return value_; }
 
-  /// Narrows into `out`, which must have room for one element of `as`. This is
-  /// what produces the pointer cuTENSOR wants for alpha and beta.
-  void write_as(Dtype as, void* out) const {
+ private:
+  std::complex<double> value_{};
+  Dtype type_ = Dtype::F64;
+};
+
+namespace util {
+
+/// One scalar narrowed into the type an operation accumulates in, held inline
+/// so that producing the pointer a C API wants costs no allocation. The
+/// storage is sixteen bytes because that is the widest supported scalar.
+class ScalarBytes {
+ public:
+  ScalarBytes(Scalar value, Dtype as) {
+    const std::complex<double> v = value.value();
     switch (as) {
       case Dtype::F32:
-        *static_cast<float*>(out) = static_cast<float>(value_.real());
+        store(static_cast<float>(v.real()));
         return;
       case Dtype::F64:
-        *static_cast<double*>(out) = value_.real();
+        store(v.real());
         return;
       case Dtype::C32:
-        *static_cast<std::complex<float>*>(out) = {
-            static_cast<float>(value_.real()),
-            static_cast<float>(value_.imag())};
+        store(std::complex<float>(static_cast<float>(v.real()),
+                                  static_cast<float>(v.imag())));
         return;
       case Dtype::C64:
-        *static_cast<std::complex<double>*>(out) = value_;
+        store(v);
         return;
       case Dtype::F16:
       case Dtype::Bf16:
@@ -49,10 +62,22 @@ class Scalar {
     throw Error(Errc::DtypeMismatch, "", "unrecognized scalar type");
   }
 
+  /// Borrowed from this object, so it must outlive the call it is passed to.
+  const void* data() const noexcept { return storage_.data(); }
+
  private:
-  std::complex<double> value_{};
-  Dtype type_ = Dtype::F64;
+  template <class T>
+  void store(T value) {
+    static_assert(sizeof(T) <= sizeof(storage_));
+    // memcpy rather than a cast: it starts the object's lifetime correctly and
+    // compiles to the same single store.
+    std::memcpy(storage_.data(), &value, sizeof(value));
+  }
+
+  alignas(16) std::array<std::byte, 16> storage_{};
 };
+
+}  // namespace util
 
 }  // namespace cuein
 
