@@ -1,0 +1,13 @@
+BasedOnStyle: Google
+Standard: c++20
+
+# Three separated blocks: C++ standard library, third-party, then cuEin.
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<cuein/'
+    Priority: 3
+  - Regex: '^<[a-z_]+>$'
+    Priority: 1
+  - Regex: '.*'
+    Priority: 2
