@@ -40,7 +40,7 @@ repos:
         entry: >-
           bash -c 'test -f build/compile_commands.json ||
           { echo "configure first: cmake -S . -B build -GNinja"; exit 1; };
-          clang-tidy -p build --quiet -header-filter=".*/cuein/.*" test/*.cpp'
+          clang-tidy -p build --quiet -header-filter=".*/(cuein|test)/.*" test/*.cpp'
         pass_filenames: false
         files: \.(c|cc|cpp|h|hpp|cu|cuh)$
 

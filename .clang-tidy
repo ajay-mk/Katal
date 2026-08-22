@@ -1,7 +1,7 @@
 # Naming only, so the check stays fast and the failures are unambiguous.
 Checks: '-*,readability-identifier-naming'
 WarningsAsErrors: 'readability-identifier-naming'
-HeaderFilterRegex: '.*/cuein/.*'
+HeaderFilterRegex: '.*/(cuein|test)/.*'
 CheckOptions:
   # types
   readability-identifier-naming.ClassCase: CamelCase

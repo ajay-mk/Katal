@@ -7,9 +7,11 @@
 namespace cuein {
 
 /// Largest tensor rank cuEin can describe, and so the inline capacity of an
-/// index. Set it with -DCUEIN_MAX_RANK at configure time. It is generated
-/// rather than left as a plain macro so that a consumer cannot disagree with
-/// the library about how big an index is.
+/// index. It also bounds the number of distinct labels one equation may carry,
+/// since classification forms the union of the operand indices. Set it with
+/// -DCUEIN_MAX_RANK at configure time. It is generated rather than left as a
+/// plain macro so that a consumer cannot disagree with the library about how
+/// big an index is.
 inline constexpr std::size_t max_rank = @CUEIN_MAX_RANK@;
 
 /// Longest mode label, in characters. Not a configure-time knob: rank varies
