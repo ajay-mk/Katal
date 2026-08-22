@@ -1,7 +1,7 @@
 #ifndef CUEIN_SRC_CONTEXT_IMPL_HPP_
 #define CUEIN_SRC_CONTEXT_IMPL_HPP_
 
-#include "cutensor_glue.hpp"
+#include "cutensor_status.hpp"
 
 #include <cuein/context.hpp>
 

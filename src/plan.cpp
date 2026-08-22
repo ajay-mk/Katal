@@ -3,7 +3,8 @@
 #include <vector>
 
 #include "context_impl.hpp"
-#include "cutensor_glue.hpp"
+#include "cutensor_status.hpp"
+#include "cutensor_types.hpp"
 
 #include <cuein/plan.hpp>
 
@@ -119,7 +120,7 @@ class Plan::Impl {
                     handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY,
                     desc_b_, ib.data(), CUTENSOR_OP_IDENTITY, desc_d_,
                     id.data(), CUTENSOR_OP_IDENTITY, desc_d_, id.data(),
-                    detail::to_compute(options.compute.value_or(d.type))),
+                    util::to_compute(options.compute.value_or(d.type))),
                 equation_);
     CUEIN_CHECK(
         cutensorCreatePlanPreference(handle_, &pref_, CUTENSOR_ALGO_DEFAULT,
@@ -172,7 +173,7 @@ class Plan::Impl {
     CUEIN_CHECK(cutensorCreateTensorDescriptor(
                     handle_, desc, static_cast<uint32_t>(modes.modes.rank()),
                     modes.extent.data(), modes.stride.data(),
-                    detail::to_cutensor(tensor.type), tensor.alignment),
+                    util::to_cutensor(tensor.type), tensor.alignment),
                 equation_);
   }
 
