@@ -13,30 +13,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build clang clang-tidy
+          sudo apt-get install -y ninja-build
 
-      # clang, not the default g++, so compile_commands.json holds a command
-      # line clang-tidy can replay.
+      # The runner's default g++ and libstdc++, which is the coverage local
+      # development on macOS/libc++ does not give.
       - name: Configure
-        run: >-
-          cmake -S . -B build -GNinja
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DCMAKE_CXX_COMPILER=clang++
+        run: cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
       - name: Build
         run: cmake --build build
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
-
-      # After the build, because the clang-tidy hook reads
-      # build/compile_commands.json.
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-      - uses: pre-commit/action@v3.0.1

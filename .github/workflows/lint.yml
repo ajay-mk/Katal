@@ -1,0 +1,61 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang clang-tidy
+
+      # Configure but do not build: the clang-tidy hook needs
+      # compile_commands.json and the generated config header, and neither
+      # requires compiling anything. clang, not g++, so clang-tidy can replay
+      # the command lines.
+      - name: Configure
+        run: cmake -S . -B build -GNinja -DCMAKE_CXX_COMPILER=clang++
+
+      - run: pip install pre-commit
+
+      - name: Format, include grouping, and naming
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  commit-messages:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - run: pip install pre-commit
+
+      # The local commit-msg hook can be skipped with --no-verify, so the
+      # message check is repeated here for every commit the branch adds.
+      - name: Check each commit message
+        run: |
+          for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
+            git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg"
+            pre-commit run conventional-pre-commit \
+              --hook-stage commit-msg --commit-msg-filename "$RUNNER_TEMP/msg"
+          done
