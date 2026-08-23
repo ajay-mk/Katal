@@ -71,15 +71,54 @@ class ScopedWorkspace {
 
 }  // namespace util
 
+/// Which algorithm family cuTENSOR should use. `Default` lets its performance
+/// model choose, which is right unless you are measuring.
+enum class Algo {
+  Default,
+  /// A slower, more thorough selection than Default.
+  DefaultPatient,
+  /// GEMM-like tensor contraction, needing no extra memory.
+  Gett,
+  /// Transpose one operand, then Gett.
+  Tgett,
+  /// Transpose, transpose, GEMM, transpose. Needs workspace, so a Min
+  /// workspace preference can put it out of reach.
+  Ttgt,
+};
+
+/// How much scratch cuTENSOR may assume when it picks a kernel. This gates
+/// which algorithms are available, so it is not independent of `Algo`.
+enum class WorkspacePreference {
+  /// Least memory; at least one algorithm remains available.
+  Min,
+  /// High performance without an extravagant footprint.
+  Default,
+  /// Every algorithm available. Choose it when footprint does not matter.
+  Max,
+};
+
 struct PlanOptions {
   /// Accumulation type. Unset follows the output tensor, which is the only
   /// choice cuTENSOR always accepts; asking for f64 accumulation over f32
   /// storage, for instance, is not a supported combination. Set it to widen
   /// deliberately, or to opt into a reduced-precision mode such as TF32.
   std::optional<Dtype> compute;
-  /// 0 means cuTENSOR's DEFAULT preference, which is never the worst choice
-  /// and is measurably better than MIN on some shapes.
+  /// Caps the scratch a plan may use. 0 takes whatever `workspace` suggests.
   uint64_t workspace_limit = 0;
+
+  Algo algo = Algo::Default;
+
+  /// Never the worst choice on any shape measured so far.
+  WorkspacePreference workspace = WorkspacePreference::Default;
+
+  /// Picks the n-th best kernel by cuTENSOR's own model, 0 being its first
+  /// choice. Kernel variants differ in tiling and blocking, so this is as
+  /// close to a tiling knob as cuTENSOR offers. Unset leaves the choice alone.
+  std::optional<int32_t> kernel_rank;
+
+  /// Lets cuTENSOR compile a kernel for this exact problem. Ampere and newer.
+  /// Costs seconds at plan time.
+  bool jit = false;
 };
 
 /// A selected kernel, ready to run. Building one is the expensive part; running
@@ -146,6 +185,21 @@ Plan make_plan(const Context& context, const Equation& equation,
                const TensorRef& a, const TensorRef& d,
                PlanOptions options = {});
 
+/// Looks up a plan in the context's cache, building it on a miss. Returns a
+/// shared plan so the caller keeps it alive even if the cache is cleared, and
+/// so a disabled cache costs the same call.
+std::shared_ptr<const Plan> cached_plan(const Context& context,
+                                        std::string_view equation,
+                                        const TensorRef& a, const TensorRef& b,
+                                        const TensorRef& d,
+                                        PlanOptions options = {});
+
+/// The one-operand form.
+std::shared_ptr<const Plan> cached_plan(const Context& context,
+                                        std::string_view equation,
+                                        const TensorRef& a, const TensorRef& d,
+                                        PlanOptions options = {});
+
 /// Parse, plan, allocate scratch and run, in one call.
 ///
 /// Pays for all of that on every call. Negligible against a large contraction,
@@ -156,12 +210,12 @@ void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
             const TensorRef& b, Scalar beta, const TensorRef& d,
             StreamRef stream = {}, const Context& context = default_context(),
             A allocator = {}) {
-  const Equation parsed = Equation::parse(equation);
-  const Plan plan = make_plan(context, parsed, a, b, d);
-  const util::ScopedWorkspace<A> scratch(allocator, plan.workspace_size(),
+  const std::shared_ptr<const Plan> plan =
+      cached_plan(context, equation, a, b, d);
+  const util::ScopedWorkspace<A> scratch(allocator, plan->workspace_size(),
                                          stream);
-  plan.execute(alpha, a.data, b.data, beta, d.data, d.data, scratch.get(),
-               stream);
+  plan->execute(alpha, a.data, b.data, beta, d.data, d.data, scratch.get(),
+                stream);
 }
 
 /// The one-operand form: a permutation, a reduction, or a copy.
@@ -169,11 +223,10 @@ template <WorkspaceAllocator A = CudaAsyncAllocator>
 void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
             Scalar beta, const TensorRef& d, StreamRef stream = {},
             const Context& context = default_context(), A allocator = {}) {
-  const Equation parsed = Equation::parse(equation);
-  const Plan plan = make_plan(context, parsed, a, d);
-  const util::ScopedWorkspace<A> scratch(allocator, plan.workspace_size(),
+  const std::shared_ptr<const Plan> plan = cached_plan(context, equation, a, d);
+  const util::ScopedWorkspace<A> scratch(allocator, plan->workspace_size(),
                                          stream);
-  plan.execute(alpha, a.data, beta, d.data, d.data, scratch.get(), stream);
+  plan->execute(alpha, a.data, beta, d.data, d.data, scratch.get(), stream);
 }
 
 }  // namespace cuein

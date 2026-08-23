@@ -4,6 +4,7 @@
 #include <cutensor.h>
 
 #include <cuein/error.hpp>
+#include <cuein/plan.hpp>
 #include <cuein/tensor_ref.hpp>
 
 namespace cuein::util {
@@ -44,6 +45,36 @@ inline const cutensorComputeDescriptor_t to_compute(Dtype type) {
       return CUTENSOR_COMPUTE_DESC_16BF;
   }
   throw Error(Errc::DtypeMismatch, "", "unrecognized compute type");
+}
+
+inline cutensorAlgo_t to_cutensor(Algo algo) {
+  switch (algo) {
+    case Algo::Default:
+      return CUTENSOR_ALGO_DEFAULT;
+    case Algo::DefaultPatient:
+      return CUTENSOR_ALGO_DEFAULT_PATIENT;
+    case Algo::Gett:
+      return CUTENSOR_ALGO_GETT;
+    case Algo::Tgett:
+      return CUTENSOR_ALGO_TGETT;
+    case Algo::Ttgt:
+      return CUTENSOR_ALGO_TTGT;
+  }
+  throw Error(Errc::UnsupportedPattern, "", "unrecognized algorithm");
+}
+
+inline cutensorWorksizePreference_t to_cutensor(
+    WorkspacePreference preference) {
+  switch (preference) {
+    case WorkspacePreference::Min:
+      return CUTENSOR_WORKSPACE_MIN;
+    case WorkspacePreference::Default:
+      return CUTENSOR_WORKSPACE_DEFAULT;
+    case WorkspacePreference::Max:
+      return CUTENSOR_WORKSPACE_MAX;
+  }
+  throw Error(Errc::UnsupportedPattern, "",
+              "unrecognized workspace preference");
 }
 
 }  // namespace cuein::util

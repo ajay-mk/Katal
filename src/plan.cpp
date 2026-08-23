@@ -11,6 +11,46 @@
 namespace cuein {
 namespace {
 
+/// The cache key, built as one string so that std::hash and string equality
+/// do the work: an exact key means no collision handling to get wrong.
+void append(std::string& key, const void* bytes, std::size_t n) {
+  key.append(static_cast<const char*>(bytes), n);
+}
+
+void append_tensor(std::string& key, const TensorRef& t) {
+  const auto type = static_cast<int32_t>(t.type);
+  const auto layout = static_cast<int32_t>(t.layout);
+  append(key, &type, sizeof(type));
+  append(key, &layout, sizeof(layout));
+  append(key, &t.alignment, sizeof(t.alignment));
+  const auto extents = static_cast<uint32_t>(t.extent.size());
+  const auto strides = static_cast<uint32_t>(t.stride.size());
+  append(key, &extents, sizeof(extents));
+  append(key, &strides, sizeof(strides));
+  append(key, t.extent.data(), t.extent.size_bytes());
+  append(key, t.stride.data(), t.stride.size_bytes());
+}
+
+std::string plan_key(std::string_view equation, PlanOptions options,
+                     std::initializer_list<const TensorRef*> tensors) {
+  std::string key(equation);
+  key.push_back('\0');
+  const int32_t compute =
+      options.compute ? static_cast<int32_t>(*options.compute) : -1;
+  append(key, &compute, sizeof(compute));
+  append(key, &options.workspace_limit, sizeof(options.workspace_limit));
+  const auto algo = static_cast<int32_t>(options.algo);
+  const auto workspace = static_cast<int32_t>(options.workspace);
+  const int32_t rank = options.kernel_rank.value_or(-1);
+  const auto jit = static_cast<int32_t>(options.jit);
+  append(key, &algo, sizeof(algo));
+  append(key, &workspace, sizeof(workspace));
+  append(key, &rank, sizeof(rank));
+  append(key, &jit, sizeof(jit));
+  for (const TensorRef* t : tensors) append_tensor(key, *t);
+  return key;
+}
+
 /// Every distinct label in the equation. A label's position here is the
 /// int32 mode id cuTENSOR sees, which keeps the ids consistent across operands.
 util::Index all_labels(const Equation& equation) {
@@ -183,17 +223,35 @@ class Plan::Impl {
   /// arities.
   void select_kernel(const PlanOptions& options) {
     CUEIN_CHECK(
-        cutensorCreatePlanPreference(handle_, &pref_, CUTENSOR_ALGO_DEFAULT,
-                                     CUTENSOR_JIT_MODE_NONE),
+        cutensorCreatePlanPreference(
+            handle_, &pref_, util::to_cutensor(options.algo),
+            options.jit ? CUTENSOR_JIT_MODE_DEFAULT : CUTENSOR_JIT_MODE_NONE),
         equation_);
-    CUEIN_CHECK(
-        cutensorEstimateWorkspaceSize(
-            handle_, op_, pref_, CUTENSOR_WORKSPACE_DEFAULT, &workspace_size_),
-        equation_);
-    if (options.workspace_limit != 0) workspace_size_ = options.workspace_limit;
-    CUEIN_CHECK(
-        cutensorCreatePlan(handle_, &plan_, op_, pref_, workspace_size_),
-        equation_);
+
+    if (options.kernel_rank) {
+      const int32_t rank = *options.kernel_rank;
+      CUEIN_CHECK(cutensorPlanPreferenceSetAttribute(
+                      handle_, pref_, CUTENSOR_PLAN_PREFERENCE_KERNEL_RANK,
+                      &rank, sizeof(rank)),
+                  equation_);
+    }
+
+    uint64_t estimate = 0;
+    CUEIN_CHECK(cutensorEstimateWorkspaceSize(
+                    handle_, op_, pref_, util::to_cutensor(options.workspace),
+                    &estimate),
+                equation_);
+    const uint64_t limit =
+        options.workspace_limit != 0 ? options.workspace_limit : estimate;
+    CUEIN_CHECK(cutensorCreatePlan(handle_, &plan_, op_, pref_, limit),
+                equation_);
+
+    // The estimate above is what planning was allowed to assume. Ask the plan
+    // what it actually needs, so a caller does not over-allocate.
+    CUEIN_CHECK(cutensorPlanGetAttribute(
+                    handle_, plan_, CUTENSOR_PLAN_REQUIRED_WORKSPACE,
+                    &workspace_size_, sizeof(workspace_size_)),
+                equation_);
   }
 
   void describe(cutensorTensorDescriptor_t* desc, const ModeOrder& modes,
@@ -255,6 +313,25 @@ Plan make_plan(const Context& context, const Equation& equation,
 Plan make_plan(const Context& context, const Equation& equation,
                const TensorRef& a, const TensorRef& d, PlanOptions options) {
   return Plan(std::make_unique<Plan::Impl>(context, equation, a, d, options));
+}
+
+std::shared_ptr<const Plan> cached_plan(const Context& context,
+                                        std::string_view equation,
+                                        const TensorRef& a, const TensorRef& b,
+                                        const TensorRef& d,
+                                        PlanOptions options) {
+  return context.impl().cached(plan_key(equation, options, {&a, &b, &d}), [&] {
+    return make_plan(context, Equation::parse(equation), a, b, d, options);
+  });
+}
+
+std::shared_ptr<const Plan> cached_plan(const Context& context,
+                                        std::string_view equation,
+                                        const TensorRef& a, const TensorRef& d,
+                                        PlanOptions options) {
+  return context.impl().cached(plan_key(equation, options, {&a, &d}), [&] {
+    return make_plan(context, Equation::parse(equation), a, d, options);
+  });
 }
 
 Workspace CudaAsyncAllocator::allocate(uint64_t bytes, StreamRef stream) const {

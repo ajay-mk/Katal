@@ -1,7 +1,9 @@
 #ifndef CUEIN_CONTEXT_HPP_
 #define CUEIN_CONTEXT_HPP_
 
+#include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 
 #include <cuein/scalar.hpp>
@@ -33,6 +35,18 @@ struct Config {
   /// Entries in cuTENSOR's own plan cache, which stores kernel selections so a
   /// repeated `make_plan` skips the search. cuTENSOR's own default is 64.
   int32_t plan_cache_capacity = 256;
+
+  /// Where to persist that cache between runs. Read when a Context is built
+  /// and written when it is destroyed, so the first run of a program pays for
+  /// kernel selection and later ones do not. Empty disables it. A missing file
+  /// is not an error; an unreadable one is ignored.
+  std::filesystem::path plan_cache_file;
+
+  /// Plans cuEin keeps keyed on the equation and the shapes. This covers what
+  /// cuTENSOR's cache cannot: its keys are the descriptors themselves, so they
+  /// must be rebuilt before it can be consulted. Only the one-shot `einsum`
+  /// path benefits; a hoisted Plan already skips all of it. 0 disables it.
+  std::size_t plan_cache_entries = 128;
 };
 
 /// Owns a cuTENSOR handle. Move-only; `execute` on a plan built from it is

@@ -296,6 +296,102 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
   REQUIRE(nonzero);
 }
 
+TEST_CASE("the plan cache returns the same plan for the same problem",
+          "[gpu]") {
+  if (!have_gpu()) SKIP("no CUDA device");
+
+  const std::array<std::int64_t, 2> ea{2, 3}, eb{3, 4}, ed{2, 4};
+  const std::array<std::int64_t, 2> wide_b{3, 5}, wide_d{2, 5};
+  const std::vector<double> a = ramp<double>(6, 1.0);
+  const std::vector<double> b = ramp<double>(20, 0.5);
+  const std::vector<double> d(10, 0.0);
+  DeviceBuffer<double> da(a), db(b), dd(d);
+
+  const cuein::TensorRef ar = cuein::make_ref(da.get(), cuein::Dtype::F64, ea);
+  const cuein::TensorRef br = cuein::make_ref(db.get(), cuein::Dtype::F64, eb);
+  const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::Dtype::F64, ed);
+  const cuein::TensorRef wbr =
+      cuein::make_ref(db.get(), cuein::Dtype::F64, wide_b);
+  const cuein::TensorRef wdr =
+      cuein::make_ref(dd.get(), cuein::Dtype::F64, wide_d);
+
+  const cuein::Context& context = cuein::default_context();
+  const auto first = cuein::cached_plan(context, "ij,jk->ik", ar, br, dr);
+  const auto again = cuein::cached_plan(context, "ij,jk->ik", ar, br, dr);
+  REQUIRE(first.get() == again.get());
+
+  // A different extent is a different problem, so it must not hit.
+  const auto wider = cuein::cached_plan(context, "ij,jk->ik", ar, wbr, wdr);
+  REQUIRE(wider.get() != first.get());
+
+  // So is a different equation. The transpose of a 2x3 is a 3x2.
+  const std::array<std::int64_t, 2> transposed{3, 2};
+  const cuein::TensorRef tr =
+      cuein::make_ref(dd.get(), cuein::Dtype::F64, transposed);
+  const auto permuted = cuein::cached_plan(context, "ij->ji", ar, tr);
+  REQUIRE(permuted.get() != first.get());
+}
+
+TEST_CASE("every algorithm gives the same answer", "[gpu]") {
+  if (!have_gpu()) SKIP("no CUDA device");
+
+  // The coupled-cluster shape, since that is where the algorithms differ.
+  const std::array<std::int64_t, 4> ea{2, 3, 4, 5}, eb{4, 5, 6, 7},
+      ed{2, 3, 6, 7};
+  const std::vector<double> a = ramp<double>(elements(ea), 1.0);
+  const std::vector<double> b = ramp<double>(elements(eb), 0.5);
+  const std::vector<double> zero(elements(ed), 0.0);
+
+  DeviceBuffer<double> da(a), db(b);
+  const cuein::Equation eq = cuein::Equation::parse("ijab,abcd->ijcd");
+
+  std::vector<double> reference;
+  for (const cuein::Algo algo :
+       {cuein::Algo::Default, cuein::Algo::DefaultPatient, cuein::Algo::Gett,
+        cuein::Algo::Tgett, cuein::Algo::Ttgt})
+    for (const cuein::WorkspacePreference workspace :
+         {cuein::WorkspacePreference::Min, cuein::WorkspacePreference::Default,
+          cuein::WorkspacePreference::Max}) {
+      DeviceBuffer<double> dd(zero);
+      const cuein::TensorRef ar =
+          cuein::make_ref(da.get(), cuein::Dtype::F64, ea);
+      const cuein::TensorRef br =
+          cuein::make_ref(db.get(), cuein::Dtype::F64, eb);
+      const cuein::TensorRef dr =
+          cuein::make_ref(dd.get(), cuein::Dtype::F64, ed);
+
+      cuein::PlanOptions options;
+      options.algo = algo;
+      options.workspace = workspace;
+
+      // Not every algorithm is available for every problem and workspace, and
+      // being told so is the correct outcome rather than a failure.
+      try {
+        const cuein::Plan plan =
+            cuein::make_plan(cuein::default_context(), eq, ar, br, dr, options);
+        void* scratch = nullptr;
+        if (plan.workspace_size() > 0)
+          REQUIRE(cudaMalloc(&scratch, plan.workspace_size()) == cudaSuccess);
+        plan.execute(1.0, da.get(), db.get(), 0.0, dd.get(), dd.get(),
+                     {scratch, plan.workspace_size()});
+        REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+        cudaFree(scratch);
+      } catch (const cuein::Error&) {
+        continue;
+      }
+
+      const std::vector<double> got = dd.to_host();
+      if (reference.empty()) {
+        reference = got;
+        continue;
+      }
+      for (std::size_t i = 0; i < got.size(); ++i)
+        REQUIRE_THAT(got[i], WithinRel(reference[i], 1e-12));
+    }
+
+  REQUIRE_FALSE(reference.empty());
+}
+
 TEST_CASE("gpu rejections name the problem", "[gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
 
