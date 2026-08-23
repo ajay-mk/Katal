@@ -80,6 +80,8 @@ else()
   message(STATUS "cuEin: HDF5 not found or disabled, skipping the reader")
 endif()
 
+add_subdirectory(examples)
+
 if(CUEIN_BUILD_TESTS)
   enable_testing()
   add_subdirectory(test)
