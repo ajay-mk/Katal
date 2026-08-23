@@ -33,6 +33,9 @@ enum class Errc {
   CutensorError,
   /// A CUDA runtime call failed.
   CudaError,
+  /// A file could not be read or written, or held something other than what
+  /// was asked for.
+  IoError,
 };
 
 inline const std::error_category& error_category() noexcept {
@@ -58,6 +61,8 @@ inline const std::error_category& error_category() noexcept {
           return "cuTENSOR error";
         case Errc::CudaError:
           return "CUDA error";
+        case Errc::IoError:
+          return "file I/O error";
       }
       return "unrecognized cuEin error";
     }

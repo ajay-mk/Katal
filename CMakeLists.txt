@@ -20,6 +20,7 @@ endif()
 option(CUEIN_BUILD_TESTS "Build cuEin tests" ON)
 option(CUEIN_BUILD_BENCHMARKS "Build cuEin benchmarks" OFF)
 option(CUEIN_ENABLE_JIT "Enable cuTENSOR JIT compilation" OFF)
+option(CUEIN_ENABLE_HDF5 "Build the optional HDF5 reader" ON)
 
 set(CUEIN_MAX_RANK
     12
@@ -55,6 +56,30 @@ target_include_directories(
   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_compile_features(cuein ${cuein_scope} cxx_std_20)
 
+# Optional and separate from the core library, so a consumer that does not read
+# HDF5 never links it. MODULE mode because the config package HDF5 ships names
+# its targets differently across versions.
+if(CUEIN_ENABLE_HDF5)
+  find_package(
+    HDF5 MODULE
+    COMPONENTS C
+    QUIET)
+endif()
+
+if(CUEIN_ENABLE_HDF5 AND HDF5_FOUND)
+  set(CUEIN_HAVE_HDF5 ON)
+  add_library(cuein_hdf5 src/hdf5.cpp)
+  add_library(cuEin::hdf5 ALIAS cuein_hdf5)
+  target_link_libraries(
+    cuein_hdf5
+    PUBLIC cuEin::cuein
+    PRIVATE HDF5::HDF5)
+  target_compile_features(cuein_hdf5 PUBLIC cxx_std_20)
+else()
+  set(CUEIN_HAVE_HDF5 OFF)
+  message(STATUS "cuEin: HDF5 not found or disabled, skipping the reader")
+endif()
+
 if(CUEIN_BUILD_TESTS)
   enable_testing()
   add_subdirectory(test)
@@ -64,6 +89,9 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 install(TARGETS cuein EXPORT cuEinTargets)
+if(CUEIN_HAVE_HDF5)
+  install(TARGETS cuein_hdf5 EXPORT cuEinTargets)
+endif()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES "${PROJECT_BINARY_DIR}/include/cuein/config.hpp"
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cuein)
