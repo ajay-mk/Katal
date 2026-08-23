@@ -4,7 +4,7 @@
 #include <cutensor.h>
 
 #include <cuein/error.hpp>
-#include <cuein/plan.hpp>
+#include <cuein/options.hpp>
 #include <cuein/tensor_ref.hpp>
 
 namespace cuein::util {

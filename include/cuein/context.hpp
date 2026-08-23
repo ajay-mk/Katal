@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 
+#include <cuein/options.hpp>
 #include <cuein/scalar.hpp>
 #include <cuein/tensor_ref.hpp>
 
@@ -41,6 +42,11 @@ struct Config {
   /// kernel selection and later ones do not. Empty disables it. A missing file
   /// is not an error; an unreadable one is ignored.
   std::filesystem::path plan_cache_file;
+
+  /// How every plan built through this context is planned, unless a call
+  /// overrides it. Setting a policy here rather than at each call site is what
+  /// keeps the one-shot `einsum` usable while still being tunable.
+  PlanOptions plan_options;
 
   /// Plans cuEin keeps keyed on the equation and the shapes. This covers what
   /// cuTENSOR's cache cannot: its keys are the descriptors themselves, so they

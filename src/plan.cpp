@@ -319,18 +319,24 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         std::string_view equation,
                                         const TensorRef& a, const TensorRef& b,
                                         const TensorRef& d,
-                                        PlanOptions options) {
-  return context.impl().cached(plan_key(equation, options, {&a, &b, &d}), [&] {
-    return make_plan(context, Equation::parse(equation), a, b, d, options);
+                                        std::optional<PlanOptions> options) {
+  // An unset override takes the context's policy, which is where a program
+  // sets planning once instead of at every call site.
+  const PlanOptions resolved =
+      options.value_or(context.impl().config().plan_options);
+  return context.impl().cached(plan_key(equation, resolved, {&a, &b, &d}), [&] {
+    return make_plan(context, Equation::parse(equation), a, b, d, resolved);
   });
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         std::string_view equation,
                                         const TensorRef& a, const TensorRef& d,
-                                        PlanOptions options) {
-  return context.impl().cached(plan_key(equation, options, {&a, &d}), [&] {
-    return make_plan(context, Equation::parse(equation), a, d, options);
+                                        std::optional<PlanOptions> options) {
+  const PlanOptions resolved =
+      options.value_or(context.impl().config().plan_options);
+  return context.impl().cached(plan_key(equation, resolved, {&a, &d}), [&] {
+    return make_plan(context, Equation::parse(equation), a, d, resolved);
   });
 }
 

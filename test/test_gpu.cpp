@@ -282,7 +282,7 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
   const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::Dtype::F64, ed);
 
   int allocations = 0, deallocations = 0;
-  cuein::einsum("ijab,abcd->ijcd", 1.0, ar, br, 0.0, dr, {},
+  cuein::einsum("ijab,abcd->ijcd", 1.0, ar, br, 0.0, dr, {}, {},
                 cuein::default_context(),
                 CountingAllocator{&allocations, &deallocations});
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
