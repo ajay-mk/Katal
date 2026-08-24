@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <random>
 #include <vector>
 
@@ -17,9 +18,10 @@
 using example::ein;
 using Tensor = example::RandomTensor<double>;
 
-int main() {
-  constexpr std::int64_t o = 8;   // occupied spin orbitals
-  constexpr std::int64_t v = 48;  // virtual spin orbitals
+int main(int argc, char** argv) {
+  // Orbital counts, overridable so a different size needs no rebuild.
+  const std::int64_t o = argc > 1 ? std::atoll(argv[1]) : 8;   // occupied
+  const std::int64_t v = argc > 2 ? std::atoll(argv[2]) : 48;  // virtual
 
   unsigned seed = 0;
   const auto next = [&seed] { return ++seed; };
