@@ -18,7 +18,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y doxygen
+          sudo apt-get install -y doxygen graphviz
           pip install mkdocs-material
 
       - name: Build Doxygen reference
