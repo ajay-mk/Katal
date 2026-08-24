@@ -56,3 +56,80 @@ jobs:
 
       - name: ccache statistics
         run: ccache --show-stats
+
+  # Without cuTENSOR the job above builds deviceein as an INTERFACE target, so
+  # src/plan.cpp and src/context.cpp are never compiled at all. This job
+  # installs cuTENSOR and the CUDA runtime headers so they are, on a machine
+  # that is not a developer's own. No GPU is involved: the library is plain C++
+  # against cuTENSOR's C API, and nvcc is here only because FindCUDAToolkit
+  # uses it to locate the toolkit root. The gpu-labelled cases need a device
+  # and are run locally.
+  cuda-build:
+    runs-on: ubuntu-latest
+    env:
+      CUDA_VERSION: '12-6'
+      CUDA_ROOT: /usr/local/cuda-12.6
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 200M
+    steps:
+      - uses: actions/checkout@v5
+
+      # cuBLASLt is cuTENSOR's only library dependency, so linking anything
+      # against libcutensor.so needs it present even though DeviceEin never calls
+      # it directly.
+      - name: Install cuTENSOR and the CUDA runtime
+        run: |
+          . /etc/os-release
+          distro="ubuntu${VERSION_ID//./}"
+          keyring=cuda-keyring_1.1-1_all.deb
+          wget -q "https://developer.download.nvidia.com/compute/cuda/repos/${distro}/x86_64/${keyring}"
+          sudo dpkg -i "$keyring"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build ccache catch2 libhdf5-dev \
+            "cuda-nvcc-${CUDA_VERSION}" "cuda-cudart-dev-${CUDA_VERSION}" \
+            "libcublas-dev-${CUDA_VERSION}" libcutensor-dev
+
+      - name: Cache compiler output
+        uses: actions/cache@v6
+        with:
+          path: .ccache
+          key: ccache-cuda-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-cuda-${{ runner.os }}-
+
+      # HDF5 on as well, since src/hdf5.cpp is otherwise never compiled either.
+      - name: Configure
+        run: >-
+          cmake -S . -B build -GNinja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCUDAToolkit_ROOT=${{ env.CUDA_ROOT }}
+          -DDEVICEEIN_ENABLE_HDF5=ON
+
+      # Guards against the whole point of this job being lost silently: if
+      # cuTENSOR were not found, CMake falls back to an INTERFACE library and
+      # everything below would still pass while compiling none of src/.
+      # find_library caches the result, so a miss reads as ...-NOTFOUND.
+      - name: Confirm cuTENSOR was found
+        run: |
+          if ! grep -q '^cuTENSOR_LIBRARY:FILEPATH=/' build/CMakeCache.txt; then
+            echo "cuTENSOR was not found; this job would compile nothing new" >&2
+            grep -i cutensor build/CMakeCache.txt || true
+            exit 1
+          fi
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Confirm an archive was actually produced
+        run: test -f build/libdeviceein.a
+
+      # The gpu-labelled cases need a device; they are run locally.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --label-exclude gpu
+
+      - name: Install and build a downstream consumer
+        run: tools/test-install.sh
+
+      - name: ccache statistics
+        run: ccache --show-stats
