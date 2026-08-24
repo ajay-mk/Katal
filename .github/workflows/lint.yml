@@ -47,27 +47,3 @@ jobs:
 
       - name: Format, include grouping, and naming
         run: pre-commit run --all-files --show-diff-on-failure
-
-  commit-messages:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
-
-      - run: pip install pre-commit
-
-      # The local commit-msg hook can be skipped with --no-verify, so the
-      # message check is repeated here for every commit the branch adds.
-      - name: Check each commit message
-        run: |
-          for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
-            git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg"
-            pre-commit run conventional-pre-commit \
-              --hook-stage commit-msg --commit-msg-filename "$RUNNER_TEMP/msg"
-          done

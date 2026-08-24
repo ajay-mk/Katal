@@ -31,11 +31,17 @@ foreach(src IN LISTS CUEIN_TEST_SOURCES)
   cmake_path(GET src STEM name)
   add_executable(${name} ${src})
   target_link_libraries(${name} PRIVATE cuEin::cuein Catch2::Catch2WithMain)
-  if(name MATCHES "test_gpu")
-    target_link_libraries(${name} PRIVATE CUDA::cudart)
-  endif()
   if(name MATCHES "test_hdf5")
     target_link_libraries(${name} PRIVATE cuEin::hdf5)
   endif()
-  catch_discover_tests(${name})
+  # The GPU cases SKIP themselves when no device is present, but Catch2's exit
+  # code for an all-skipped run does not match what catch_discover_tests sets as
+  # SKIP_RETURN_CODE, so CTest calls them failures. Labelling them lets a
+  # machine without a device exclude them: ctest --label-exclude gpu.
+  if(name MATCHES "test_gpu")
+    target_link_libraries(${name} PRIVATE CUDA::cudart)
+    catch_discover_tests(${name} PROPERTIES LABELS gpu)
+  else()
+    catch_discover_tests(${name})
+  endif()
 endforeach()
