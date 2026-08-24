@@ -74,6 +74,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # cuBLASLt is cuTENSOR's only library dependency, so linking anything
+      # against libcutensor.so needs it present even though cuEin never calls
+      # it directly.
       - name: Install cuTENSOR and the CUDA runtime
         run: |
           . /etc/os-release
@@ -85,7 +88,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             ninja-build ccache catch2 libhdf5-dev \
             "cuda-nvcc-${CUDA_VERSION}" "cuda-cudart-dev-${CUDA_VERSION}" \
-            libcutensor-dev
+            "libcublas-dev-${CUDA_VERSION}" libcutensor-dev
 
       - name: Cache compiler output
         uses: actions/cache@v6
