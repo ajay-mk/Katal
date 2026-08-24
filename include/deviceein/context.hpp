@@ -1,22 +1,22 @@
-#ifndef CUEIN_CONTEXT_HPP_
-#define CUEIN_CONTEXT_HPP_
+#ifndef DEVICEEIN_CONTEXT_HPP_
+#define DEVICEEIN_CONTEXT_HPP_
 
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
 
-#include <cuein/options.hpp>
-#include <cuein/scalar.hpp>
-#include <cuein/tensor_ref.hpp>
+#include <deviceein/options.hpp>
+#include <deviceein/scalar.hpp>
+#include <deviceein/tensor_ref.hpp>
 
 /// Declared exactly as the CUDA runtime declares it, so a cudaStream_t
 /// converts without this header pulling in <cuda_runtime.h>.
 struct CUstream_st;
 
-namespace cuein {
+namespace deviceein {
 
-/// A CUDA stream cuEin does not own, wrapped so that this header need not
+/// A CUDA stream DeviceEin does not own, wrapped so that this header need not
 /// include <cuda_runtime.h>. Constructs implicitly from a cudaStream_t; the
 /// default is the CUDA default stream.
 class StreamRef {
@@ -48,10 +48,11 @@ struct Config {
   /// keeps the one-shot `einsum` usable while still being tunable.
   PlanOptions plan_options;
 
-  /// Plans cuEin keeps keyed on the equation and the shapes. This covers what
-  /// cuTENSOR's cache cannot: its keys are the descriptors themselves, so they
-  /// must be rebuilt before it can be consulted. Only the one-shot `einsum`
-  /// path benefits; a hoisted Plan already skips all of it. 0 disables it.
+  /// Plans DeviceEin keeps keyed on the equation and the shapes. This covers
+  /// what cuTENSOR's cache cannot: its keys are the descriptors themselves, so
+  /// they must be rebuilt before it can be consulted. Only the one-shot
+  /// `einsum` path benefits; a hoisted Plan already skips all of it. 0 disables
+  /// it.
   std::size_t plan_cache_entries = 128;
 };
 
@@ -105,6 +106,6 @@ class Runtime {
 /// `finalize`.
 const Context& default_context();
 
-}  // namespace cuein
+}  // namespace deviceein
 
-#endif  // CUEIN_CONTEXT_HPP_
+#endif  // DEVICEEIN_CONTEXT_HPP_

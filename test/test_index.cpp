@@ -3,13 +3,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <cuein/util/index.hpp>
+#include <deviceein/util/index.hpp>
 
 // POSIX <strings.h> declares an `index` function at global scope, so the
 // using-declarations below sit inside each test case, where they hide it.
 
 TEST_CASE("index tokenization", "[index]") {
-  using cuein::util::Index;
+  using deviceein::util::Index;
 
   SECTION("labels are single characters by default") {
     REQUIRE(Index("ijab").rank() == 4);
@@ -40,7 +40,7 @@ TEST_CASE("index tokenization", "[index]") {
 // The order of these results is the mode order handed to the descriptor. Every
 // assertion here fails if an operator sorts.
 TEST_CASE("set operators preserve the left operand's order", "[index]") {
-  using cuein::util::Index;
+  using deviceein::util::Index;
 
   REQUIRE((Index("kji") & Index("ijk")) == Index("kji"));
   REQUIRE((Index("ji") | Index("kj")) == Index("jik"));
@@ -57,7 +57,7 @@ TEST_CASE("set operators preserve the left operand's order", "[index]") {
 }
 
 TEST_CASE("mode classification algebra", "[index]") {
-  using cuein::util::Index;
+  using deviceein::util::Index;
 
   SECTION("ij,jk->ik") {
     const Index a("ij"), b("jk"), d("ik");
@@ -87,9 +87,9 @@ TEST_CASE("mode classification algebra", "[index]") {
 }
 
 TEST_CASE("permute_from_to", "[index]") {
-  using cuein::util::Index;
-  using cuein::util::Permutation;
-  using cuein::util::permute_from_to;
+  using deviceein::util::Index;
+  using deviceein::util::Permutation;
+  using deviceein::util::permute_from_to;
 
   SECTION("identity") {
     REQUIRE(permute_from_to(Index("ijk"), Index("ijk")) ==
@@ -117,10 +117,10 @@ TEST_CASE("permute_from_to", "[index]") {
 }
 
 TEST_CASE("index capacity", "[index]") {
-  using cuein::util::Index;
+  using deviceein::util::Index;
 
   SECTION("rank beyond the configured maximum is rejected") {
-    const std::string too_many(cuein::max_rank + 1, 'a');
+    const std::string too_many(deviceein::max_rank + 1, 'a');
     REQUIRE_THROWS_AS(Index(too_many), std::length_error);
   }
 
@@ -131,13 +131,14 @@ TEST_CASE("index capacity", "[index]") {
 
 // Owning no memory is the point: an index survives as a constexpr variable,
 // not just as transient constant evaluation.
-constexpr cuein::util::Index occ_virt("ijab");
+constexpr deviceein::util::Index occ_virt("ijab");
 static_assert(occ_virt.rank() == 4);
 static_assert(occ_virt.contains('a'));
 
-static_assert(cuein::util::Index("ijab").rank() == 4);
-static_assert(cuein::util::Index(" i j k ").rank() == 3);
-static_assert((cuein::util::Index("ij") ^ cuein::util::Index("jk")) ==
-              cuein::util::Index("ik"));
-static_assert(cuein::util::permute_from_to(cuein::util::Index("ijk"),
-                                           cuein::util::Index("kij"))[0] == 2);
+static_assert(deviceein::util::Index("ijab").rank() == 4);
+static_assert(deviceein::util::Index(" i j k ").rank() == 3);
+static_assert((deviceein::util::Index("ij") ^ deviceein::util::Index("jk")) ==
+              deviceein::util::Index("ik"));
+static_assert(
+    deviceein::util::permute_from_to(deviceein::util::Index("ijk"),
+                                     deviceein::util::Index("kij"))[0] == 2);

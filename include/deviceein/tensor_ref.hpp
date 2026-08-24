@@ -1,15 +1,15 @@
-#ifndef CUEIN_TENSOR_REF_HPP_
-#define CUEIN_TENSOR_REF_HPP_
+#ifndef DEVICEEIN_TENSOR_REF_HPP_
+#define DEVICEEIN_TENSOR_REF_HPP_
 
 #include <complex>
 #include <cstdint>
 #include <span>
 
-#include <cuein/config.hpp>
-#include <cuein/error.hpp>
-#include <cuein/util/index.hpp>
+#include <deviceein/config.hpp>
+#include <deviceein/error.hpp>
+#include <deviceein/util/index.hpp>
 
-namespace cuein {
+namespace deviceein {
 
 enum class Dtype { F32, F64, C32, C64, F16, Bf16 };
 
@@ -48,7 +48,7 @@ enum class Layout { RowMajor, ColumnMajor };
 /// descriptor allocates nothing.
 using Extents = util::StaticVector<std::int64_t, max_rank>;
 
-/// A tensor cuEin does not own: a pointer plus a shape. Trivially copyable,
+/// A tensor DeviceEin does not own: a pointer plus a shape. Trivially copyable,
 /// passed by value.
 struct TensorRef {
   /// Device memory, owned by the caller and required to outlive every use.
@@ -136,6 +136,6 @@ inline ModeOrder mode_order(const util::Index& modes, const TensorRef& t) {
   return m;
 }
 
-}  // namespace cuein
+}  // namespace deviceein
 
-#endif  // CUEIN_TENSOR_REF_HPP_
+#endif  // DEVICEEIN_TENSOR_REF_HPP_

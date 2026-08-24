@@ -1,5 +1,5 @@
-#ifndef CUEIN_EXAMPLES_UTIL_HPP_
-#define CUEIN_EXAMPLES_UTIL_HPP_
+#ifndef DEVICEEIN_EXAMPLES_UTIL_HPP_
+#define DEVICEEIN_EXAMPLES_UTIL_HPP_
 
 // Scaffolding shared by the examples, kept out of them so each file reads as
 // the equations it evaluates and little else.
@@ -15,11 +15,11 @@
 
 #include <cuda_runtime.h>
 
-#include <cuein/plan.hpp>
+#include <deviceein/plan.hpp>
 
 namespace example {
 
-/// A tensor on the device filled with random values. cuEin never allocates
+/// A tensor on the device filled with random values. DeviceEin never allocates
 /// device memory, so owning it is the caller's job.
 template <class T>
 class RandomTensor {
@@ -48,10 +48,10 @@ class RandomTensor {
   RandomTensor(const RandomTensor&) = delete;
   RandomTensor& operator=(const RandomTensor&) = delete;
 
-  /// Converts to the non-owning view cuEin takes, so a RandomTensor can be
+  /// Converts to the non-owning view DeviceEin takes, so a RandomTensor can be
   /// passed straight to a contraction. It must outlive the call.
-  operator cuein::TensorRef() const {  // NOLINT: implicit on purpose
-    return cuein::make_ref(data_, cuein::dtype_of<T>, extent_);
+  operator deviceein::TensorRef() const {  // NOLINT: implicit on purpose
+    return deviceein::make_ref(data_, deviceein::dtype_of<T>, extent_);
   }
 
   T scalar() const {
@@ -70,16 +70,16 @@ class RandomTensor {
 inline double flops = 0.0;
 
 /// Two operations per contracted element, over the product of every distinct
-/// extent in the equation. The equation is parsed with cuEin's own parser, so
-/// the count cannot drift from what was actually run.
-inline double count(std::string_view equation, const cuein::TensorRef& a,
-                    const cuein::TensorRef& b) {
-  const cuein::Equation parsed = cuein::Equation::parse(equation);
-  cuein::util::Index all = parsed.result();
+/// extent in the equation. The equation is parsed with DeviceEin's own parser,
+/// so the count cannot drift from what was actually run.
+inline double count(std::string_view equation, const deviceein::TensorRef& a,
+                    const deviceein::TensorRef& b) {
+  const deviceein::Equation parsed = deviceein::Equation::parse(equation);
+  deviceein::util::Index all = parsed.result();
   for (std::size_t k = 0; k < parsed.n_operands(); ++k)
     all = all | parsed.operand(k);
 
-  const auto extent_of = [&](cuein::util::Label label) -> std::int64_t {
+  const auto extent_of = [&](deviceein::util::Label label) -> std::int64_t {
     for (std::size_t p = 0; p < parsed.operand(0).rank(); ++p)
       if (parsed.operand(0)[p] == label) return a.extent[p];
     for (std::size_t p = 0; p < parsed.operand(1).rank(); ++p)
@@ -93,21 +93,21 @@ inline double count(std::string_view equation, const cuein::TensorRef& a,
   return product;
 }
 
-/// Shorthand for cuein::einsum that also tallies the work. A plain alias will
-/// not do: einsum is an overload set, not a single function.
-inline void ein(std::string_view equation, cuein::Scalar alpha,
-                const cuein::TensorRef& a, const cuein::TensorRef& b,
-                cuein::Scalar beta, const cuein::TensorRef& d) {
+/// Shorthand for deviceein::einsum that also tallies the work. A plain alias
+/// will not do: einsum is an overload set, not a single function.
+inline void ein(std::string_view equation, deviceein::Scalar alpha,
+                const deviceein::TensorRef& a, const deviceein::TensorRef& b,
+                deviceein::Scalar beta, const deviceein::TensorRef& d) {
   flops += count(equation, a, b);
-  cuein::einsum(equation, alpha, a, b, beta, d);
+  deviceein::einsum(equation, alpha, a, b, beta, d);
 }
 
 /// The one-operand form: a permutation or a copy, which moves data rather than
 /// doing arithmetic, so it adds nothing to the tally.
-inline void ein(std::string_view equation, cuein::Scalar alpha,
-                const cuein::TensorRef& a, cuein::Scalar beta,
-                const cuein::TensorRef& d) {
-  cuein::einsum(equation, alpha, a, beta, d);
+inline void ein(std::string_view equation, deviceein::Scalar alpha,
+                const deviceein::TensorRef& a, deviceein::Scalar beta,
+                const deviceein::TensorRef& d) {
+  deviceein::einsum(equation, alpha, a, beta, d);
 }
 
 /// Wall time on the device, in seconds.
@@ -145,4 +145,4 @@ inline void report(const char* what, double seconds) {
 
 }  // namespace example
 
-#endif  // CUEIN_EXAMPLES_UTIL_HPP_
+#endif  // DEVICEEIN_EXAMPLES_UTIL_HPP_

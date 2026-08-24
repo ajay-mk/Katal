@@ -1,14 +1,14 @@
 # A stand-in for a downstream project. It is built out of tree against an
-# installed cuEin, which is the only way to find out whether the install rules
-# and the exported config actually work.
+# installed DeviceEin, which is the only way to find out whether the install
+# rules and the exported config actually work.
 cmake_minimum_required(VERSION 3.24)
-project(cuein_consumer LANGUAGES CXX)
+project(deviceein_consumer LANGUAGES CXX)
 
-find_package(cuEin CONFIG REQUIRED)
+find_package(DeviceEin CONFIG REQUIRED)
 
 add_executable(consumer main.cpp)
-target_link_libraries(consumer PRIVATE cuEin::cuein)
+target_link_libraries(consumer PRIVATE DeviceEin::deviceein)
 
-if(cuEin_HAS_CUTENSOR)
+if(DeviceEin_HAS_CUTENSOR)
   target_compile_definitions(consumer PRIVATE CONSUMER_HAS_BACKEND)
 endif()

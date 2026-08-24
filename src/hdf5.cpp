@@ -2,10 +2,10 @@
 
 #include <hdf5.h>
 
-#include <cuein/error.hpp>
-#include <cuein/io/hdf5.hpp>
+#include <deviceein/error.hpp>
+#include <deviceein/io/hdf5.hpp>
 
-namespace cuein::io {
+namespace deviceein::io {
 namespace {
 
 /// Closes an HDF5 identifier on scope exit. The C API hands out integer
@@ -163,4 +163,4 @@ void write(const std::filesystem::path& file, std::string_view dataset,
                 "cannot write dataset \"" + name + "\"");
 }
 
-}  // namespace cuein::io
+}  // namespace deviceein::io

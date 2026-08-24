@@ -1,15 +1,15 @@
-#ifndef CUEIN_SCALAR_HPP_
-#define CUEIN_SCALAR_HPP_
+#ifndef DEVICEEIN_SCALAR_HPP_
+#define DEVICEEIN_SCALAR_HPP_
 
 #include <array>
 #include <complex>
 #include <cstddef>
 #include <cstring>
 
-#include <cuein/error.hpp>
-#include <cuein/tensor_ref.hpp>
+#include <deviceein/error.hpp>
+#include <deviceein/tensor_ref.hpp>
 
-namespace cuein {
+namespace deviceein {
 
 /// An alpha or beta value, kept type-erased so the ABI does not change with the
 /// storage type and so the compute type may differ from it. Everything is held
@@ -79,6 +79,6 @@ class ScalarBytes {
 
 }  // namespace util
 
-}  // namespace cuein
+}  // namespace deviceein
 
-#endif  // CUEIN_SCALAR_HPP_
+#endif  // DEVICEEIN_SCALAR_HPP_

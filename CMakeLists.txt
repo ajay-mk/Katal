@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(
-  cuEin
+  DeviceEin
   VERSION 0.1.0
   LANGUAGES CXX)
 
@@ -17,19 +17,20 @@ if(APPLE AND NOT CMAKE_OSX_SYSROOT)
     OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
 
-option(CUEIN_BUILD_TESTS "Build cuEin tests" ON)
-option(CUEIN_BUILD_BENCHMARKS "Build cuEin benchmarks" OFF)
-option(CUEIN_ENABLE_JIT "Enable cuTENSOR JIT compilation" OFF)
-option(CUEIN_ENABLE_HDF5 "Build the optional HDF5 reader" ON)
+option(DEVICEEIN_BUILD_TESTS "Build DeviceEin tests" ON)
+option(DEVICEEIN_BUILD_BENCHMARKS "Build DeviceEin benchmarks" OFF)
+option(DEVICEEIN_ENABLE_JIT "Enable cuTENSOR JIT compilation" OFF)
+option(DEVICEEIN_ENABLE_HDF5 "Build the optional HDF5 reader" ON)
 
-set(CUEIN_MAX_RANK
+set(DEVICEEIN_MAX_RANK
     12
     CACHE
       STRING
-      "Largest tensor rank cuEin can describe; the inline capacity of an index")
+      "Largest tensor rank DeviceEin can describe; the inline capacity of an index"
+)
 
 configure_file(cmake/config.hpp.in
-               "${PROJECT_BINARY_DIR}/include/cuein/config.hpp" @ONLY)
+               "${PROJECT_BINARY_DIR}/include/deviceein/config.hpp" @ONLY)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(CUDAToolkit QUIET)
@@ -39,50 +40,52 @@ find_package(cuTENSOR QUIET)
 # still usable and testable as headers alone. The cuTENSOR glue is compiled, so
 # callers never include <cutensor.h>.
 if(cuTENSOR_FOUND AND CUDAToolkit_FOUND)
-  set(CUEIN_HAVE_CUTENSOR ON)
-  set(cuein_scope PUBLIC)
-  add_library(cuein src/context.cpp src/plan.cpp)
-  target_link_libraries(cuein PRIVATE cuEin::cutensor CUDA::cudart)
+  set(DEVICEEIN_HAVE_CUTENSOR ON)
+  set(deviceein_scope PUBLIC)
+  add_library(deviceein src/context.cpp src/plan.cpp)
+  target_link_libraries(deviceein PRIVATE DeviceEin::cutensor CUDA::cudart)
 else()
-  set(CUEIN_HAVE_CUTENSOR OFF)
-  set(cuein_scope INTERFACE)
-  add_library(cuein INTERFACE)
-  message(STATUS "cuEin: cuTENSOR not found, building the header-only layers")
+  set(DEVICEEIN_HAVE_CUTENSOR OFF)
+  set(deviceein_scope INTERFACE)
+  add_library(deviceein INTERFACE)
+  message(
+    STATUS "DeviceEin: cuTENSOR not found, building the header-only layers")
 endif()
 
-add_library(cuEin::cuein ALIAS cuein)
+add_library(DeviceEin::deviceein ALIAS deviceein)
 target_include_directories(
-  cuein ${cuein_scope} $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  deviceein ${deviceein_scope}
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include> $<INSTALL_INTERFACE:include>)
-target_compile_features(cuein ${cuein_scope} cxx_std_20)
+target_compile_features(deviceein ${deviceein_scope} cxx_std_20)
 
 # Optional and separate from the core library, so a consumer that does not read
 # HDF5 never links it. MODULE mode because the config package HDF5 ships names
 # its targets differently across versions.
-if(CUEIN_ENABLE_HDF5)
+if(DEVICEEIN_ENABLE_HDF5)
   find_package(
     HDF5 MODULE
     COMPONENTS C
     QUIET)
 endif()
 
-if(CUEIN_ENABLE_HDF5 AND HDF5_FOUND)
-  set(CUEIN_HAVE_HDF5 ON)
-  add_library(cuein_hdf5 src/hdf5.cpp)
-  add_library(cuEin::hdf5 ALIAS cuein_hdf5)
+if(DEVICEEIN_ENABLE_HDF5 AND HDF5_FOUND)
+  set(DEVICEEIN_HAVE_HDF5 ON)
+  add_library(deviceein_hdf5 src/hdf5.cpp)
+  add_library(DeviceEin::hdf5 ALIAS deviceein_hdf5)
   target_link_libraries(
-    cuein_hdf5
-    PUBLIC cuEin::cuein
+    deviceein_hdf5
+    PUBLIC DeviceEin::deviceein
     PRIVATE HDF5::HDF5)
-  target_compile_features(cuein_hdf5 PUBLIC cxx_std_20)
+  target_compile_features(deviceein_hdf5 PUBLIC cxx_std_20)
 else()
-  set(CUEIN_HAVE_HDF5 OFF)
-  message(STATUS "cuEin: HDF5 not found or disabled, skipping the reader")
+  set(DEVICEEIN_HAVE_HDF5 OFF)
+  message(STATUS "DeviceEin: HDF5 not found or disabled, skipping the reader")
 endif()
 
 add_subdirectory(examples)
 
-if(CUEIN_BUILD_TESTS)
+if(DEVICEEIN_BUILD_TESTS)
   enable_testing()
   add_subdirectory(test)
 endif()
@@ -90,29 +93,29 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-install(TARGETS cuein EXPORT cuEinTargets)
-if(CUEIN_HAVE_HDF5)
-  install(TARGETS cuein_hdf5 EXPORT cuEinTargets)
+install(TARGETS deviceein EXPORT DeviceEinTargets)
+if(DEVICEEIN_HAVE_HDF5)
+  install(TARGETS deviceein_hdf5 EXPORT DeviceEinTargets)
 endif()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES "${PROJECT_BINARY_DIR}/include/cuein/config.hpp"
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cuein)
+install(FILES "${PROJECT_BINARY_DIR}/include/deviceein/config.hpp"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/deviceein)
 install(
-  EXPORT cuEinTargets
-  NAMESPACE cuEin::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cuEin)
+  EXPORT DeviceEinTargets
+  NAMESPACE DeviceEin::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DeviceEin)
 install(FILES cmake/FindcuTENSOR.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cuEin)
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DeviceEin)
 
 configure_package_config_file(
-  cmake/cuEinConfig.cmake.in "${PROJECT_BINARY_DIR}/cuEinConfig.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cuEin)
+  cmake/DeviceEinConfig.cmake.in "${PROJECT_BINARY_DIR}/DeviceEinConfig.cmake"
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DeviceEin)
 
 # 0.x minor versions are not compatible with one another.
 write_basic_package_version_file(
-  "${PROJECT_BINARY_DIR}/cuEinConfigVersion.cmake"
+  "${PROJECT_BINARY_DIR}/DeviceEinConfigVersion.cmake"
   COMPATIBILITY SameMinorVersion)
 
-install(FILES "${PROJECT_BINARY_DIR}/cuEinConfig.cmake"
-              "${PROJECT_BINARY_DIR}/cuEinConfigVersion.cmake"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cuEin)
+install(FILES "${PROJECT_BINARY_DIR}/DeviceEinConfig.cmake"
+              "${PROJECT_BINARY_DIR}/DeviceEinConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DeviceEin)

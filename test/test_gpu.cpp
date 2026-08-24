@@ -10,7 +10,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cuda_runtime.h>
 
-#include <cuein/plan.hpp>
+#include <deviceein/plan.hpp>
 
 using Catch::Matchers::WithinRel;
 
@@ -74,24 +74,27 @@ void agrees_with_reference(std::string_view equation,
   const std::vector<T> d0 = ramp<T>(elements(ed), 0.25);
 
   DeviceBuffer<T> da(a), db(b), dd(d0);
-  const cuein::TensorRef ar = cuein::make_ref(da.get(), cuein::dtype_of<T>, ea);
-  const cuein::TensorRef br = cuein::make_ref(db.get(), cuein::dtype_of<T>, eb);
-  const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::dtype_of<T>, ed);
+  const deviceein::TensorRef ar =
+      deviceein::make_ref(da.get(), deviceein::dtype_of<T>, ea);
+  const deviceein::TensorRef br =
+      deviceein::make_ref(db.get(), deviceein::dtype_of<T>, eb);
+  const deviceein::TensorRef dr =
+      deviceein::make_ref(dd.get(), deviceein::dtype_of<T>, ed);
 
-  cuein::einsum(equation, alpha, ar, br, beta, dr);
+  deviceein::einsum(equation, alpha, ar, br, beta, dr);
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
   const std::vector<T> got = dd.to_host();
 
   std::vector<T> want = d0;
-  const cuein::TensorRef ha =
-      cuein::make_ref(const_cast<T*>(a.data()), cuein::dtype_of<T>, ea);
-  const cuein::TensorRef hb =
-      cuein::make_ref(const_cast<T*>(b.data()), cuein::dtype_of<T>, eb);
-  const cuein::TensorRef hd =
-      cuein::make_ref(want.data(), cuein::dtype_of<T>, ed);
-  const std::array<cuein::TensorRef, 2> in{ha, hb};
-  cuein::test::reference_einsum<T>(cuein::Equation::parse(equation), alpha, in,
-                                   beta, hd);
+  const deviceein::TensorRef ha =
+      deviceein::make_ref(const_cast<T*>(a.data()), deviceein::dtype_of<T>, ea);
+  const deviceein::TensorRef hb =
+      deviceein::make_ref(const_cast<T*>(b.data()), deviceein::dtype_of<T>, eb);
+  const deviceein::TensorRef hd =
+      deviceein::make_ref(want.data(), deviceein::dtype_of<T>, ed);
+  const std::array<deviceein::TensorRef, 2> in{ha, hb};
+  deviceein::test::reference_einsum<T>(deviceein::Equation::parse(equation),
+                                       alpha, in, beta, hd);
 
   REQUIRE(got.size() == want.size());
   for (std::size_t i = 0; i < got.size(); ++i)
@@ -151,21 +154,23 @@ void unary_agrees_with_reference(std::string_view equation,
   const std::vector<T> d0 = ramp<T>(elements(ed), 0.25);
 
   DeviceBuffer<T> da(a), dd(d0);
-  const cuein::TensorRef ar = cuein::make_ref(da.get(), cuein::dtype_of<T>, ea);
-  const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::dtype_of<T>, ed);
+  const deviceein::TensorRef ar =
+      deviceein::make_ref(da.get(), deviceein::dtype_of<T>, ea);
+  const deviceein::TensorRef dr =
+      deviceein::make_ref(dd.get(), deviceein::dtype_of<T>, ed);
 
-  cuein::einsum(equation, alpha, ar, beta, dr);
+  deviceein::einsum(equation, alpha, ar, beta, dr);
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
   const std::vector<T> got = dd.to_host();
 
   std::vector<T> want = d0;
-  const cuein::TensorRef ha =
-      cuein::make_ref(const_cast<T*>(a.data()), cuein::dtype_of<T>, ea);
-  const cuein::TensorRef hd =
-      cuein::make_ref(want.data(), cuein::dtype_of<T>, ed);
-  const std::array<cuein::TensorRef, 1> in{ha};
-  cuein::test::reference_einsum<T>(cuein::Equation::parse(equation), alpha, in,
-                                   beta, hd);
+  const deviceein::TensorRef ha =
+      deviceein::make_ref(const_cast<T*>(a.data()), deviceein::dtype_of<T>, ea);
+  const deviceein::TensorRef hd =
+      deviceein::make_ref(want.data(), deviceein::dtype_of<T>, ed);
+  const std::array<deviceein::TensorRef, 1> in{ha};
+  deviceein::test::reference_einsum<T>(deviceein::Equation::parse(equation),
+                                       alpha, in, beta, hd);
 
   REQUIRE(got.size() == want.size());
   for (std::size_t i = 0; i < got.size(); ++i)
@@ -221,18 +226,21 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   const std::vector<double> zero(8, 0.0);
 
   DeviceBuffer<double> da(a), db(b), dd(zero);
-  const cuein::TensorRef ar = cuein::make_ref(da.get(), cuein::Dtype::F64, ea);
-  const cuein::TensorRef br = cuein::make_ref(db.get(), cuein::Dtype::F64, eb);
-  const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::Dtype::F64, ed);
+  const deviceein::TensorRef ar =
+      deviceein::make_ref(da.get(), deviceein::Dtype::F64, ea);
+  const deviceein::TensorRef br =
+      deviceein::make_ref(db.get(), deviceein::Dtype::F64, eb);
+  const deviceein::TensorRef dr =
+      deviceein::make_ref(dd.get(), deviceein::Dtype::F64, ed);
 
-  const cuein::Equation eq = cuein::Equation::parse("ij,jk->ik");
-  const cuein::Plan plan =
-      cuein::make_plan(cuein::default_context(), eq, ar, br, dr);
+  const deviceein::Equation eq = deviceein::Equation::parse("ij,jk->ik");
+  const deviceein::Plan plan =
+      deviceein::make_plan(deviceein::default_context(), eq, ar, br, dr);
 
   void* scratch = nullptr;
   if (plan.workspace_size() > 0)
     REQUIRE(cudaMalloc(&scratch, plan.workspace_size()) == cudaSuccess);
-  const cuein::Workspace ws{scratch, plan.workspace_size()};
+  const deviceein::Workspace ws{scratch, plan.workspace_size()};
 
   // beta = 1 twice over a zeroed output must give exactly twice one pass.
   plan.execute(1.0, da.get(), db.get(), 0.0, dd.get(), dd.get(), ws);
@@ -257,18 +265,18 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
   struct CountingAllocator {
     int* allocations;
     int* deallocations;
-    cuein::Workspace allocate(std::uint64_t bytes, cuein::StreamRef) {
+    deviceein::Workspace allocate(std::uint64_t bytes, deviceein::StreamRef) {
       ++*allocations;
       void* ptr = nullptr;
       REQUIRE(cudaMalloc(&ptr, bytes) == cudaSuccess);
       return {ptr, bytes};
     }
-    void deallocate(cuein::Workspace workspace, cuein::StreamRef) {
+    void deallocate(deviceein::Workspace workspace, deviceein::StreamRef) {
       ++*deallocations;
       cudaFree(workspace.ptr);
     }
   };
-  static_assert(cuein::WorkspaceAllocator<CountingAllocator>);
+  static_assert(deviceein::WorkspaceAllocator<CountingAllocator>);
 
   const std::array<std::int64_t, 4> ea{2, 3, 4, 5}, eb{4, 5, 6, 7},
       ed{2, 3, 6, 7};
@@ -277,14 +285,17 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
   const std::vector<double> d(elements(ed), 0.0);
   DeviceBuffer<double> da(a), db(b), dd(d);
 
-  const cuein::TensorRef ar = cuein::make_ref(da.get(), cuein::Dtype::F64, ea);
-  const cuein::TensorRef br = cuein::make_ref(db.get(), cuein::Dtype::F64, eb);
-  const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::Dtype::F64, ed);
+  const deviceein::TensorRef ar =
+      deviceein::make_ref(da.get(), deviceein::Dtype::F64, ea);
+  const deviceein::TensorRef br =
+      deviceein::make_ref(db.get(), deviceein::Dtype::F64, eb);
+  const deviceein::TensorRef dr =
+      deviceein::make_ref(dd.get(), deviceein::Dtype::F64, ed);
 
   int allocations = 0, deallocations = 0;
-  cuein::einsum("ijab,abcd->ijcd", 1.0, ar, br, 0.0, dr, {}, {},
-                cuein::default_context(),
-                CountingAllocator{&allocations, &deallocations});
+  deviceein::einsum("ijab,abcd->ijcd", 1.0, ar, br, 0.0, dr, {}, {},
+                    deviceein::default_context(),
+                    CountingAllocator{&allocations, &deallocations});
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
 
   // The plan may need no scratch, but if it allocated it must have released.
@@ -307,28 +318,31 @@ TEST_CASE("the plan cache returns the same plan for the same problem",
   const std::vector<double> d(10, 0.0);
   DeviceBuffer<double> da(a), db(b), dd(d);
 
-  const cuein::TensorRef ar = cuein::make_ref(da.get(), cuein::Dtype::F64, ea);
-  const cuein::TensorRef br = cuein::make_ref(db.get(), cuein::Dtype::F64, eb);
-  const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::Dtype::F64, ed);
-  const cuein::TensorRef wbr =
-      cuein::make_ref(db.get(), cuein::Dtype::F64, wide_b);
-  const cuein::TensorRef wdr =
-      cuein::make_ref(dd.get(), cuein::Dtype::F64, wide_d);
+  const deviceein::TensorRef ar =
+      deviceein::make_ref(da.get(), deviceein::Dtype::F64, ea);
+  const deviceein::TensorRef br =
+      deviceein::make_ref(db.get(), deviceein::Dtype::F64, eb);
+  const deviceein::TensorRef dr =
+      deviceein::make_ref(dd.get(), deviceein::Dtype::F64, ed);
+  const deviceein::TensorRef wbr =
+      deviceein::make_ref(db.get(), deviceein::Dtype::F64, wide_b);
+  const deviceein::TensorRef wdr =
+      deviceein::make_ref(dd.get(), deviceein::Dtype::F64, wide_d);
 
-  const cuein::Context& context = cuein::default_context();
-  const auto first = cuein::cached_plan(context, "ij,jk->ik", ar, br, dr);
-  const auto again = cuein::cached_plan(context, "ij,jk->ik", ar, br, dr);
+  const deviceein::Context& context = deviceein::default_context();
+  const auto first = deviceein::cached_plan(context, "ij,jk->ik", ar, br, dr);
+  const auto again = deviceein::cached_plan(context, "ij,jk->ik", ar, br, dr);
   REQUIRE(first.get() == again.get());
 
   // A different extent is a different problem, so it must not hit.
-  const auto wider = cuein::cached_plan(context, "ij,jk->ik", ar, wbr, wdr);
+  const auto wider = deviceein::cached_plan(context, "ij,jk->ik", ar, wbr, wdr);
   REQUIRE(wider.get() != first.get());
 
   // So is a different equation. The transpose of a 2x3 is a 3x2.
   const std::array<std::int64_t, 2> transposed{3, 2};
-  const cuein::TensorRef tr =
-      cuein::make_ref(dd.get(), cuein::Dtype::F64, transposed);
-  const auto permuted = cuein::cached_plan(context, "ij->ji", ar, tr);
+  const deviceein::TensorRef tr =
+      deviceein::make_ref(dd.get(), deviceein::Dtype::F64, transposed);
+  const auto permuted = deviceein::cached_plan(context, "ij->ji", ar, tr);
   REQUIRE(permuted.get() != first.get());
 }
 
@@ -343,32 +357,33 @@ TEST_CASE("every algorithm gives the same answer", "[gpu]") {
   const std::vector<double> zero(elements(ed), 0.0);
 
   DeviceBuffer<double> da(a), db(b);
-  const cuein::Equation eq = cuein::Equation::parse("ijab,abcd->ijcd");
+  const deviceein::Equation eq = deviceein::Equation::parse("ijab,abcd->ijcd");
 
   std::vector<double> reference;
-  for (const cuein::Algo algo :
-       {cuein::Algo::Default, cuein::Algo::DefaultPatient, cuein::Algo::Gett,
-        cuein::Algo::Tgett, cuein::Algo::Ttgt})
-    for (const cuein::WorkspacePreference workspace :
-         {cuein::WorkspacePreference::Min, cuein::WorkspacePreference::Default,
-          cuein::WorkspacePreference::Max}) {
+  for (const deviceein::Algo algo :
+       {deviceein::Algo::Default, deviceein::Algo::DefaultPatient,
+        deviceein::Algo::Gett, deviceein::Algo::Tgett, deviceein::Algo::Ttgt})
+    for (const deviceein::WorkspacePreference workspace :
+         {deviceein::WorkspacePreference::Min,
+          deviceein::WorkspacePreference::Default,
+          deviceein::WorkspacePreference::Max}) {
       DeviceBuffer<double> dd(zero);
-      const cuein::TensorRef ar =
-          cuein::make_ref(da.get(), cuein::Dtype::F64, ea);
-      const cuein::TensorRef br =
-          cuein::make_ref(db.get(), cuein::Dtype::F64, eb);
-      const cuein::TensorRef dr =
-          cuein::make_ref(dd.get(), cuein::Dtype::F64, ed);
+      const deviceein::TensorRef ar =
+          deviceein::make_ref(da.get(), deviceein::Dtype::F64, ea);
+      const deviceein::TensorRef br =
+          deviceein::make_ref(db.get(), deviceein::Dtype::F64, eb);
+      const deviceein::TensorRef dr =
+          deviceein::make_ref(dd.get(), deviceein::Dtype::F64, ed);
 
-      cuein::PlanOptions options;
+      deviceein::PlanOptions options;
       options.algo = algo;
       options.workspace = workspace;
 
       // Not every algorithm is available for every problem and workspace, and
       // being told so is the correct outcome rather than a failure.
       try {
-        const cuein::Plan plan =
-            cuein::make_plan(cuein::default_context(), eq, ar, br, dr, options);
+        const deviceein::Plan plan = deviceein::make_plan(
+            deviceein::default_context(), eq, ar, br, dr, options);
         void* scratch = nullptr;
         if (plan.workspace_size() > 0)
           REQUIRE(cudaMalloc(&scratch, plan.workspace_size()) == cudaSuccess);
@@ -376,7 +391,7 @@ TEST_CASE("every algorithm gives the same answer", "[gpu]") {
                      {scratch, plan.workspace_size()});
         REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
         cudaFree(scratch);
-      } catch (const cuein::Error&) {
+      } catch (const deviceein::Error&) {
         continue;
       }
 
@@ -401,18 +416,22 @@ TEST_CASE("gpu rejections name the problem", "[gpu]") {
   const std::vector<double> d(8, 0.0);
   DeviceBuffer<double> da(a), db(b), dd(d);
 
-  const cuein::TensorRef ar = cuein::make_ref(da.get(), cuein::Dtype::F64, ea);
-  const cuein::TensorRef br = cuein::make_ref(db.get(), cuein::Dtype::F64, eb);
-  const cuein::TensorRef dr = cuein::make_ref(dd.get(), cuein::Dtype::F64, ed);
+  const deviceein::TensorRef ar =
+      deviceein::make_ref(da.get(), deviceein::Dtype::F64, ea);
+  const deviceein::TensorRef br =
+      deviceein::make_ref(db.get(), deviceein::Dtype::F64, eb);
+  const deviceein::TensorRef dr =
+      deviceein::make_ref(dd.get(), deviceein::Dtype::F64, ed);
 
   // j is 3 in the first operand and 5 in the second.
-  REQUIRE_THROWS_AS(cuein::einsum("ij,jk->ik", 1.0, ar, br, 0.0, dr),
-                    cuein::Error);
+  REQUIRE_THROWS_AS(deviceein::einsum("ij,jk->ik", 1.0, ar, br, 0.0, dr),
+                    deviceein::Error);
   // A free reduction beside a contraction stays rejected.
-  REQUIRE_THROWS_AS(cuein::einsum("ijk,kl->il", 1.0, ar, br, 0.0, dr),
-                    cuein::Error);
+  REQUIRE_THROWS_AS(deviceein::einsum("ijk,kl->il", 1.0, ar, br, 0.0, dr),
+                    deviceein::Error);
   // Arity mismatches between the equation and the overload are caught.
-  REQUIRE_THROWS_AS(cuein::einsum("ij,jk->ik", 1.0, ar, 0.0, dr), cuein::Error);
-  REQUIRE_THROWS_AS(cuein::einsum("ij->ji", 1.0, ar, br, 0.0, dr),
-                    cuein::Error);
+  REQUIRE_THROWS_AS(deviceein::einsum("ij,jk->ik", 1.0, ar, 0.0, dr),
+                    deviceein::Error);
+  REQUIRE_THROWS_AS(deviceein::einsum("ij->ji", 1.0, ar, br, 0.0, dr),
+                    deviceein::Error);
 }

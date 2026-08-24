@@ -1,19 +1,19 @@
 // Generated from cmake/config.hpp.in. Do not edit.
-#ifndef CUEIN_CONFIG_HPP_
-#define CUEIN_CONFIG_HPP_
+#ifndef DEVICEEIN_CONFIG_HPP_
+#define DEVICEEIN_CONFIG_HPP_
 
 #include <cstddef>
 
-namespace cuein {
+namespace deviceein {
 
-/// Largest tensor rank cuEin can describe, and so the inline capacity of an
+/// Largest tensor rank DeviceEin can describe, and so the inline capacity of an
 /// index. It also bounds the number of distinct labels one equation may carry,
 /// since classification forms the union of the operand indices. Set it with
-/// -DCUEIN_MAX_RANK at configure time. It is generated rather than left as a
+/// -DDEVICEEIN_MAX_RANK at configure time. It is generated rather than left as a
 /// plain macro so that a consumer cannot disagree with the library about how
 /// big an index is.
-inline constexpr std::size_t max_rank = @CUEIN_MAX_RANK@;
+inline constexpr std::size_t max_rank = @DEVICEEIN_MAX_RANK@;
 
-}  // namespace cuein
+}  // namespace deviceein
 
-#endif  // CUEIN_CONFIG_HPP_
+#endif  // DEVICEEIN_CONFIG_HPP_

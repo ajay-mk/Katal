@@ -14,7 +14,7 @@ if [[ ! -f ${db} ]]; then
 fi
 
 python3 - "${db}" <<'PY' | xargs -r clang-tidy -p "${build}" --quiet \
-  --header-filter='.*/(cuein|test)/.*'
+  --header-filter='.*/(deviceein|test)/.*'
 import json, sys
 entries = json.load(open(sys.argv[1]))
 for path in sorted({e["file"] for e in entries}):

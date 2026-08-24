@@ -3,11 +3,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <cuein/scalar.hpp>
+#include <deviceein/scalar.hpp>
 
-using cuein::Dtype;
-using cuein::Scalar;
-using cuein::util::ScalarBytes;
+using deviceein::Dtype;
+using deviceein::Scalar;
+using deviceein::util::ScalarBytes;
 
 namespace {
 
@@ -49,7 +49,7 @@ TEST_CASE("ScalarBytes narrows into the accumulation type", "[scalar]") {
   }
 
   SECTION("half precision has no scalar spelling") {
-    REQUIRE_THROWS_AS(ScalarBytes(1.0, Dtype::F16), cuein::Error);
-    REQUIRE_THROWS_AS(ScalarBytes(1.0, Dtype::Bf16), cuein::Error);
+    REQUIRE_THROWS_AS(ScalarBytes(1.0, Dtype::F16), deviceein::Error);
+    REQUIRE_THROWS_AS(ScalarBytes(1.0, Dtype::Bf16), deviceein::Error);
   }
 }

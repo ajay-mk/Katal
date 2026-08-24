@@ -1,11 +1,11 @@
 BasedOnStyle: Google
 Standard: c++20
 
-# Three separated blocks: C++ standard library, third-party, then cuEin.
+# Three separated blocks: C++ standard library, third-party, then DeviceEin.
 SortIncludes: CaseSensitive
 IncludeBlocks: Regroup
 IncludeCategories:
-  - Regex: '^<cuein/'
+  - Regex: '^<deviceein/'
     Priority: 3
   - Regex: '^<[a-z_]+>$'
     Priority: 1

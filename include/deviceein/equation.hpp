@@ -1,5 +1,5 @@
-#ifndef CUEIN_EQUATION_HPP_
-#define CUEIN_EQUATION_HPP_
+#ifndef DEVICEEIN_EQUATION_HPP_
+#define DEVICEEIN_EQUATION_HPP_
 
 #include <cstddef>
 #include <string>
@@ -7,10 +7,10 @@
 #include <system_error>
 #include <vector>
 
-#include <cuein/error.hpp>
-#include <cuein/util/index.hpp>
+#include <deviceein/error.hpp>
+#include <deviceein/util/index.hpp>
 
-namespace cuein {
+namespace deviceein {
 
 /// The kernel an equation lowers to.
 enum class Lowering { Contract, Permute, Reduce, Copy };
@@ -59,8 +59,8 @@ class Equation {
   std::string_view text() const noexcept { return text_; }
 
   /// Works out how each mode participates and which kernel the equation
-  /// lowers to. Throws `Errc::UnsupportedPattern` for anything cuEin declines
-  /// to lower, naming the labels responsible.
+  /// lowers to. Throws `Errc::UnsupportedPattern` for anything DeviceEin
+  /// declines to lower, naming the labels responsible.
   Classification classify() const;
 
   /// Same, reporting through `ec`.
@@ -237,6 +237,6 @@ inline Classification Equation::classify(std::error_code& ec) const noexcept {
   return Classification{};
 }
 
-}  // namespace cuein
+}  // namespace deviceein
 
-#endif  // CUEIN_EQUATION_HPP_
+#endif  // DEVICEEIN_EQUATION_HPP_
