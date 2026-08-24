@@ -2,6 +2,13 @@
 
 A C++20 einsum front-end for NVIDIA cuTENSOR.
 
+Quantum chemistry methods like coupled cluster are built from tensor
+contractions over occupied and virtual orbital indices — hundreds of them in
+a full CCSD or CCSDT implementation, each needing its own cuTENSOR descriptor
+if written by hand. cuEin parses an einsum equation such as `"ijab,ijab->"`
+and picks and caches the matching cuTENSOR kernel, so a contraction reads as
+the equation it computes instead of as descriptor-building boilerplate.
+
 !!! note "Work in progress"
     Equation parsing, mode classification, and the cuTENSOR backend for
     contraction, permutation, reduction, and copy are implemented and
