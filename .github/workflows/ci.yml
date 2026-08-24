@@ -62,8 +62,8 @@ jobs:
   # installs cuTENSOR and the CUDA runtime headers so they are, on a machine
   # that is not a developer's own. No GPU is involved: the library is plain C++
   # against cuTENSOR's C API, and nvcc is here only because FindCUDAToolkit
-  # uses it to locate the toolkit root. The [gpu] cases skip themselves for
-  # want of a device; running them for real stays on the cluster.
+  # uses it to locate the toolkit root. The gpu-labelled cases need a device
+  # and are run locally.
   cuda-build:
     runs-on: ubuntu-latest
     env:
@@ -124,12 +124,9 @@ jobs:
       - name: Confirm an archive was actually produced
         run: test -f build/libcuein.a
 
-      # The [gpu] cases call SKIP when cudaGetDeviceCount finds nothing, and
-      # catch_discover_tests sets SKIP_RETURN_CODE, so they report as skipped
-      # rather than failed. Running them is worth it: a case that stops
-      # skipping correctly shows up here.
+      # The gpu-labelled cases need a device; they are run locally.
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --label-exclude gpu
 
       - name: Install and build a downstream consumer
         run: tools/test-install.sh
