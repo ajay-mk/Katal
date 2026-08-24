@@ -1,5 +1,5 @@
-#ifndef CUEIN_UTIL_STATIC_VECTOR_HPP_
-#define CUEIN_UTIL_STATIC_VECTOR_HPP_
+#ifndef DEVICEEIN_UTIL_STATIC_VECTOR_HPP_
+#define DEVICEEIN_UTIL_STATIC_VECTOR_HPP_
 
 #include <algorithm>
 #include <array>
@@ -7,7 +7,7 @@
 #include <initializer_list>
 #include <stdexcept>
 
-namespace cuein::util {
+namespace deviceein::util {
 
 /// A fixed-capacity sequence that never allocates, sized for the single-digit
 /// ranks tensors actually have. Throws rather than growing.
@@ -40,7 +40,7 @@ class StaticVector {
 
   constexpr void push_back(const T& v) {
     if (size_ == N)
-      throw std::length_error("cuein: static_vector capacity exceeded");
+      throw std::length_error("deviceein: static_vector capacity exceeded");
     data_[size_++] = v;
   }
 
@@ -56,6 +56,6 @@ class StaticVector {
   std::size_t size_ = 0;
 };
 
-}  // namespace cuein::util
+}  // namespace deviceein::util
 
-#endif  // CUEIN_UTIL_STATIC_VECTOR_HPP_
+#endif  // DEVICEEIN_UTIL_STATIC_VECTOR_HPP_

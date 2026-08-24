@@ -1,5 +1,5 @@
-site_name: cuEin
-site_description: A C++20 einsum front-end for NVIDIA cuTENSOR
+site_name: DeviceEin
+site_description: A C++20 einsum front-end for GPU tensor libraries
 docs_dir: docs
 site_dir: docs-build/site
 

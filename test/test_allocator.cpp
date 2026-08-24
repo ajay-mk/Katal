@@ -2,12 +2,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <cuein/plan.hpp>
+#include <deviceein/plan.hpp>
 
-using cuein::CudaAsyncAllocator;
-using cuein::StreamRef;
-using cuein::Workspace;
-using cuein::WorkspaceAllocator;
+using deviceein::CudaAsyncAllocator;
+using deviceein::StreamRef;
+using deviceein::Workspace;
+using deviceein::WorkspaceAllocator;
 
 namespace {
 

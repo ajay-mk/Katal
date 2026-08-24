@@ -1,6 +1,6 @@
-// Hand-written cuTENSOR contraction, timed. This is the reference cuEin gets
-// measured against: whatever the wrapper costs has to show up as a difference
-// from these numbers.
+// Hand-written cuTENSOR contraction, timed. This is the reference DeviceEin
+// gets measured against: whatever the wrapper costs has to show up as a
+// difference from these numbers.
 //
 // It answers three questions. What does setting up a contraction cost, cold
 // and warm, against what the kernel itself costs? What does the workspace

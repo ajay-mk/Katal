@@ -10,24 +10,24 @@ E = 2 sum_ijab <ij|ab> t[i,j,a,b] - sum_ijab <ij|ba> t[i,j,a,b]
 ```
 
 ```cpp
-#include <cuein/plan.hpp>
+#include <deviceein/plan.hpp>
 
-using cuein::make_ref;
+using deviceein::make_ref;
 
 // i, j index occupied orbitals; a, b virtual ones.
 double correlation_energy(double* t2, double* oovv, double* energy,
                            std::int64_t o, std::int64_t v) {
   const std::int64_t amp_extent[] = {o, o, v, v};
-  auto t = make_ref(t2, cuein::Dtype::F64, amp_extent);
-  auto oovv_ref = make_ref(oovv, cuein::Dtype::F64, amp_extent);
-  auto e = make_ref(energy, cuein::Dtype::F64, {});  // rank zero: one number
+  auto t = make_ref(t2, deviceein::Dtype::F64, amp_extent);
+  auto oovv_ref = make_ref(oovv, deviceein::Dtype::F64, amp_extent);
+  auto e = make_ref(energy, deviceein::Dtype::F64, {});  // rank zero: one number
 
-  cuein::einsum("ijab,ijab->", 1.0, t, oovv_ref, 0.0, e);
+  deviceein::einsum("ijab,ijab->", 1.0, t, oovv_ref, 0.0, e);
   double direct = 0.0;
   cudaMemcpy(&direct, energy, sizeof(direct), cudaMemcpyDeviceToHost);
 
   // The exchange term swaps the two virtual labels of the integrals.
-  cuein::einsum("ijab,ijba->", 1.0, t, oovv_ref, 0.0, e);
+  deviceein::einsum("ijab,ijba->", 1.0, t, oovv_ref, 0.0, e);
   double exchange = 0.0;
   cudaMemcpy(&exchange, energy, sizeof(exchange), cudaMemcpyDeviceToHost);
 
@@ -44,8 +44,8 @@ here, `(ki|lj)` becomes CCD's `Woooo`:
 ```cpp
 void build_woooo(double* oooo, double* woooo, std::int64_t o) {
   const std::int64_t extent[] = {o, o, o, o};
-  cuein::einsum("kilj->klij", 1.0, make_ref(oooo, cuein::Dtype::F64, extent),
-                0.0, make_ref(woooo, cuein::Dtype::F64, extent));
+  deviceein::einsum("kilj->klij", 1.0, make_ref(oooo, deviceein::Dtype::F64, extent),
+                0.0, make_ref(woooo, deviceein::Dtype::F64, extent));
 }
 ```
 

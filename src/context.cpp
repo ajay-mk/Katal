@@ -2,9 +2,9 @@
 
 #include "context_impl.hpp"
 
-#include <cuein/context.hpp>
+#include <deviceein/context.hpp>
 
-namespace cuein {
+namespace deviceein {
 
 Context::Context(Config config) : impl_(std::make_unique<Impl>(config)) {}
 Context::Context(Context&&) noexcept = default;
@@ -51,4 +51,4 @@ const Context& default_context() {
   return *g_context;
 }
 
-}  // namespace cuein
+}  // namespace deviceein

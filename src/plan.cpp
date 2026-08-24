@@ -6,9 +6,9 @@
 #include "cutensor_status.hpp"
 #include "cutensor_types.hpp"
 
-#include <cuein/plan.hpp>
+#include <deviceein/plan.hpp>
 
-namespace cuein {
+namespace deviceein {
 namespace {
 
 /// The cache key, built as one string so that std::hash and string equality
@@ -131,12 +131,12 @@ class Plan::Impl {
     describe(&desc_d_, md, d);
 
     // C and D share a descriptor: beta scales the output in place.
-    CUEIN_CHECK(cutensorCreateContraction(
-                    handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY,
-                    desc_b_, ib.data(), CUTENSOR_OP_IDENTITY, desc_d_,
-                    id.data(), CUTENSOR_OP_IDENTITY, desc_d_, id.data(),
-                    util::to_compute(options.compute.value_or(d.type))),
-                equation_);
+    DEVICEEIN_CHECK(cutensorCreateContraction(
+                        handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY,
+                        desc_b_, ib.data(), CUTENSOR_OP_IDENTITY, desc_d_,
+                        id.data(), CUTENSOR_OP_IDENTITY, desc_d_, id.data(),
+                        util::to_compute(options.compute.value_or(d.type))),
+                    equation_);
     select_kernel(options);
   }
 
@@ -168,12 +168,12 @@ class Plan::Impl {
     describe(&desc_a_, ma, a);
     describe(&desc_d_, md, d);
 
-    CUEIN_CHECK(cutensorCreateReduction(
-                    handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY,
-                    desc_d_, id.data(), CUTENSOR_OP_IDENTITY, desc_d_,
-                    id.data(), CUTENSOR_OP_ADD,
-                    util::to_compute(options.compute.value_or(d.type))),
-                equation_);
+    DEVICEEIN_CHECK(cutensorCreateReduction(
+                        handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY,
+                        desc_d_, id.data(), CUTENSOR_OP_IDENTITY, desc_d_,
+                        id.data(), CUTENSOR_OP_ADD,
+                        util::to_compute(options.compute.value_or(d.type))),
+                    equation_);
     select_kernel(options);
   }
 
@@ -201,10 +201,10 @@ class Plan::Impl {
     const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
     const util::ScalarBytes beta_bytes(beta, scalar_type_);
 
-    CUEIN_CHECK(cutensorContract(handle_, plan_, alpha_bytes.data(), a, b,
-                                 beta_bytes.data(), c, d, workspace.ptr,
-                                 workspace.size, stream.get()),
-                equation_);
+    DEVICEEIN_CHECK(cutensorContract(handle_, plan_, alpha_bytes.data(), a, b,
+                                     beta_bytes.data(), c, d, workspace.ptr,
+                                     workspace.size, stream.get()),
+                    equation_);
   }
 
   void reduce(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
@@ -212,7 +212,7 @@ class Plan::Impl {
     const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
     const util::ScalarBytes beta_bytes(beta, scalar_type_);
 
-    CUEIN_CHECK(
+    DEVICEEIN_CHECK(
         cutensorReduce(handle_, plan_, alpha_bytes.data(), a, beta_bytes.data(),
                        c, d, workspace.ptr, workspace.size, stream.get()),
         equation_);
@@ -222,7 +222,7 @@ class Plan::Impl {
   /// Plan preference, workspace estimate and kernel selection, shared by both
   /// arities.
   void select_kernel(const PlanOptions& options) {
-    CUEIN_CHECK(
+    DEVICEEIN_CHECK(
         cutensorCreatePlanPreference(
             handle_, &pref_, util::to_cutensor(options.algo),
             options.jit ? CUTENSOR_JIT_MODE_DEFAULT : CUTENSOR_JIT_MODE_NONE),
@@ -230,37 +230,38 @@ class Plan::Impl {
 
     if (options.kernel_rank) {
       const int32_t rank = *options.kernel_rank;
-      CUEIN_CHECK(cutensorPlanPreferenceSetAttribute(
-                      handle_, pref_, CUTENSOR_PLAN_PREFERENCE_KERNEL_RANK,
-                      &rank, sizeof(rank)),
-                  equation_);
+      DEVICEEIN_CHECK(cutensorPlanPreferenceSetAttribute(
+                          handle_, pref_, CUTENSOR_PLAN_PREFERENCE_KERNEL_RANK,
+                          &rank, sizeof(rank)),
+                      equation_);
     }
 
     uint64_t estimate = 0;
-    CUEIN_CHECK(cutensorEstimateWorkspaceSize(
-                    handle_, op_, pref_, util::to_cutensor(options.workspace),
-                    &estimate),
-                equation_);
+    DEVICEEIN_CHECK(cutensorEstimateWorkspaceSize(
+                        handle_, op_, pref_,
+                        util::to_cutensor(options.workspace), &estimate),
+                    equation_);
     const uint64_t limit =
         options.workspace_limit != 0 ? options.workspace_limit : estimate;
-    CUEIN_CHECK(cutensorCreatePlan(handle_, &plan_, op_, pref_, limit),
-                equation_);
+    DEVICEEIN_CHECK(cutensorCreatePlan(handle_, &plan_, op_, pref_, limit),
+                    equation_);
 
     // The estimate above is what planning was allowed to assume. Ask the plan
     // what it actually needs, so a caller does not over-allocate.
-    CUEIN_CHECK(cutensorPlanGetAttribute(
-                    handle_, plan_, CUTENSOR_PLAN_REQUIRED_WORKSPACE,
-                    &workspace_size_, sizeof(workspace_size_)),
-                equation_);
+    DEVICEEIN_CHECK(cutensorPlanGetAttribute(
+                        handle_, plan_, CUTENSOR_PLAN_REQUIRED_WORKSPACE,
+                        &workspace_size_, sizeof(workspace_size_)),
+                    equation_);
   }
 
   void describe(cutensorTensorDescriptor_t* desc, const ModeOrder& modes,
                 const TensorRef& tensor) {
-    CUEIN_CHECK(cutensorCreateTensorDescriptor(
-                    handle_, desc, static_cast<uint32_t>(modes.modes.rank()),
-                    modes.extent.data(), modes.stride.data(),
-                    util::to_cutensor(tensor.type), tensor.alignment),
-                equation_);
+    DEVICEEIN_CHECK(
+        cutensorCreateTensorDescriptor(
+            handle_, desc, static_cast<uint32_t>(modes.modes.rank()),
+            modes.extent.data(), modes.stride.data(),
+            util::to_cutensor(tensor.type), tensor.alignment),
+        equation_);
   }
 
   cutensorHandle_t handle_ = nullptr;
@@ -342,7 +343,8 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
 
 Workspace CudaAsyncAllocator::allocate(uint64_t bytes, StreamRef stream) const {
   Workspace workspace;
-  CUEIN_CHECK_CUDA(cudaMallocAsync(&workspace.ptr, bytes, stream.get()), "");
+  DEVICEEIN_CHECK_CUDA(cudaMallocAsync(&workspace.ptr, bytes, stream.get()),
+                       "");
   workspace.size = bytes;
   return workspace;
 }
@@ -353,4 +355,4 @@ void CudaAsyncAllocator::deallocate(Workspace workspace,
   cudaFreeAsync(workspace.ptr, stream.get());
 }
 
-}  // namespace cuein
+}  // namespace deviceein

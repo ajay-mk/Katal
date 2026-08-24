@@ -1,4 +1,4 @@
-// The closed-shell CCSD correlation energy, as a first look at cuEin.
+// The closed-shell CCSD correlation energy, as a first look at DeviceEin.
 //
 //   E = 2 sum_ijab <ij|ab> t[i,j,a,b] - sum_ijab <ij|ba> t[i,j,a,b]
 //

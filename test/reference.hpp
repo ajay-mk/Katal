@@ -1,15 +1,15 @@
-#ifndef CUEIN_TEST_REFERENCE_HPP_
-#define CUEIN_TEST_REFERENCE_HPP_
+#ifndef DEVICEEIN_TEST_REFERENCE_HPP_
+#define DEVICEEIN_TEST_REFERENCE_HPP_
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
 
-#include <cuein/equation.hpp>
-#include <cuein/tensor_ref.hpp>
+#include <deviceein/equation.hpp>
+#include <deviceein/tensor_ref.hpp>
 
-namespace cuein::test {
+namespace deviceein::test {
 
 /// Advances a mixed-radix counter. Returns false once it wraps, so a rank-zero
 /// counter runs its body exactly once in a do-while.
@@ -117,6 +117,6 @@ void reference_einsum(const Equation& eq, T alpha,
   } while (advance_counter(c, extent));
 }
 
-}  // namespace cuein::test
+}  // namespace deviceein::test
 
-#endif  // CUEIN_TEST_REFERENCE_HPP_
+#endif  // DEVICEEIN_TEST_REFERENCE_HPP_

@@ -1,5 +1,5 @@
-#ifndef CUEIN_PLAN_HPP_
-#define CUEIN_PLAN_HPP_
+#ifndef DEVICEEIN_PLAN_HPP_
+#define DEVICEEIN_PLAN_HPP_
 
 #include <concepts>
 #include <cstdint>
@@ -8,14 +8,14 @@
 #include <string>
 #include <string_view>
 
-#include <cuein/context.hpp>
-#include <cuein/equation.hpp>
-#include <cuein/options.hpp>
-#include <cuein/tensor_ref.hpp>
+#include <deviceein/context.hpp>
+#include <deviceein/equation.hpp>
+#include <deviceein/options.hpp>
+#include <deviceein/tensor_ref.hpp>
 
-namespace cuein {
+namespace deviceein {
 
-/// Scratch cuEin does not own.
+/// Scratch DeviceEin does not own.
 struct Workspace {
   /// Device memory owned by the caller, which must stay alive until the
   /// stream the plan ran on has completed.
@@ -25,7 +25,7 @@ struct Workspace {
 };
 
 /// Supplies scratch for a plan. A caller with its own device pool implements
-/// this and hands it over instead of cuEin allocating on its own.
+/// this and hands it over instead of DeviceEin allocating on its own.
 ///
 /// Taken by value, so an implementation should be a cheap handle that refers
 /// to the pool rather than owning it.
@@ -123,7 +123,7 @@ class Plan {
 /// Selects a kernel for this equation at these shapes. Far more expensive than
 /// executing it, so it belongs outside any loop.
 ///
-/// Throws `Errc::UnsupportedPattern` for a pattern cuEin does not lower,
+/// Throws `Errc::UnsupportedPattern` for a pattern DeviceEin does not lower,
 /// `Errc::ExtentMismatch` when a shared label disagrees across operands, and
 /// `Errc::CutensorError` when cuTENSOR refuses the descriptor.
 Plan make_plan(const Context& context, const Equation& equation,
@@ -180,6 +180,6 @@ void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
   plan->execute(alpha, a.data, beta, d.data, d.data, scratch.get(), stream);
 }
 
-}  // namespace cuein
+}  // namespace deviceein
 
-#endif  // CUEIN_PLAN_HPP_
+#endif  // DEVICEEIN_PLAN_HPP_

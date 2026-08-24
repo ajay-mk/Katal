@@ -1,12 +1,12 @@
-#ifndef CUEIN_OPTIONS_HPP_
-#define CUEIN_OPTIONS_HPP_
+#ifndef DEVICEEIN_OPTIONS_HPP_
+#define DEVICEEIN_OPTIONS_HPP_
 
 #include <cstdint>
 #include <optional>
 
-#include <cuein/tensor_ref.hpp>
+#include <deviceein/tensor_ref.hpp>
 
-namespace cuein {
+namespace deviceein {
 
 /// Which algorithm family cuTENSOR should use. `Default` lets its performance
 /// model choose, which is right unless you are measuring.
@@ -64,6 +64,6 @@ struct PlanOptions {
   bool jit = false;
 };
 
-}  // namespace cuein
+}  // namespace deviceein
 
-#endif  // CUEIN_OPTIONS_HPP_
+#endif  // DEVICEEIN_OPTIONS_HPP_

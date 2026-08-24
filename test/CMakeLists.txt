@@ -16,26 +16,27 @@ include(Catch)
 # Every test_*.cpp here becomes an executable; catch_discover_tests then
 # registers each TEST_CASE inside it as its own CTest case. Adding a test file
 # is the whole registration step.
-file(GLOB CUEIN_TEST_SOURCES CONFIGURE_DEPENDS
+file(GLOB DEVICEEIN_TEST_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp")
 
 # The GPU tests need a device to run on, not just cuTENSOR to link against.
-if(NOT CUEIN_HAVE_CUTENSOR)
-  list(FILTER CUEIN_TEST_SOURCES EXCLUDE REGEX "test_gpu")
+if(NOT DEVICEEIN_HAVE_CUTENSOR)
+  list(FILTER DEVICEEIN_TEST_SOURCES EXCLUDE REGEX "test_gpu")
 endif()
-if(NOT CUEIN_HAVE_HDF5)
-  list(FILTER CUEIN_TEST_SOURCES EXCLUDE REGEX "test_hdf5")
+if(NOT DEVICEEIN_HAVE_HDF5)
+  list(FILTER DEVICEEIN_TEST_SOURCES EXCLUDE REGEX "test_hdf5")
 endif()
 
-foreach(src IN LISTS CUEIN_TEST_SOURCES)
+foreach(src IN LISTS DEVICEEIN_TEST_SOURCES)
   cmake_path(GET src STEM name)
   add_executable(${name} ${src})
-  target_link_libraries(${name} PRIVATE cuEin::cuein Catch2::Catch2WithMain)
+  target_link_libraries(${name} PRIVATE DeviceEin::deviceein
+                                        Catch2::Catch2WithMain)
   if(name MATCHES "test_gpu")
     target_link_libraries(${name} PRIVATE CUDA::cudart)
   endif()
   if(name MATCHES "test_hdf5")
-    target_link_libraries(${name} PRIVATE cuEin::hdf5)
+    target_link_libraries(${name} PRIVATE DeviceEin::hdf5)
   endif()
   catch_discover_tests(${name})
 endforeach()

@@ -6,16 +6,16 @@ include(CMakeFindDependencyMacro)
 # config package for find_dependency to pick up.
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 
-set(cuEin_HAS_CUTENSOR @CUEIN_HAVE_CUTENSOR@)
-set(cuEin_HAS_HDF5 @CUEIN_HAVE_HDF5@)
-if(cuEin_HAS_HDF5)
+set(DeviceEin_HAS_CUTENSOR @DEVICEEIN_HAVE_CUTENSOR@)
+set(DeviceEin_HAS_HDF5 @DEVICEEIN_HAVE_HDF5@)
+if(DeviceEin_HAS_HDF5)
   find_dependency(HDF5 MODULE COMPONENTS C)
 endif()
-if(cuEin_HAS_CUTENSOR)
+if(DeviceEin_HAS_CUTENSOR)
   find_dependency(CUDAToolkit)
   find_dependency(cuTENSOR)
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/cuEinTargets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/DeviceEinTargets.cmake")
 
-check_required_components(cuEin)
+check_required_components(DeviceEin)

@@ -1,5 +1,5 @@
-#ifndef CUEIN_ERROR_HPP_
-#define CUEIN_ERROR_HPP_
+#ifndef DEVICEEIN_ERROR_HPP_
+#define DEVICEEIN_ERROR_HPP_
 
 #include <stdexcept>
 #include <string>
@@ -7,7 +7,7 @@
 #include <system_error>
 #include <type_traits>
 
-namespace cuein {
+namespace deviceein {
 
 /// Classified so a caller can react rather than only report.
 enum class Errc {
@@ -15,11 +15,12 @@ enum class Errc {
   /// label containing one of the characters that separate operands.
   ParseError = 1,
   /// A label count disagrees with an extent count, or a rank exceeds
-  /// `cuein::max_rank`.
+  /// `deviceein::max_rank`.
   RankMismatch,
   /// A label carries two different extents across the operands.
   ExtentMismatch,
-  /// Well formed and correctly shaped, but not something cuEin lowers: a free
+  /// Well formed and correctly shaped, but not something DeviceEin lowers: a
+  /// free
   /// reduction beside a contraction, a broadcast, a diagonal, or more operands
   /// than the current lowering handles.
   UnsupportedPattern,
@@ -41,7 +42,7 @@ enum class Errc {
 inline const std::error_category& error_category() noexcept {
   class Category final : public std::error_category {
    public:
-    const char* name() const noexcept override { return "cuein"; }
+    const char* name() const noexcept override { return "deviceein"; }
 
     std::string message(int value) const override {
       switch (static_cast<Errc>(value)) {
@@ -64,7 +65,7 @@ inline const std::error_category& error_category() noexcept {
         case Errc::IoError:
           return "file I/O error";
       }
-      return "unrecognized cuEin error";
+      return "unrecognized DeviceEin error";
     }
   };
 
@@ -95,7 +96,7 @@ class Error : public std::runtime_error {
  private:
   static std::string compose(std::string_view equation_text,
                              std::string_view detail) {
-    std::string s = "cuein: ";
+    std::string s = "deviceein: ";
     if (!equation_text.empty()) {
       s += "in \"";
       s += equation_text;
@@ -109,9 +110,9 @@ class Error : public std::runtime_error {
   std::string equation_;
 };
 
-}  // namespace cuein
+}  // namespace deviceein
 
 template <>
-struct std::is_error_code_enum<cuein::Errc> : std::true_type {};
+struct std::is_error_code_enum<deviceein::Errc> : std::true_type {};
 
-#endif  // CUEIN_ERROR_HPP_
+#endif  // DEVICEEIN_ERROR_HPP_

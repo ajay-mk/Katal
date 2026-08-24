@@ -1,13 +1,13 @@
-#ifndef CUEIN_SRC_CUTENSOR_TYPES_HPP_
-#define CUEIN_SRC_CUTENSOR_TYPES_HPP_
+#ifndef DEVICEEIN_SRC_CUTENSOR_TYPES_HPP_
+#define DEVICEEIN_SRC_CUTENSOR_TYPES_HPP_
 
 #include <cutensor.h>
 
-#include <cuein/error.hpp>
-#include <cuein/options.hpp>
-#include <cuein/tensor_ref.hpp>
+#include <deviceein/error.hpp>
+#include <deviceein/options.hpp>
+#include <deviceein/tensor_ref.hpp>
 
-namespace cuein::util {
+namespace deviceein::util {
 
 /// The cuTENSOR spelling of a storage type.
 inline cutensorDataType_t to_cutensor(Dtype type) {
@@ -77,6 +77,6 @@ inline cutensorWorksizePreference_t to_cutensor(
               "unrecognized workspace preference");
 }
 
-}  // namespace cuein::util
+}  // namespace deviceein::util
 
-#endif  // CUEIN_SRC_CUTENSOR_TYPES_HPP_
+#endif  // DEVICEEIN_SRC_CUTENSOR_TYPES_HPP_

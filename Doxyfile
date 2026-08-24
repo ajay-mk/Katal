@@ -1,5 +1,5 @@
-PROJECT_NAME     = "cuEin"
-PROJECT_BRIEF    = "A C++20 einsum front-end for NVIDIA cuTENSOR"
+PROJECT_NAME     = "DeviceEin"
+PROJECT_BRIEF    = "A C++20 einsum front-end for GPU tensor libraries"
 OUTPUT_DIRECTORY = docs
 HTML_OUTPUT      = api
 INPUT            = include

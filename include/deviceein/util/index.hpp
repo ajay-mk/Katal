@@ -1,5 +1,5 @@
-#ifndef CUEIN_UTIL_INDEX_HPP_
-#define CUEIN_UTIL_INDEX_HPP_
+#ifndef DEVICEEIN_UTIL_INDEX_HPP_
+#define DEVICEEIN_UTIL_INDEX_HPP_
 
 // Index-set design follows TiledArray's Einsum::Index (ValeevGroup/tiledarray).
 // Independently implemented; no TiledArray source is used.
@@ -11,17 +11,17 @@
 #include <string>
 #include <string_view>
 
-#include <cuein/config.hpp>
-#include <cuein/util/static_vector.hpp>
+#include <deviceein/config.hpp>
+#include <deviceein/util/static_vector.hpp>
 
-namespace cuein::util {
+namespace deviceein::util {
 
 /// A mode label. One character: with a rank cap in the low tens there are
 /// more letters and digits than a tensor can have modes.
 using Label = char;
 
 /// Maps destination slots to source slots: `to[i]` is `from[p[i]]`.
-using Permutation = StaticVector<std::size_t, cuein::max_rank>;
+using Permutation = StaticVector<std::size_t, deviceein::max_rank>;
 
 /// An ordered list of mode labels. Owns no memory, so it is usable in constant
 /// evaluation and cheap to copy.
@@ -67,7 +67,7 @@ class Index {
   friend constexpr bool operator==(const Index&, const Index&) = default;
 
  private:
-  StaticVector<Label, cuein::max_rank> labels_;
+  StaticVector<Label, deviceein::max_rank> labels_;
 };
 
 /// Intersection, in `a`'s order. Never sorts: the resulting label order is the
@@ -116,12 +116,12 @@ constexpr Index operator^(const Index& a, const Index& b) {
 /// other; a silently wrong permutation would be silently wrong numerics.
 constexpr Permutation permute_from_to(const Index& from, const Index& to) {
   if (from.rank() != to.rank())
-    throw std::invalid_argument("cuein: permute_from_to rank mismatch");
+    throw std::invalid_argument("deviceein: permute_from_to rank mismatch");
 
   Permutation p;
   // ponytail: O(n^2) with a used-slot mask, which is what makes it correct for
   // repeated labels. Tensor ranks are single digits.
-  StaticVector<char, cuein::max_rank> used;
+  StaticVector<char, deviceein::max_rank> used;
   for (std::size_t i = 0; i < from.rank(); ++i) used.push_back(0);
 
   for (Label l : to) {
@@ -130,7 +130,7 @@ constexpr Permutation permute_from_to(const Index& from, const Index& to) {
       if (!used[j] && from[j] == l) break;
     if (j == from.rank())
       throw std::invalid_argument(
-          "cuein: permute_from_to has no unused source label matching the "
+          "deviceein: permute_from_to has no unused source label matching the "
           "destination");
     used[j] = 1;
     p.push_back(j);
@@ -138,6 +138,6 @@ constexpr Permutation permute_from_to(const Index& from, const Index& to) {
   return p;
 }
 
-}  // namespace cuein::util
+}  // namespace deviceein::util
 
-#endif  // CUEIN_UTIL_INDEX_HPP_
+#endif  // DEVICEEIN_UTIL_INDEX_HPP_
