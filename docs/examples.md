@@ -1,41 +1,56 @@
 # Examples
 
-## Matrix multiply
+## CCSD correlation energy
+
+The closed-shell CCSD correlation energy is two contractions over every
+index, direct and exchange, reducing to a single number:
+
+```
+E = 2 sum_ijab <ij|ab> t[i,j,a,b] - sum_ijab <ij|ba> t[i,j,a,b]
+```
 
 ```cpp
 #include <cuein/plan.hpp>
 
 using cuein::make_ref;
 
-void matmul(double* a, double* b, double* c, std::int64_t m, std::int64_t k,
-            std::int64_t n) {
-  const std::int64_t a_extent[] = {m, k};
-  const std::int64_t b_extent[] = {k, n};
-  const std::int64_t c_extent[] = {m, n};
+// i, j index occupied orbitals; a, b virtual ones.
+double correlation_energy(double* t2, double* oovv, double* energy,
+                           std::int64_t o, std::int64_t v) {
+  const std::int64_t amp_extent[] = {o, o, v, v};
+  auto t = make_ref(t2, cuein::Dtype::F64, amp_extent);
+  auto oovv_ref = make_ref(oovv, cuein::Dtype::F64, amp_extent);
+  auto e = make_ref(energy, cuein::Dtype::F64, {});  // rank zero: one number
 
-  cuein::einsum("ik,kj->ij", 1.0, make_ref(a, cuein::Dtype::F64, a_extent),
-                make_ref(b, cuein::Dtype::F64, b_extent), 0.0,
-                make_ref(c, cuein::Dtype::F64, c_extent));
+  cuein::einsum("ijab,ijab->", 1.0, t, oovv_ref, 0.0, e);
+  double direct = 0.0;
+  cudaMemcpy(&direct, energy, sizeof(direct), cudaMemcpyDeviceToHost);
+
+  // The exchange term swaps the two virtual labels of the integrals.
+  cuein::einsum("ijab,ijba->", 1.0, t, oovv_ref, 0.0, e);
+  double exchange = 0.0;
+  cudaMemcpy(&exchange, energy, sizeof(exchange), cudaMemcpyDeviceToHost);
+
+  return 2 * direct - exchange;
 }
 ```
 
-`a`, `b`, and `c` are device pointers; cuEin allocates no memory of its own.
+## Permuting an integral block
 
-## Transpose
-
-The one-operand form covers a permutation, a reduction, or a copy:
+CC intermediates are often a stored integral block reordered into the index
+order the intermediate needs. The one-operand form of `einsum` covers this —
+here, `(ki|lj)` becomes CCD's `Woooo`:
 
 ```cpp
-void transpose(double* a, double* a_t, std::int64_t m, std::int64_t n) {
-  const std::int64_t extent[] = {m, n};
-  const std::int64_t extent_t[] = {n, m};
-  cuein::einsum("ij->ji", 1.0, make_ref(a, cuein::Dtype::F64, extent), 0.0,
-                make_ref(a_t, cuein::Dtype::F64, extent_t));
+void build_woooo(double* oooo, double* woooo, std::int64_t o) {
+  const std::int64_t extent[] = {o, o, o, o};
+  cuein::einsum("kilj->klij", 1.0, make_ref(oooo, cuein::Dtype::F64, extent),
+                0.0, make_ref(woooo, cuein::Dtype::F64, extent));
 }
 ```
 
 ## More
 
 `examples/` in the repository has full worked programs — closed-shell CCD and
-CCSD residuals and a CCSD correlation energy — built against real-sized
+CCSD residuals and this correlation energy — built against real-sized
 tensors.
