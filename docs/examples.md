@@ -10,6 +10,8 @@ E = 2 sum_ijab <ij|ab> t[i,j,a,b] - sum_ijab <ij|ba> t[i,j,a,b]
 ```
 
 ```cpp
+#include <cuda_runtime.h>
+
 #include <deviceein/plan.hpp>
 
 using deviceein::make_ref;
