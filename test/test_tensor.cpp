@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include <catch2/catch_test_macros.hpp>
@@ -29,4 +30,6 @@ TEST_CASE("an owning tensor exposes a shared execution view", "[tensor]") {
     REQUIRE(ref.extent[i] == extent[i]);
   REQUIRE(ref.stride.empty());
   REQUIRE(ref.layout == tensor.layout());
+  REQUIRE(ref.alignment >= alignof(double));
+  REQUIRE(reinterpret_cast<std::uintptr_t>(ref.data) % ref.alignment == 0);
 }

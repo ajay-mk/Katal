@@ -1,7 +1,9 @@
 #ifndef KATAL_TENSOR_HPP_
 #define KATAL_TENSOR_HPP_
 
+#include <bit>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <new>
@@ -90,9 +92,19 @@ class Tensor {
   }
 
   TensorRef ref() const noexcept {
-    return TensorRef{
-        const_cast<void*>(data()), type_, {extent_.data(), extent_.size()}, {},
-        Layout::ColumnMajor,       1};
+    std::uint32_t alignment = 1;
+    if (const auto address = reinterpret_cast<std::uintptr_t>(data());
+        address != 0) {
+      const int bits = std::countr_zero(address);
+      // Cap at CUDA's allocation alignment so equivalent buffers share plans.
+      alignment <<= bits < 8 ? bits : 8;
+    }
+    return TensorRef{const_cast<void*>(data()),
+                     type_,
+                     {extent_.data(), extent_.size()},
+                     {},
+                     Layout::ColumnMajor,
+                     alignment};
   }
 
  private:
