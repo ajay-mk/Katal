@@ -1,5 +1,5 @@
-#ifndef DEVICEEIN_TENSOR_HPP_
-#define DEVICEEIN_TENSOR_HPP_
+#ifndef KATAL_TENSOR_HPP_
+#define KATAL_TENSOR_HPP_
 
 #include <cstddef>
 #include <limits>
@@ -9,10 +9,10 @@
 #include <type_traits>
 #include <utility>
 
-#include <deviceein/context.hpp>
-#include <deviceein/tensor_ref.hpp>
+#include <katal/context.hpp>
+#include <katal/tensor_ref.hpp>
 
-namespace deviceein {
+namespace katal {
 
 namespace detail {
 
@@ -66,13 +66,13 @@ class Tensor {
   static_assert(
       std::is_same_v<typename std::allocator_traits<Allocator>::value_type,
                      std::byte>,
-      "deviceein::Tensor allocators must allocate std::byte");
+      "katal::Tensor allocators must allocate std::byte");
 
   explicit Tensor(Dtype type, Extents extent, Allocator allocator = {})
       : type_(type), extent_(std::move(extent)), size_(volume()) {
     const std::size_t element_bytes = size_of(type_);
     if (size_ > std::numeric_limits<std::size_t>::max() / element_bytes)
-      throw std::length_error("deviceein: tensor allocation is too large");
+      throw std::length_error("katal: tensor allocation is too large");
     bytes_ = size_ * element_bytes;
     if (bytes_ != 0)
       storage_ = std::make_shared<Storage>(bytes_, std::move(allocator));
@@ -132,13 +132,12 @@ class Tensor {
       case Dtype::C64:
         return 16;
     }
-    throw std::invalid_argument("deviceein: unrecognized tensor data type");
+    throw std::invalid_argument("katal: unrecognized tensor data type");
   }
 
   std::size_t volume() const {
     for (std::int64_t e : extent_) {
-      if (e < 0)
-        throw std::invalid_argument("deviceein: negative tensor extent");
+      if (e < 0) throw std::invalid_argument("katal: negative tensor extent");
       if (e == 0) return 0;
     }
 
@@ -146,8 +145,7 @@ class Tensor {
     for (std::int64_t e : extent_) {
       const auto n = static_cast<std::size_t>(e);
       if (result > std::numeric_limits<std::size_t>::max() / n)
-        throw std::length_error(
-            "deviceein: tensor extent product is too large");
+        throw std::length_error("katal: tensor extent product is too large");
       result *= n;
     }
     return result;
@@ -160,6 +158,6 @@ class Tensor {
   std::shared_ptr<Storage> storage_;
 };
 
-}  // namespace deviceein
+}  // namespace katal
 
-#endif  // DEVICEEIN_TENSOR_HPP_
+#endif  // KATAL_TENSOR_HPP_

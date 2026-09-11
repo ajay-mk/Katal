@@ -2,9 +2,9 @@
 
 #include <cuda_runtime.h>
 
-#include <deviceein/tensor.hpp>
+#include <katal/tensor.hpp>
 
-namespace deviceein::detail {
+namespace katal::detail {
 
 void* allocate_device_bytes(std::size_t bytes, StreamRef stream) {
   void* data = nullptr;
@@ -17,4 +17,4 @@ void deallocate_device_bytes(void* data, StreamRef stream) noexcept {
   if (data != nullptr) (void)cudaFreeAsync(data, stream.get());
 }
 
-}  // namespace deviceein::detail
+}  // namespace katal::detail

@@ -1,12 +1,12 @@
-#ifndef DEVICEEIN_OPTIONS_HPP_
-#define DEVICEEIN_OPTIONS_HPP_
+#ifndef KATAL_OPTIONS_HPP_
+#define KATAL_OPTIONS_HPP_
 
 #include <cstdint>
 #include <optional>
 
-#include <deviceein/tensor_ref.hpp>
+#include <katal/tensor_ref.hpp>
 
-namespace deviceein {
+namespace katal {
 
 /// Which algorithm family cuTENSOR should use. `Default` lets its performance
 /// model choose, which is right unless you are measuring.
@@ -64,6 +64,6 @@ struct PlanOptions {
   bool jit = false;
 };
 
-}  // namespace deviceein
+}  // namespace katal
 
-#endif  // DEVICEEIN_OPTIONS_HPP_
+#endif  // KATAL_OPTIONS_HPP_

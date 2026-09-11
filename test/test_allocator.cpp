@@ -2,12 +2,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <deviceein/plan.hpp>
+#include <katal/plan.hpp>
 
-using deviceein::CudaAsyncAllocator;
-using deviceein::StreamRef;
-using deviceein::Workspace;
-using deviceein::WorkspaceAllocator;
+using katal::CudaAsyncAllocator;
+using katal::StreamRef;
+using katal::Workspace;
+using katal::WorkspaceAllocator;
 
 namespace {
 

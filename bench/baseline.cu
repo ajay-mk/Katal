@@ -1,4 +1,4 @@
-// Hand-written cuTENSOR contraction, timed. This is the reference DeviceEin
+// Hand-written cuTENSOR contraction, timed. This is the reference Katal
 // gets measured against: whatever the wrapper costs has to show up as a
 // difference from these numbers.
 //

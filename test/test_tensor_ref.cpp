@@ -6,15 +6,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <deviceein/tensor_ref.hpp>
+#include <katal/tensor_ref.hpp>
 
-using deviceein::dense_strides;
-using deviceein::Dtype;
-using deviceein::Extents;
-using deviceein::Layout;
-using deviceein::mode_order;
-using deviceein::TensorRef;
-using deviceein::util::Index;
+using katal::dense_strides;
+using katal::Dtype;
+using katal::Extents;
+using katal::Layout;
+using katal::mode_order;
+using katal::TensorRef;
+using katal::util::Index;
 
 namespace {
 
@@ -29,10 +29,10 @@ std::span<const std::int64_t> span_of(const std::array<std::int64_t, 4>& a) {
 }  // namespace
 
 TEST_CASE("dtype_of", "[tensor_ref]") {
-  STATIC_REQUIRE(deviceein::dtype_of<float> == Dtype::F32);
-  STATIC_REQUIRE(deviceein::dtype_of<double> == Dtype::F64);
-  STATIC_REQUIRE(deviceein::dtype_of<std::complex<float>> == Dtype::C32);
-  STATIC_REQUIRE(deviceein::dtype_of<std::complex<double>> == Dtype::C64);
+  STATIC_REQUIRE(katal::dtype_of<float> == Dtype::F32);
+  STATIC_REQUIRE(katal::dtype_of<double> == Dtype::F64);
+  STATIC_REQUIRE(katal::dtype_of<std::complex<float>> == Dtype::C32);
+  STATIC_REQUIRE(katal::dtype_of<std::complex<double>> == Dtype::C64);
 }
 
 TEST_CASE("dense strides", "[tensor_ref]") {
@@ -57,8 +57,8 @@ TEST_CASE("mode_order", "[tensor_ref]") {
   int storage = 0;
 
   SECTION("a row-major tensor is reversed into descriptor order") {
-    const TensorRef t = deviceein::make_ref(&storage, Dtype::F64,
-                                            span_of(shape), Layout::RowMajor);
+    const TensorRef t =
+        katal::make_ref(&storage, Dtype::F64, span_of(shape), Layout::RowMajor);
     const auto m = mode_order(Index("ijkl"), t);
 
     REQUIRE(m.modes == Index("lkji"));
@@ -70,9 +70,9 @@ TEST_CASE("mode_order", "[tensor_ref]") {
     // The row-major tensor "ijkl" over 2,3,4,5 and the column-major tensor
     // "lkji" over 5,4,3,2 are the same bytes; descriptor order must agree.
     const std::array<std::int64_t, 4> reversed{5, 4, 3, 2};
-    const TensorRef row = deviceein::make_ref(&storage, Dtype::F64,
-                                              span_of(shape), Layout::RowMajor);
-    const TensorRef col = deviceein::make_ref(
+    const TensorRef row =
+        katal::make_ref(&storage, Dtype::F64, span_of(shape), Layout::RowMajor);
+    const TensorRef col = katal::make_ref(
         &storage, Dtype::F64, span_of(reversed), Layout::ColumnMajor);
 
     const auto a = mode_order(Index("ijkl"), row);
@@ -83,8 +83,8 @@ TEST_CASE("mode_order", "[tensor_ref]") {
   }
 
   SECTION("a column-major tensor passes through untouched") {
-    const TensorRef t = deviceein::make_ref(
-        &storage, Dtype::F64, span_of(shape), Layout::ColumnMajor);
+    const TensorRef t = katal::make_ref(&storage, Dtype::F64, span_of(shape),
+                                        Layout::ColumnMajor);
     const auto m = mode_order(Index("ijkl"), t);
     REQUIRE(m.modes == Index("ijkl"));
     REQUIRE(m.extent == Extents{2, 3, 4, 5});
@@ -93,8 +93,8 @@ TEST_CASE("mode_order", "[tensor_ref]") {
 
   SECTION("explicit strides are carried through, reversed with the labels") {
     const std::array<std::int64_t, 4> padded{120, 20, 5, 1};
-    TensorRef t = deviceein::make_ref(&storage, Dtype::F64, span_of(shape),
-                                      Layout::RowMajor);
+    TensorRef t =
+        katal::make_ref(&storage, Dtype::F64, span_of(shape), Layout::RowMajor);
     t.stride = {padded.data(), padded.size()};
 
     const auto m = mode_order(Index("ijkl"), t);
@@ -103,13 +103,13 @@ TEST_CASE("mode_order", "[tensor_ref]") {
   }
 
   SECTION("rank disagreements are rejected") {
-    const TensorRef t = deviceein::make_ref(&storage, Dtype::F64,
-                                            span_of(shape), Layout::RowMajor);
-    REQUIRE_THROWS_AS(mode_order(Index("ijk"), t), deviceein::Error);
+    const TensorRef t =
+        katal::make_ref(&storage, Dtype::F64, span_of(shape), Layout::RowMajor);
+    REQUIRE_THROWS_AS(mode_order(Index("ijk"), t), katal::Error);
 
     const std::array<std::int64_t, 4> two{1, 1, 1, 1};
     TensorRef bad = t;
     bad.stride = {two.data(), 2};
-    REQUIRE_THROWS_AS(mode_order(Index("ijkl"), bad), deviceein::Error);
+    REQUIRE_THROWS_AS(mode_order(Index("ijkl"), bad), katal::Error);
   }
 }

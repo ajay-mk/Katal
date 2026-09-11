@@ -1,7 +1,7 @@
 # Naming only, so the check stays fast and the failures are unambiguous.
 Checks: '-*,readability-identifier-naming'
 WarningsAsErrors: 'readability-identifier-naming'
-HeaderFilterRegex: '.*/(deviceein|test)/.*'
+HeaderFilterRegex: '.*/(katal|test)/.*'
 CheckOptions:
   # types
   readability-identifier-naming.ClassCase: CamelCase
@@ -32,4 +32,4 @@ CheckOptions:
   readability-identifier-naming.NamespaceCase: lower_case
   readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
   # include guards are path-based and end in an underscore by house convention
-  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^DEVICEEIN_[A-Z0-9_]*_$'
+  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^KATAL_[A-Z0-9_]*_$'

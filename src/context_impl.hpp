@@ -1,5 +1,5 @@
-#ifndef DEVICEEIN_SRC_CONTEXT_IMPL_HPP_
-#define DEVICEEIN_SRC_CONTEXT_IMPL_HPP_
+#ifndef KATAL_SRC_CONTEXT_IMPL_HPP_
+#define KATAL_SRC_CONTEXT_IMPL_HPP_
 
 #include <memory>
 #include <mutex>
@@ -9,23 +9,23 @@
 
 #include "cutensor_status.hpp"
 
-#include <deviceein/context.hpp>
-#include <deviceein/plan.hpp>
+#include <katal/context.hpp>
+#include <katal/plan.hpp>
 
-namespace deviceein {
+namespace katal {
 
 /// Shared between the context and plan translation units; never visible to a
 /// caller, which is what keeps <cutensor.h> out of the public headers.
 class Context::Impl {
  public:
   explicit Impl(Config config) : config_(std::move(config)) {
-    DEVICEEIN_CHECK(cutensorCreate(&handle_), "");
+    KATAL_CHECK(cutensorCreate(&handle_), "");
     if (config_.plan_cache_capacity > 0)
-      DEVICEEIN_CHECK(
+      KATAL_CHECK(
           cutensorHandleResizePlanCache(
               handle_, static_cast<uint32_t>(config_.plan_cache_capacity)),
           "");
-    DEVICEEIN_CHECK_CUDA(cudaGetDevice(&device_), "");
+    KATAL_CHECK_CUDA(cudaGetDevice(&device_), "");
 
     // A missing or stale cache file just means the first run pays for kernel
     // selection, so a failure to read is not worth reporting.
@@ -77,6 +77,6 @@ class Context::Impl {
   mutable std::unordered_map<std::string, std::shared_ptr<const Plan>> plans_;
 };
 
-}  // namespace deviceein
+}  // namespace katal
 
-#endif  // DEVICEEIN_SRC_CONTEXT_IMPL_HPP_
+#endif  // KATAL_SRC_CONTEXT_IMPL_HPP_

@@ -1,4 +1,4 @@
-# DeviceEin
+# Katal
 
 A C++20 einsum front-end for GPU tensor libraries, currently NVIDIA
 cuTENSOR.
@@ -6,7 +6,7 @@ cuTENSOR.
 Quantum chemistry methods like coupled cluster are built from tensor
 contractions over occupied and virtual orbital indices — hundreds of them in
 a full CCSD or CCSDT implementation, each needing its own cuTENSOR descriptor
-if written by hand. DeviceEin parses an einsum equation such as `"ijab,ijab->"`
+if written by hand. Katal parses an einsum equation such as `"ijab,ijab->"`
 and picks and caches the matching cuTENSOR kernel, so a contraction reads as
 the equation it computes instead of as descriptor-building boilerplate.
 
@@ -42,7 +42,7 @@ the equation it computes instead of as descriptor-building boilerplate.
 
     ---
 
-    Bring your own device allocator, or let DeviceEin manage scratch with
+    Bring your own device allocator, or let Katal manage scratch with
     `cudaMallocAsync`.
 
 </div>

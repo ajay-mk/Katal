@@ -1,5 +1,5 @@
-#ifndef DEVICEEIN_IO_HDF5_HPP_
-#define DEVICEEIN_IO_HDF5_HPP_
+#ifndef KATAL_IO_HDF5_HPP_
+#define KATAL_IO_HDF5_HPP_
 
 #include <cstdint>
 #include <filesystem>
@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace deviceein::io {
+namespace katal::io {
 
 /// One dense f64 array read from a file, with its shape. Double precision only:
 /// the data this exists to move is coupled-cluster amplitudes and integrals,
@@ -42,6 +42,6 @@ double read_scalar(const std::filesystem::path& file, std::string_view name);
 void write(const std::filesystem::path& file, std::string_view dataset,
            std::span<const double> data, std::span<const std::int64_t> extent);
 
-}  // namespace deviceein::io
+}  // namespace katal::io
 
-#endif  // DEVICEEIN_IO_HDF5_HPP_
+#endif  // KATAL_IO_HDF5_HPP_

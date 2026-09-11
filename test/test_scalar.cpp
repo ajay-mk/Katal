@@ -3,11 +3,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <deviceein/scalar.hpp>
+#include <katal/scalar.hpp>
 
-using deviceein::Dtype;
-using deviceein::Scalar;
-using deviceein::util::ScalarBytes;
+using katal::Dtype;
+using katal::Scalar;
+using katal::util::ScalarBytes;
 
 namespace {
 
@@ -49,7 +49,7 @@ TEST_CASE("ScalarBytes narrows into the accumulation type", "[scalar]") {
   }
 
   SECTION("half precision has no scalar spelling") {
-    REQUIRE_THROWS_AS(ScalarBytes(1.0, Dtype::F16), deviceein::Error);
-    REQUIRE_THROWS_AS(ScalarBytes(1.0, Dtype::Bf16), deviceein::Error);
+    REQUIRE_THROWS_AS(ScalarBytes(1.0, Dtype::F16), katal::Error);
+    REQUIRE_THROWS_AS(ScalarBytes(1.0, Dtype::Bf16), katal::Error);
   }
 }

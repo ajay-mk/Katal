@@ -1,15 +1,15 @@
-#ifndef DEVICEEIN_SCALAR_HPP_
-#define DEVICEEIN_SCALAR_HPP_
+#ifndef KATAL_SCALAR_HPP_
+#define KATAL_SCALAR_HPP_
 
 #include <array>
 #include <complex>
 #include <cstddef>
 #include <cstring>
 
-#include <deviceein/error.hpp>
-#include <deviceein/tensor_ref.hpp>
+#include <katal/error.hpp>
+#include <katal/tensor_ref.hpp>
 
-namespace deviceein {
+namespace katal {
 
 /// An alpha or beta value, kept type-erased so the ABI does not change with the
 /// storage type and so the compute type may differ from it. Everything is held
@@ -79,6 +79,6 @@ class ScalarBytes {
 
 }  // namespace util
 
-}  // namespace deviceein
+}  // namespace katal
 
-#endif  // DEVICEEIN_SCALAR_HPP_
+#endif  // KATAL_SCALAR_HPP_

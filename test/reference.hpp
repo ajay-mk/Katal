@@ -1,15 +1,15 @@
-#ifndef DEVICEEIN_TEST_REFERENCE_HPP_
-#define DEVICEEIN_TEST_REFERENCE_HPP_
+#ifndef KATAL_TEST_REFERENCE_HPP_
+#define KATAL_TEST_REFERENCE_HPP_
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
 
-#include <deviceein/equation.hpp>
-#include <deviceein/tensor_ref.hpp>
+#include <katal/equation.hpp>
+#include <katal/tensor_ref.hpp>
 
-namespace deviceein::test {
+namespace katal::test {
 
 /// Advances a mixed-radix counter. Returns false once it wraps, so a rank-zero
 /// counter runs its body exactly once in a do-while.
@@ -117,6 +117,6 @@ void reference_einsum(const Equation& eq, T alpha,
   } while (advance_counter(c, extent));
 }
 
-}  // namespace deviceein::test
+}  // namespace katal::test
 
-#endif  // DEVICEEIN_TEST_REFERENCE_HPP_
+#endif  // KATAL_TEST_REFERENCE_HPP_

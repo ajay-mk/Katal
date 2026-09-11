@@ -1,4 +1,4 @@
-PROJECT_NAME     = "DeviceEin"
+PROJECT_NAME     = "Katal"
 PROJECT_BRIEF    = "A C++20 einsum front-end for GPU tensor libraries"
 OUTPUT_DIRECTORY = docs
 HTML_OUTPUT      = api

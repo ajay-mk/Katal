@@ -1,13 +1,13 @@
-#ifndef DEVICEEIN_SRC_CUTENSOR_TYPES_HPP_
-#define DEVICEEIN_SRC_CUTENSOR_TYPES_HPP_
+#ifndef KATAL_SRC_CUTENSOR_TYPES_HPP_
+#define KATAL_SRC_CUTENSOR_TYPES_HPP_
 
 #include <cutensor.h>
 
-#include <deviceein/error.hpp>
-#include <deviceein/options.hpp>
-#include <deviceein/tensor_ref.hpp>
+#include <katal/error.hpp>
+#include <katal/options.hpp>
+#include <katal/tensor_ref.hpp>
 
-namespace deviceein::util {
+namespace katal::util {
 
 /// The cuTENSOR spelling of a storage type.
 inline cutensorDataType_t to_cutensor(Dtype type) {
@@ -77,6 +77,6 @@ inline cutensorWorksizePreference_t to_cutensor(
               "unrecognized workspace preference");
 }
 
-}  // namespace deviceein::util
+}  // namespace katal::util
 
-#endif  // DEVICEEIN_SRC_CUTENSOR_TYPES_HPP_
+#endif  // KATAL_SRC_CUTENSOR_TYPES_HPP_

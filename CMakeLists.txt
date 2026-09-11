@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(
-  DeviceEin
+  Katal
   VERSION 0.1.0
   LANGUAGES CXX)
 
@@ -17,20 +17,19 @@ if(APPLE AND NOT CMAKE_OSX_SYSROOT)
     OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
 
-option(DEVICEEIN_BUILD_TESTS "Build DeviceEin tests" ON)
-option(DEVICEEIN_BUILD_BENCHMARKS "Build DeviceEin benchmarks" OFF)
-option(DEVICEEIN_ENABLE_JIT "Enable cuTENSOR JIT compilation" OFF)
-option(DEVICEEIN_ENABLE_HDF5 "Build the optional HDF5 reader" ON)
+option(KATAL_BUILD_TESTS "Build Katal tests" ON)
+option(KATAL_BUILD_BENCHMARKS "Build Katal benchmarks" OFF)
+option(KATAL_ENABLE_JIT "Enable cuTENSOR JIT compilation" OFF)
+option(KATAL_ENABLE_HDF5 "Build the optional HDF5 reader" ON)
 
-set(DEVICEEIN_MAX_RANK
+set(KATAL_MAX_RANK
     12
     CACHE
       STRING
-      "Largest tensor rank DeviceEin can describe; the inline capacity of an index"
-)
+      "Largest tensor rank Katal can describe; the inline capacity of an index")
 
 configure_file(cmake/config.hpp.in
-               "${PROJECT_BINARY_DIR}/include/deviceein/config.hpp" @ONLY)
+               "${PROJECT_BINARY_DIR}/include/katal/config.hpp" @ONLY)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(CUDAToolkit QUIET)
@@ -40,52 +39,50 @@ find_package(cuTENSOR QUIET)
 # still usable and testable as headers alone. The cuTENSOR glue is compiled, so
 # callers never include <cutensor.h>.
 if(cuTENSOR_FOUND AND CUDAToolkit_FOUND)
-  set(DEVICEEIN_HAVE_CUTENSOR ON)
-  set(deviceein_scope PUBLIC)
-  add_library(deviceein src/context.cpp src/plan.cpp src/tensor.cpp)
-  target_link_libraries(deviceein PRIVATE DeviceEin::cutensor CUDA::cudart)
+  set(KATAL_HAVE_CUTENSOR ON)
+  set(katal_scope PUBLIC)
+  add_library(katal src/context.cpp src/plan.cpp src/tensor.cpp)
+  target_link_libraries(katal PRIVATE Katal::cutensor CUDA::cudart)
 else()
-  set(DEVICEEIN_HAVE_CUTENSOR OFF)
-  set(deviceein_scope INTERFACE)
-  add_library(deviceein INTERFACE)
-  message(
-    STATUS "DeviceEin: cuTENSOR not found, building the header-only layers")
+  set(KATAL_HAVE_CUTENSOR OFF)
+  set(katal_scope INTERFACE)
+  add_library(katal INTERFACE)
+  message(STATUS "Katal: cuTENSOR not found, building the header-only layers")
 endif()
 
-add_library(DeviceEin::deviceein ALIAS deviceein)
+add_library(Katal::katal ALIAS katal)
 target_include_directories(
-  deviceein ${deviceein_scope}
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  katal ${katal_scope} $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include> $<INSTALL_INTERFACE:include>)
-target_compile_features(deviceein ${deviceein_scope} cxx_std_20)
+target_compile_features(katal ${katal_scope} cxx_std_20)
 
 # Optional and separate from the core library, so a consumer that does not read
 # HDF5 never links it. MODULE mode because the config package HDF5 ships names
 # its targets differently across versions.
-if(DEVICEEIN_ENABLE_HDF5)
+if(KATAL_ENABLE_HDF5)
   find_package(
     HDF5 MODULE
     COMPONENTS C
     QUIET)
 endif()
 
-if(DEVICEEIN_ENABLE_HDF5 AND HDF5_FOUND)
-  set(DEVICEEIN_HAVE_HDF5 ON)
-  add_library(deviceein_hdf5 src/hdf5.cpp)
-  add_library(DeviceEin::hdf5 ALIAS deviceein_hdf5)
+if(KATAL_ENABLE_HDF5 AND HDF5_FOUND)
+  set(KATAL_HAVE_HDF5 ON)
+  add_library(katal_hdf5 src/hdf5.cpp)
+  add_library(Katal::hdf5 ALIAS katal_hdf5)
   target_link_libraries(
-    deviceein_hdf5
-    PUBLIC DeviceEin::deviceein
+    katal_hdf5
+    PUBLIC Katal::katal
     PRIVATE HDF5::HDF5)
-  target_compile_features(deviceein_hdf5 PUBLIC cxx_std_20)
+  target_compile_features(katal_hdf5 PUBLIC cxx_std_20)
 else()
-  set(DEVICEEIN_HAVE_HDF5 OFF)
-  message(STATUS "DeviceEin: HDF5 not found or disabled, skipping the reader")
+  set(KATAL_HAVE_HDF5 OFF)
+  message(STATUS "Katal: HDF5 not found or disabled, skipping the reader")
 endif()
 
 add_subdirectory(examples)
 
-if(DEVICEEIN_BUILD_TESTS)
+if(KATAL_BUILD_TESTS)
   enable_testing()
   add_subdirectory(test)
 endif()
@@ -93,29 +90,29 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-install(TARGETS deviceein EXPORT DeviceEinTargets)
-if(DEVICEEIN_HAVE_HDF5)
-  install(TARGETS deviceein_hdf5 EXPORT DeviceEinTargets)
+install(TARGETS katal EXPORT KatalTargets)
+if(KATAL_HAVE_HDF5)
+  install(TARGETS katal_hdf5 EXPORT KatalTargets)
 endif()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES "${PROJECT_BINARY_DIR}/include/deviceein/config.hpp"
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/deviceein)
+install(FILES "${PROJECT_BINARY_DIR}/include/katal/config.hpp"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/katal)
 install(
-  EXPORT DeviceEinTargets
-  NAMESPACE DeviceEin::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DeviceEin)
+  EXPORT KatalTargets
+  NAMESPACE Katal::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Katal)
 install(FILES cmake/FindcuTENSOR.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DeviceEin)
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Katal)
 
 configure_package_config_file(
-  cmake/DeviceEinConfig.cmake.in "${PROJECT_BINARY_DIR}/DeviceEinConfig.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DeviceEin)
+  cmake/KatalConfig.cmake.in "${PROJECT_BINARY_DIR}/KatalConfig.cmake"
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Katal)
 
 # 0.x minor versions are not compatible with one another.
 write_basic_package_version_file(
-  "${PROJECT_BINARY_DIR}/DeviceEinConfigVersion.cmake"
+  "${PROJECT_BINARY_DIR}/KatalConfigVersion.cmake"
   COMPATIBILITY SameMinorVersion)
 
-install(FILES "${PROJECT_BINARY_DIR}/DeviceEinConfig.cmake"
-              "${PROJECT_BINARY_DIR}/DeviceEinConfigVersion.cmake"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DeviceEin)
+install(FILES "${PROJECT_BINARY_DIR}/KatalConfig.cmake"
+              "${PROJECT_BINARY_DIR}/KatalConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Katal)

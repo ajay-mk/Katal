@@ -9,21 +9,21 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
-#include <deviceein/equation.hpp>
-#include <deviceein/tensor_ref.hpp>
+#include <katal/equation.hpp>
+#include <katal/tensor_ref.hpp>
 
 using Catch::Matchers::WithinRel;
-using deviceein::Dtype;
-using deviceein::Equation;
-using deviceein::Layout;
-using deviceein::TensorRef;
-using deviceein::test::reference_einsum;
+using katal::Dtype;
+using katal::Equation;
+using katal::Layout;
+using katal::TensorRef;
+using katal::test::reference_einsum;
 
 namespace {
 
 TensorRef ref_of(std::vector<double>& v, std::span<const std::int64_t> extent,
                  Layout layout = Layout::RowMajor) {
-  return deviceein::make_ref(v.data(), Dtype::F64, extent, layout);
+  return katal::make_ref(v.data(), Dtype::F64, extent, layout);
 }
 
 // 1, 2, 3, ... so that a misindexed element shows up as a wrong value rather
@@ -152,10 +152,10 @@ TEST_CASE("reference works in complex arithmetic", "[reference]") {
   std::vector<c64> d(4, c64{});
 
   const TensorRef ar =
-      deviceein::make_ref(a.data(), Dtype::C64, e, Layout::RowMajor);
+      katal::make_ref(a.data(), Dtype::C64, e, Layout::RowMajor);
   const TensorRef br =
-      deviceein::make_ref(b.data(), Dtype::C64, e, Layout::RowMajor);
-  TensorRef dr = deviceein::make_ref(d.data(), Dtype::C64, e, Layout::RowMajor);
+      katal::make_ref(b.data(), Dtype::C64, e, Layout::RowMajor);
+  TensorRef dr = katal::make_ref(d.data(), Dtype::C64, e, Layout::RowMajor);
 
   const std::array<TensorRef, 2> in{ar, br};
   reference_einsum<c64>(Equation::parse("ik,kj->ij"), c64{1, 0}, in, c64{}, dr);
@@ -177,5 +177,5 @@ TEST_CASE("reference rejects inconsistent extents", "[reference]") {
 
   REQUIRE_THROWS_AS(
       reference_einsum<double>(Equation::parse("ik,kj->ij"), 1.0, in, 0.0, dr),
-      deviceein::Error);
+      katal::Error);
 }
