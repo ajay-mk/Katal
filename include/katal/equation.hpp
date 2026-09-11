@@ -1,5 +1,5 @@
-#ifndef DEVICEEIN_EQUATION_HPP_
-#define DEVICEEIN_EQUATION_HPP_
+#ifndef KATAL_EQUATION_HPP_
+#define KATAL_EQUATION_HPP_
 
 #include <cstddef>
 #include <string>
@@ -7,10 +7,10 @@
 #include <system_error>
 #include <vector>
 
-#include <deviceein/error.hpp>
-#include <deviceein/util/index.hpp>
+#include <katal/error.hpp>
+#include <katal/util/index.hpp>
 
-namespace deviceein {
+namespace katal {
 
 /// The kernel an equation lowers to.
 enum class Lowering { Contract, Permute, Reduce, Copy };
@@ -59,7 +59,7 @@ class Equation {
   std::string_view text() const noexcept { return text_; }
 
   /// Works out how each mode participates and which kernel the equation
-  /// lowers to. Throws `Errc::UnsupportedPattern` for anything DeviceEin
+  /// lowers to. Throws `Errc::UnsupportedPattern` for anything Katal
   /// declines to lower, naming the labels responsible.
   Classification classify() const;
 
@@ -237,6 +237,6 @@ inline Classification Equation::classify(std::error_code& ec) const noexcept {
   return Classification{};
 }
 
-}  // namespace deviceein
+}  // namespace katal
 
-#endif  // DEVICEEIN_EQUATION_HPP_
+#endif  // KATAL_EQUATION_HPP_

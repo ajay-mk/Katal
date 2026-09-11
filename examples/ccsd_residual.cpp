@@ -5,7 +5,7 @@
 // ones; <pq||rs> is the antisymmetrised integral.
 //
 // The equations are transcribed, not checked against a reference. Real
-// arithmetic only: complex amplitudes need a conjugation DeviceEin cannot
+// arithmetic only: complex amplitudes need a conjugation Katal cannot
 // express.
 
 #include <cstdint>
@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
 
   const auto evaluate = [&] {
     // ---- tau and tau-tilde ---------------------------------------------
-    // DeviceEin has no elementwise add, so each term accumulates with beta = 1.
+    // Katal has no elementwise add, so each term accumulates with beta = 1.
     // The one-operand form of einsum copies t2 in; the outer products follow.
     ein("ijab->ijab", 1.0, t2, 0.0, tau);
     ein("ia,jb->ijab", 1.0, t1, t1, 1.0, tau);

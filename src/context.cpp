@@ -2,9 +2,9 @@
 
 #include "context_impl.hpp"
 
-#include <deviceein/context.hpp>
+#include <katal/context.hpp>
 
-namespace deviceein {
+namespace katal {
 
 Context::Context(Config config) : impl_(std::make_unique<Impl>(config)) {}
 Context::Context(Context&&) noexcept = default;
@@ -51,4 +51,4 @@ const Context& default_context() {
   return *g_context;
 }
 
-}  // namespace deviceein
+}  // namespace katal

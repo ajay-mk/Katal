@@ -1,14 +1,14 @@
 # A stand-in for a downstream project. It is built out of tree against an
-# installed DeviceEin, which is the only way to find out whether the install
-# rules and the exported config actually work.
+# installed Katal, which is the only way to find out whether the install rules
+# and the exported config actually work.
 cmake_minimum_required(VERSION 3.24)
-project(deviceein_consumer LANGUAGES CXX)
+project(katal_consumer LANGUAGES CXX)
 
-find_package(DeviceEin CONFIG REQUIRED)
+find_package(Katal CONFIG REQUIRED)
 
 add_executable(consumer main.cpp)
-target_link_libraries(consumer PRIVATE DeviceEin::deviceein)
+target_link_libraries(consumer PRIVATE Katal::katal)
 
-if(DeviceEin_HAS_CUTENSOR)
+if(Katal_HAS_CUTENSOR)
   target_compile_definitions(consumer PRIVATE CONSUMER_HAS_BACKEND)
 endif()

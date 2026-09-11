@@ -1,5 +1,5 @@
-#ifndef DEVICEEIN_EXAMPLES_UTIL_HPP_
-#define DEVICEEIN_EXAMPLES_UTIL_HPP_
+#ifndef KATAL_EXAMPLES_UTIL_HPP_
+#define KATAL_EXAMPLES_UTIL_HPP_
 
 // Scaffolding shared by the examples, kept out of them so each file reads as
 // the equations it evaluates and little else.
@@ -15,11 +15,11 @@
 
 #include <cuda_runtime.h>
 
-#include <deviceein/plan.hpp>
+#include <katal/plan.hpp>
 
 namespace example {
 
-/// A tensor on the device filled with random values. DeviceEin never allocates
+/// A tensor on the device filled with random values. Katal never allocates
 /// device memory, so owning it is the caller's job.
 template <class T>
 class RandomTensor {
@@ -48,10 +48,10 @@ class RandomTensor {
   RandomTensor(const RandomTensor&) = delete;
   RandomTensor& operator=(const RandomTensor&) = delete;
 
-  /// Converts to the non-owning view DeviceEin takes, so a RandomTensor can be
+  /// Converts to the non-owning view Katal takes, so a RandomTensor can be
   /// passed straight to a contraction. It must outlive the call.
-  operator deviceein::TensorRef() const {  // NOLINT: implicit on purpose
-    return deviceein::make_ref(data_, deviceein::dtype_of<T>, extent_);
+  operator katal::TensorRef() const {  // NOLINT: implicit on purpose
+    return katal::make_ref(data_, katal::dtype_of<T>, extent_);
   }
 
   T scalar() const {
@@ -70,16 +70,16 @@ class RandomTensor {
 inline double flops = 0.0;
 
 /// Two operations per contracted element, over the product of every distinct
-/// extent in the equation. The equation is parsed with DeviceEin's own parser,
+/// extent in the equation. The equation is parsed with Katal's own parser,
 /// so the count cannot drift from what was actually run.
-inline double count(std::string_view equation, const deviceein::TensorRef& a,
-                    const deviceein::TensorRef& b) {
-  const deviceein::Equation parsed = deviceein::Equation::parse(equation);
-  deviceein::util::Index all = parsed.result();
+inline double count(std::string_view equation, const katal::TensorRef& a,
+                    const katal::TensorRef& b) {
+  const katal::Equation parsed = katal::Equation::parse(equation);
+  katal::util::Index all = parsed.result();
   for (std::size_t k = 0; k < parsed.n_operands(); ++k)
     all = all | parsed.operand(k);
 
-  const auto extent_of = [&](deviceein::util::Label label) -> std::int64_t {
+  const auto extent_of = [&](katal::util::Label label) -> std::int64_t {
     for (std::size_t p = 0; p < parsed.operand(0).rank(); ++p)
       if (parsed.operand(0)[p] == label) return a.extent[p];
     for (std::size_t p = 0; p < parsed.operand(1).rank(); ++p)
@@ -93,21 +93,21 @@ inline double count(std::string_view equation, const deviceein::TensorRef& a,
   return product;
 }
 
-/// Shorthand for deviceein::einsum that also tallies the work. A plain alias
+/// Shorthand for katal::einsum that also tallies the work. A plain alias
 /// will not do: einsum is an overload set, not a single function.
-inline void ein(std::string_view equation, deviceein::Scalar alpha,
-                const deviceein::TensorRef& a, const deviceein::TensorRef& b,
-                deviceein::Scalar beta, const deviceein::TensorRef& d) {
+inline void ein(std::string_view equation, katal::Scalar alpha,
+                const katal::TensorRef& a, const katal::TensorRef& b,
+                katal::Scalar beta, const katal::TensorRef& d) {
   flops += count(equation, a, b);
-  deviceein::einsum(equation, alpha, a, b, beta, d);
+  katal::einsum(equation, alpha, a, b, beta, d);
 }
 
 /// The one-operand form: a permutation or a copy, which moves data rather than
 /// doing arithmetic, so it adds nothing to the tally.
-inline void ein(std::string_view equation, deviceein::Scalar alpha,
-                const deviceein::TensorRef& a, deviceein::Scalar beta,
-                const deviceein::TensorRef& d) {
-  deviceein::einsum(equation, alpha, a, beta, d);
+inline void ein(std::string_view equation, katal::Scalar alpha,
+                const katal::TensorRef& a, katal::Scalar beta,
+                const katal::TensorRef& d) {
+  katal::einsum(equation, alpha, a, beta, d);
 }
 
 /// Wall time on the device, in seconds.
@@ -145,4 +145,4 @@ inline void report(const char* what, double seconds) {
 
 }  // namespace example
 
-#endif  // DEVICEEIN_EXAMPLES_UTIL_HPP_
+#endif  // KATAL_EXAMPLES_UTIL_HPP_

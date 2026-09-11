@@ -57,7 +57,7 @@ jobs:
       - name: ccache statistics
         run: ccache --show-stats
 
-  # Without cuTENSOR the job above builds deviceein as an INTERFACE target, so
+  # Without cuTENSOR the job above builds katal as an INTERFACE target, so
   # src/plan.cpp and src/context.cpp are never compiled at all. This job
   # installs cuTENSOR and the CUDA runtime headers so they are, on a machine
   # that is not a developer's own. No GPU is involved: the library is plain C++
@@ -75,7 +75,7 @@ jobs:
       - uses: actions/checkout@v5
 
       # cuBLASLt is cuTENSOR's only library dependency, so linking anything
-      # against libcutensor.so needs it present even though DeviceEin never calls
+      # against libcutensor.so needs it present even though Katal never calls
       # it directly.
       - name: Install cuTENSOR and the CUDA runtime
         run: |
@@ -104,7 +104,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCUDAToolkit_ROOT=${{ env.CUDA_ROOT }}
-          -DDEVICEEIN_ENABLE_HDF5=ON
+          -DKATAL_ENABLE_HDF5=ON
 
       # Guards against the whole point of this job being lost silently: if
       # cuTENSOR were not found, CMake falls back to an INTERFACE library and
@@ -122,7 +122,7 @@ jobs:
         run: cmake --build build
 
       - name: Confirm an archive was actually produced
-        run: test -f build/libdeviceein.a
+        run: test -f build/libkatal.a
 
       # The gpu-labelled cases need a device; they are run locally.
       - name: Test

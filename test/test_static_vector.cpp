@@ -2,10 +2,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <deviceein/util/static_vector.hpp>
+#include <katal/util/static_vector.hpp>
 
 TEST_CASE("static_vector", "[static_vector]") {
-  using vec = deviceein::util::StaticVector<int, 4>;
+  using vec = katal::util::StaticVector<int, 4>;
 
   SECTION("starts empty at its fixed capacity") {
     const vec v;
@@ -37,11 +37,11 @@ TEST_CASE("static_vector", "[static_vector]") {
 
 // Owning no memory is the point: unlike std::vector these survive as constexpr
 // variables, not just as transient constant evaluation.
-constexpr deviceein::util::StaticVector<int, 4> constexpr_vector{1, 2, 3};
+constexpr katal::util::StaticVector<int, 4> constexpr_vector{1, 2, 3};
 static_assert(constexpr_vector.size() == 3);
 static_assert(constexpr_vector[2] == 3);
 static_assert([] {
-  deviceein::util::StaticVector<int, 4> v;
+  katal::util::StaticVector<int, 4> v;
   v.push_back(3);
   v.push_back(5);
   return v.size() == 2 && v[1] == 5;

@@ -1,5 +1,5 @@
-#ifndef DEVICEEIN_ERROR_HPP_
-#define DEVICEEIN_ERROR_HPP_
+#ifndef KATAL_ERROR_HPP_
+#define KATAL_ERROR_HPP_
 
 #include <stdexcept>
 #include <string>
@@ -7,7 +7,7 @@
 #include <system_error>
 #include <type_traits>
 
-namespace deviceein {
+namespace katal {
 
 /// Classified so a caller can react rather than only report.
 enum class Errc {
@@ -15,11 +15,11 @@ enum class Errc {
   /// label containing one of the characters that separate operands.
   ParseError = 1,
   /// A label count disagrees with an extent count, or a rank exceeds
-  /// `deviceein::max_rank`.
+  /// `katal::max_rank`.
   RankMismatch,
   /// A label carries two different extents across the operands.
   ExtentMismatch,
-  /// Well formed and correctly shaped, but not something DeviceEin lowers: a
+  /// Well formed and correctly shaped, but not something Katal lowers: a
   /// free
   /// reduction beside a contraction, a broadcast, a diagonal, or more operands
   /// than the current lowering handles.
@@ -42,7 +42,7 @@ enum class Errc {
 inline const std::error_category& error_category() noexcept {
   class Category final : public std::error_category {
    public:
-    const char* name() const noexcept override { return "deviceein"; }
+    const char* name() const noexcept override { return "katal"; }
 
     std::string message(int value) const override {
       switch (static_cast<Errc>(value)) {
@@ -65,7 +65,7 @@ inline const std::error_category& error_category() noexcept {
         case Errc::IoError:
           return "file I/O error";
       }
-      return "unrecognized DeviceEin error";
+      return "unrecognized Katal error";
     }
   };
 
@@ -96,7 +96,7 @@ class Error : public std::runtime_error {
  private:
   static std::string compose(std::string_view equation_text,
                              std::string_view detail) {
-    std::string s = "deviceein: ";
+    std::string s = "katal: ";
     if (!equation_text.empty()) {
       s += "in \"";
       s += equation_text;
@@ -110,9 +110,9 @@ class Error : public std::runtime_error {
   std::string equation_;
 };
 
-}  // namespace deviceein
+}  // namespace katal
 
 template <>
-struct std::is_error_code_enum<deviceein::Errc> : std::true_type {};
+struct std::is_error_code_enum<katal::Errc> : std::true_type {};
 
-#endif  // DEVICEEIN_ERROR_HPP_
+#endif  // KATAL_ERROR_HPP_

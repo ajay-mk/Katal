@@ -1,15 +1,15 @@
 # cuTENSOR ships no CMake config package, and on some clusters it has no module
-# of its own either -- NVHPC bundles it. Hint with -DDEVICEEIN_CUTENSOR_ROOT=...
-# or let $NVHPC point the way.
+# of its own either -- NVHPC bundles it. Hint with -DKATAL_CUTENSOR_ROOT=... or
+# let $NVHPC point the way.
 #
-# Defines DeviceEin::cutensor when found.
+# Defines Katal::cutensor when found.
 
-set(DEVICEEIN_CUTENSOR_ROOT
+set(KATAL_CUTENSOR_ROOT
     ""
     CACHE PATH "Root of a cuTENSOR installation (contains include/ and lib/)")
 
 set(_cutensor_hints)
-foreach(_root "${DEVICEEIN_CUTENSOR_ROOT}" "$ENV{CUTENSOR_ROOT}")
+foreach(_root "${KATAL_CUTENSOR_ROOT}" "$ENV{CUTENSOR_ROOT}")
   if(_root)
     list(APPEND _cutensor_hints "${_root}")
   endif()
@@ -41,10 +41,10 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(cuTENSOR REQUIRED_VARS cuTENSOR_LIBRARY
                                                          cuTENSOR_INCLUDE_DIR)
 
-if(cuTENSOR_FOUND AND NOT TARGET DeviceEin::cutensor)
-  add_library(DeviceEin::cutensor UNKNOWN IMPORTED)
+if(cuTENSOR_FOUND AND NOT TARGET Katal::cutensor)
+  add_library(Katal::cutensor UNKNOWN IMPORTED)
   set_target_properties(
-    DeviceEin::cutensor
+    Katal::cutensor
     PROPERTIES IMPORTED_LOCATION "${cuTENSOR_LIBRARY}"
                INTERFACE_INCLUDE_DIRECTORIES "${cuTENSOR_INCLUDE_DIR}")
 endif()
