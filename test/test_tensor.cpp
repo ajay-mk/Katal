@@ -1,10 +1,22 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/tensor.hpp>
+
+TEST_CASE("managed allocators preserve their stream when rebound", "[tensor]") {
+  using Bytes = katal::ManagedAllocator<std::byte>;
+  using Doubles = std::allocator_traits<Bytes>::rebind_alloc<double>;
+
+  STATIC_REQUIRE(std::is_same_v<Doubles, katal::ManagedAllocator<double>>);
+  const Bytes bytes;
+  const Doubles doubles(bytes);
+  REQUIRE(bytes == doubles);
+  REQUIRE(doubles.stream().get() == bytes.stream().get());
+}
 
 TEST_CASE("an owning tensor exposes a shared execution view", "[tensor]") {
   using Tensor = katal::Tensor<std::allocator<std::byte>>;

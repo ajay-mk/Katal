@@ -27,6 +27,20 @@ ctest --test-dir build --output-on-failure
 | `KATAL_ENABLE_JIT` | `OFF` | allow cuTENSOR JIT compilation |
 | `KATAL_MAX_RANK` | `12` | largest describable tensor rank |
 
+## Managed tensor storage
+
+`katal::Tensor<>` uses pooled device memory by default. To allocate CUDA
+managed memory, include `<katal/tensor.hpp>` and use
+`katal::Tensor<katal::ManagedAllocator<std::byte>>`. Tensor copies share
+the allocation; `ref()` borrows it for execution.
+
+The allocator accepts a `StreamRef` (default: the default CUDA stream). All GPU
+uses of that allocation must use that stream, which must outlive the storage.
+Wait for GPU work before accessing the data on the CPU, and finish CPU writes
+before submitting GPU work. Last-owner release waits for the stream before
+freeing managed memory. A CUDA cleanup failure terminates rather than throwing
+from destruction or freeing storage that may still be in use.
+
 ## Development
 
 ```sh

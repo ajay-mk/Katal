@@ -20,6 +20,8 @@ namespace detail {
 
 void* allocate_device_bytes(std::size_t bytes, StreamRef stream);
 void deallocate_device_bytes(void* data, StreamRef stream) noexcept;
+void* allocate_managed_bytes(std::size_t bytes);
+void deallocate_managed_bytes(void* data, StreamRef stream) noexcept;
 
 }  // namespace detail
 
@@ -52,6 +54,42 @@ class PooledDeviceAllocator {
   template <class U>
   friend bool operator==(const PooledDeviceAllocator& a,
                          const PooledDeviceAllocator<U>& b) noexcept {
+    return a.stream().get() == b.stream().get();
+  }
+
+ private:
+  StreamRef stream_;
+};
+
+/// Host/device storage whose GPU uses must all run on the supplied stream.
+/// The stream must outlive the allocation; deallocation waits for its work.
+template <class T>
+class ManagedAllocator {
+ public:
+  using value_type = T;
+
+  ManagedAllocator() = default;
+  explicit ManagedAllocator(StreamRef stream) : stream_(stream) {}
+
+  template <class U>
+  ManagedAllocator(const ManagedAllocator<U>& other) noexcept
+      : stream_(other.stream()) {}
+
+  [[nodiscard]] T* allocate(std::size_t n) {
+    if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
+      throw std::bad_array_new_length();
+    return static_cast<T*>(detail::allocate_managed_bytes(n * sizeof(T)));
+  }
+
+  void deallocate(T* data, std::size_t) noexcept {
+    detail::deallocate_managed_bytes(data, stream_);
+  }
+
+  StreamRef stream() const noexcept { return stream_; }
+
+  template <class U>
+  friend bool operator==(const ManagedAllocator& a,
+                         const ManagedAllocator<U>& b) noexcept {
     return a.stream().get() == b.stream().get();
   }
 
