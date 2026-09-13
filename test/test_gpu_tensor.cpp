@@ -1,10 +1,24 @@
 #include <array>
+#include <limits>
+#include <new>
 
 #include <catch2/catch_test_macros.hpp>
 #include <cuda_runtime.h>
 
 #include <katal/plan.hpp>
 #include <katal/tensor.hpp>
+
+TEST_CASE("GPU allocator size guards", "[tensor][gpu]") {
+  katal::PooledDeviceAllocator<double> pooled;
+  katal::ManagedAllocator<double> managed;
+  const auto too_many = std::numeric_limits<std::size_t>::max();
+  REQUIRE_THROWS_AS(pooled.allocate(too_many), std::bad_array_new_length);
+  REQUIRE_THROWS_AS(managed.allocate(too_many), std::bad_array_new_length);
+  REQUIRE(pooled.allocate(0) == nullptr);
+  REQUIRE(managed.allocate(0) == nullptr);
+  pooled.deallocate(nullptr, 0);
+  managed.deallocate(nullptr, 0);
+}
 
 TEST_CASE("owning tensor views support a GPU contraction", "[tensor][gpu]") {
   int count = 0;
