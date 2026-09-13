@@ -19,8 +19,8 @@
 
 namespace example {
 
-/// A tensor on the device filled with random values. Katal never allocates
-/// device memory, so owning it is the caller's job.
+/// Caller-owned device storage filled with random values. This demonstrates
+/// passing external buffers to Katal; tensor_storage.cpp uses katal::Tensor.
 template <class T>
 class RandomTensor {
  public:
@@ -49,7 +49,7 @@ class RandomTensor {
   RandomTensor& operator=(const RandomTensor&) = delete;
 
   /// Converts to the non-owning view Katal takes, so a RandomTensor can be
-  /// passed straight to a contraction. It must outlive the call.
+  /// passed straight to a contraction. It must outlive the submitted GPU work.
   operator katal::TensorRef() const {  // NOLINT: implicit on purpose
     return katal::make_ref(data_, katal::dtype_of<T>, extent_);
   }
