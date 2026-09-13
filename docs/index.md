@@ -51,8 +51,9 @@ the equation it computes instead of as descriptor-building boilerplate.
 
     `Tensor<Allocator>` owns shared, column-major storage; `TensorRef` borrows
     it. Choose pooled device or managed allocation independently of execution
-    workspace. See the [pooled and managed example](examples.md).
+    workspace. See [tensor ownership and allocators](tensors.md).
 
 </div>
 
+[Getting started](building.md){ .md-button }
 [API reference](api/index.html){ .md-button }

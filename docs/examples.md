@@ -11,7 +11,8 @@ The same function uses `katal::Tensor<Allocator>` with either
 `katal::PooledDeviceAllocator<std::byte>` or
 `katal::ManagedAllocator<std::byte>`. Both paths use explicit transfers so
 that only allocation changes. Managed memory is not pooled and does not
-remove synchronization requirements. The examples below instead demonstrate
+remove synchronization requirements. See [ownership and allocator lifetimes](tensors.md)
+for the storage contract. The examples below instead demonstrate
 passing caller-owned buffers through `TensorRef`.
 
 ## CCSD correlation energy
