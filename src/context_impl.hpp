@@ -38,7 +38,7 @@ class Context::Impl {
       cutensorHandleReadPlanCacheFromFile(
           handle_, config_.plan_cache_file.c_str(), &lines);
     }
-    guard.release();
+    handle_ = guard.release();
   }
 
   ~Impl() {

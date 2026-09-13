@@ -442,8 +442,8 @@ TEST_CASE("every algorithm gives the same answer", "[gpu]") {
                                       options));
       } catch (const katal::Error& error) {
         REQUIRE(error.code() == katal::Errc::UnsupportedPattern);
-        REQUIRE_FALSE(algo == katal::Algo::Default &&
-                      workspace == katal::WorkspacePreference::Default);
+        REQUIRE_FALSE((algo == katal::Algo::Default &&
+                       workspace == katal::WorkspacePreference::Default));
         continue;
       }
       const katal::util::ScopedWorkspace scratch(katal::CudaAsyncAllocator{},
