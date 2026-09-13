@@ -86,7 +86,7 @@ jobs:
           sudo dpkg -i "$keyring"
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ninja-build ccache catch2 libhdf5-dev \
+            ninja-build ccache catch2 \
             "cuda-nvcc-${CUDA_VERSION}" "cuda-cudart-dev-${CUDA_VERSION}" \
             "libcublas-dev-${CUDA_VERSION}" libcutensor-dev
 
@@ -97,14 +97,12 @@ jobs:
           key: ccache-cuda-${{ runner.os }}-${{ github.sha }}
           restore-keys: ccache-cuda-${{ runner.os }}-
 
-      # HDF5 on as well, since src/hdf5.cpp is otherwise never compiled either.
       - name: Configure
         run: >-
           cmake -S . -B build -GNinja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCUDAToolkit_ROOT=${{ env.CUDA_ROOT }}
-          -DKATAL_ENABLE_HDF5=ON
 
       # Guards against the whole point of this job being lost silently: if
       # cuTENSOR were not found, CMake falls back to an INTERFACE library and

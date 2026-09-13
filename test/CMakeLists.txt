@@ -23,17 +23,11 @@ file(GLOB KATAL_TEST_SOURCES CONFIGURE_DEPENDS
 if(NOT KATAL_HAVE_CUTENSOR)
   list(FILTER KATAL_TEST_SOURCES EXCLUDE REGEX "test_gpu")
 endif()
-if(NOT KATAL_HAVE_HDF5)
-  list(FILTER KATAL_TEST_SOURCES EXCLUDE REGEX "test_hdf5")
-endif()
 
 foreach(src IN LISTS KATAL_TEST_SOURCES)
   cmake_path(GET src STEM name)
   add_executable(${name} ${src})
   target_link_libraries(${name} PRIVATE Katal::katal Catch2::Catch2WithMain)
-  if(name MATCHES "test_hdf5")
-    target_link_libraries(${name} PRIVATE Katal::hdf5)
-  endif()
   # The GPU cases SKIP themselves when no device is present, but Catch2's exit
   # code for an all-skipped run does not match what catch_discover_tests sets as
   # SKIP_RETURN_CODE, so CTest calls them failures. Labelling them lets a

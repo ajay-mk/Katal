@@ -18,9 +18,6 @@ if(APPLE AND NOT CMAKE_OSX_SYSROOT)
 endif()
 
 option(KATAL_BUILD_TESTS "Build Katal tests" ON)
-option(KATAL_BUILD_BENCHMARKS "Build Katal benchmarks" OFF)
-option(KATAL_ENABLE_JIT "Enable cuTENSOR JIT compilation" OFF)
-option(KATAL_ENABLE_HDF5 "Build the optional HDF5 reader" ON)
 
 set(KATAL_MAX_RANK
     12
@@ -56,30 +53,6 @@ target_include_directories(
   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_compile_features(katal ${katal_scope} cxx_std_20)
 
-# Optional and separate from the core library, so a consumer that does not read
-# HDF5 never links it. MODULE mode because the config package HDF5 ships names
-# its targets differently across versions.
-if(KATAL_ENABLE_HDF5)
-  find_package(
-    HDF5 MODULE
-    COMPONENTS C
-    QUIET)
-endif()
-
-if(KATAL_ENABLE_HDF5 AND HDF5_FOUND)
-  set(KATAL_HAVE_HDF5 ON)
-  add_library(katal_hdf5 src/hdf5.cpp)
-  add_library(Katal::hdf5 ALIAS katal_hdf5)
-  target_link_libraries(
-    katal_hdf5
-    PUBLIC Katal::katal
-    PRIVATE HDF5::HDF5)
-  target_compile_features(katal_hdf5 PUBLIC cxx_std_20)
-else()
-  set(KATAL_HAVE_HDF5 OFF)
-  message(STATUS "Katal: HDF5 not found or disabled, skipping the reader")
-endif()
-
 add_subdirectory(examples)
 
 if(KATAL_BUILD_TESTS)
@@ -91,9 +64,6 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 install(TARGETS katal EXPORT KatalTargets)
-if(KATAL_HAVE_HDF5)
-  install(TARGETS katal_hdf5 EXPORT KatalTargets)
-endif()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES "${PROJECT_BINARY_DIR}/include/katal/config.hpp"
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/katal)
