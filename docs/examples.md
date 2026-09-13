@@ -68,6 +68,7 @@ void build_woooo(double* oooo, double* woooo, std::int64_t o) {
 
 ## More
 
-`examples/` in the repository has full worked programs — closed-shell CCD and
-CCSD residuals and this correlation energy — built against real-sized
-tensors.
+`examples/` also contains a CCD contraction workload and the doubles-only
+correlation-energy example above. These are execution examples, not validated
+electronic-structure solvers. The handwritten CCSD residual has been removed;
+a SeQuant-generated replacement is future work.
