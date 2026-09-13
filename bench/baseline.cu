@@ -99,7 +99,6 @@ struct Setup {
   cutensorPlanPreference_t pref{};
   cutensorPlan_t plan{};
   uint64_t workspace_size = 0;
-  double flops_attribute = 0.0;
 };
 
 Setup build(
@@ -134,14 +133,6 @@ Setup build(
                                                &s.workspace_size));
   CHECK_CUTENSOR(
       cutensorCreatePlan(handle, &s.plan, s.op, s.pref, s.workspace_size));
-
-  // Non-fatal: worth knowing whether the descriptor can report its own flops,
-  // since that is what a plan would surface.
-  float flops = 0.0f;
-  if (cutensorOperationDescriptorGetAttribute(
-          handle, s.op, CUTENSOR_OPERATION_DESCRIPTOR_FLOPS, &flops,
-          sizeof(flops)) == CUTENSOR_STATUS_SUCCESS)
-    s.flops_attribute = flops;
 
   return s;
 }
