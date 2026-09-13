@@ -3,6 +3,7 @@
 
 #include <complex>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include <katal/config.hpp>
@@ -77,15 +78,22 @@ inline TensorRef make_ref(void* data, Dtype type,
 /// Strides, in elements, of a dense tensor with these extents.
 inline Extents dense_strides(std::span<const std::int64_t> extent,
                              Layout layout) {
+  for (const auto e : extent)
+    if (e < 0) throw std::invalid_argument("katal: negative tensor extent");
+  const auto product = [](std::int64_t stride, std::int64_t e) {
+    if (e != 0 && stride > std::numeric_limits<std::int64_t>::max() / e)
+      throw std::length_error("katal: dense stride is too large");
+    return stride * e;
+  };
   Extents stride;
   for (std::size_t i = 0; i < extent.size(); ++i) stride.push_back(1);
 
   if (layout == Layout::RowMajor)
     for (std::size_t i = extent.size(); i-- > 1;)
-      stride[i - 1] = stride[i] * extent[i];
+      stride[i - 1] = product(stride[i], extent[i]);
   else
     for (std::size_t i = 1; i < extent.size(); ++i)
-      stride[i] = stride[i - 1] * extent[i - 1];
+      stride[i] = product(stride[i - 1], extent[i - 1]);
 
   return stride;
 }
