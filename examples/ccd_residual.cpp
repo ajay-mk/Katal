@@ -16,7 +16,8 @@
 using example::ein;
 using Tensor = example::RandomTensor<double>;
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
+  const katal::Runtime runtime;
   // Orbital counts, overridable so a different size needs no rebuild.
   const std::int64_t o = argc > 1 ? std::atoll(argv[1]) : 8;
   const std::int64_t v = argc > 2 ? std::atoll(argv[2]) : 48;
@@ -103,20 +104,19 @@ int main(int argc, char** argv) {
   // The first pass pays for cuTENSOR's one-time initialisation and for
   // planning each distinct contraction. A solver iterates, so time a later one.
   evaluate();
-  cudaDeviceSynchronize();
+  example::check(cudaDeviceSynchronize());
   example::flops = 0.0;
 
   example::Timer timer;
   evaluate();
-  cudaDeviceSynchronize();
+  example::check(cudaDeviceSynchronize());
   const double seconds = timer.seconds();
-  if (cudaGetLastError() != cudaSuccess) {
-    std::fprintf(stderr, "a contraction failed\n");
-    return 1;
-  }
 
   std::printf("CCD residual, o=%lld v=%lld\n", (long long)o, (long long)v);
   example::report("  one evaluation", seconds);
   std::printf("  a real solver would divide by the denominators and iterate\n");
   return 0;
+} catch (const std::exception& error) {
+  std::fprintf(stderr, "%s\n", error.what());
+  return 1;
 }
