@@ -35,7 +35,7 @@ TEST_CASE("managed tensors share host and GPU storage", "[tensor][gpu]") {
     REQUIRE(shared.data() == input.data());
 
     katal::einsum("ij->ji", 1.0, input.ref(), 0.0, output.ref(), {},
-                      stream.get());
+                  stream.get());
     throw Unwind{};
   } catch (const Unwind&) {
   }
