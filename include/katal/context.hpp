@@ -43,7 +43,7 @@ struct Config {
   /// is not an error; an unreadable one is ignored.
   std::filesystem::path plan_cache_file;
 
-  /// How every plan built through this context is planned, unless a call
+  /// How cached_plan and einsum plan through this context, unless a call
   /// overrides it. Setting a policy here rather than at each call site is what
   /// keeps the one-shot `einsum` usable while still being tunable.
   PlanOptions plan_options;
@@ -88,15 +88,19 @@ void initialize(Config config = {});
 /// Releases the process-wide context while the CUDA context is still alive.
 /// Without this the handle is leaked on purpose, because destroying it from a
 /// static destructor races CUDA's own teardown.
+/// All borrowed references, Plans and GPU work must be finished first.
+/// Throws std::logic_error while a Runtime owns the default context.
 void finalize();
 
 bool initialized() noexcept;
 
-/// Scope guard over the pair above. Equivalent, and cannot be forgotten.
+/// Exclusive scope owner of the default context. Throws std::logic_error if
+/// a context already exists. Declare before its Plans and GPU resources, and
+/// finish submitted work before leaving the scope.
 class Runtime {
  public:
-  explicit Runtime(Config config = {}) { initialize(config); }
-  ~Runtime() { finalize(); }
+  explicit Runtime(Config config = {});
+  ~Runtime();
   Runtime(const Runtime&) = delete;
   Runtime& operator=(const Runtime&) = delete;
 };

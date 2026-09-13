@@ -1,4 +1,6 @@
+#include <array>
 #include <cstddef>
+#include <exception>
 #include <utility>
 #include <vector>
 
@@ -14,7 +16,7 @@ namespace {
 /// The cache key, built as one string so that std::hash and string equality
 /// do the work: an exact key means no collision handling to get wrong.
 void append(std::string& key, const void* bytes, std::size_t n) {
-  key.append(static_cast<const char*>(bytes), n);
+  if (n != 0) key.append(static_cast<const char*>(bytes), n);
 }
 
 void append_tensor(std::string& key, const TensorRef& t) {
@@ -51,44 +53,29 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   return key;
 }
 
-/// Every distinct label in the equation. A label's position here is the
-/// int32 mode id cuTENSOR sees, which keeps the ids consistent across operands.
-util::Index all_labels(const Equation& equation) {
-  util::Index all = equation.result();
-  for (std::size_t k = 0; k < equation.n_operands(); ++k)
-    all = all | equation.operand(k);
-  return all;
-}
-
-std::vector<int32_t> mode_ids(const util::Index& modes,
-                              const util::Index& all) {
+/// A label's byte value is already a unique, operand-independent mode id.
+std::vector<int32_t> mode_ids(const util::Index& modes) {
   std::vector<int32_t> ids;
   ids.reserve(modes.rank());
-  for (std::size_t i = 0; i < modes.rank(); ++i)
-    for (std::size_t j = 0; j < all.rank(); ++j)
-      if (all[j] == modes[i]) {
-        ids.push_back(static_cast<int32_t>(j));
-        break;
-      }
+  for (const auto label : modes)
+    ids.push_back(static_cast<unsigned char>(label));
   return ids;
 }
 
 /// A shared label must have one extent. cuTENSOR would reject a mismatch too,
 /// but without naming the label responsible.
 void check_extents(
-    const Equation& equation, const util::Index& all,
+    const Equation& equation,
     std::initializer_list<std::pair<const util::Index*, const TensorRef*>>
         operands) {
-  std::vector<std::int64_t> extent(all.rank(), 0);
+  std::array<std::int64_t, 256> extent{};
   for (const auto& [modes, tensor] : operands)
     for (std::size_t p = 0; p < modes->rank(); ++p) {
-      std::size_t slot = all.rank();
-      for (std::size_t j = 0; j < all.rank(); ++j)
-        if (all[j] == (*modes)[p]) {
-          slot = j;
-          break;
-        }
+      const auto slot = static_cast<unsigned char>((*modes)[p]);
       const std::int64_t e = tensor->extent[p];
+      if (e <= 0)
+        throw Error(Errc::ExtentMismatch, equation.text(),
+                    "GPU operands require positive extents");
       if (extent[slot] != 0 && extent[slot] != e)
         throw Error(Errc::ExtentMismatch, equation.text(),
                     "label \"" + std::string(1, (*modes)[p]) +
@@ -105,26 +92,21 @@ class Plan::Impl {
  public:
   Impl(const Context& context, const Equation& equation, const TensorRef& a,
        const TensorRef& b, const TensorRef& d, PlanOptions options)
-      : handle_(context.impl().handle()),
-        equation_(equation.text()),
-        scalar_type_(d.type) {
+      : Impl(context, equation, d.type, 2) {
     const Classification classification = equation.classify();
     if (classification.kind != Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "only binary contraction is implemented so far");
 
-    const util::Index all = all_labels(equation);
-    check_extents(equation, all,
-                  {{&equation.operand(0), &a},
-                   {&equation.operand(1), &b},
-                   {&equation.result(), &d}});
-
     const ModeOrder ma = mode_order(equation.operand(0), a);
     const ModeOrder mb = mode_order(equation.operand(1), b);
     const ModeOrder md = mode_order(equation.result(), d);
-    const std::vector<int32_t> ia = mode_ids(ma.modes, all);
-    const std::vector<int32_t> ib = mode_ids(mb.modes, all);
-    const std::vector<int32_t> id = mode_ids(md.modes, all);
+    check_extents(equation, {{&equation.operand(0), &a},
+                             {&equation.operand(1), &b},
+                             {&equation.result(), &d}});
+    const std::vector<int32_t> ia = mode_ids(ma.modes);
+    const std::vector<int32_t> ib = mode_ids(mb.modes);
+    const std::vector<int32_t> id = mode_ids(md.modes);
 
     describe(&desc_a_, ma, a);
     describe(&desc_b_, mb, b);
@@ -148,22 +130,17 @@ class Plan::Impl {
   /// Add the memcpy path if the copy case ever matters.
   Impl(const Context& context, const Equation& equation, const TensorRef& a,
        const TensorRef& d, PlanOptions options)
-      : handle_(context.impl().handle()),
-        equation_(equation.text()),
-        scalar_type_(d.type),
-        n_operands_(1) {
+      : Impl(context, equation, d.type, 1) {
     if (equation.classify().kind == Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "this equation has two operands; use the two-operand form");
 
-    const util::Index all = all_labels(equation);
-    check_extents(equation, all,
-                  {{&equation.operand(0), &a}, {&equation.result(), &d}});
-
     const ModeOrder ma = mode_order(equation.operand(0), a);
     const ModeOrder md = mode_order(equation.result(), d);
-    const std::vector<int32_t> ia = mode_ids(ma.modes, all);
-    const std::vector<int32_t> id = mode_ids(md.modes, all);
+    check_extents(equation,
+                  {{&equation.operand(0), &a}, {&equation.result(), &d}});
+    const std::vector<int32_t> ia = mode_ids(ma.modes);
+    const std::vector<int32_t> id = mode_ids(md.modes);
 
     describe(&desc_a_, ma, a);
     describe(&desc_d_, md, d);
@@ -219,6 +196,15 @@ class Plan::Impl {
   }
 
  private:
+  // Completing the delegated constructor makes ~Impl run if backend setup
+  // in either public constructor throws after acquiring a resource.
+  Impl(const Context& context, const Equation& equation, Dtype scalar_type,
+       std::size_t n_operands)
+      : handle_(context.impl().handle()),
+        equation_(equation.text()),
+        scalar_type_(scalar_type),
+        n_operands_(n_operands) {}
+
   /// Plan preference, workspace estimate and kernel selection, shared by both
   /// arities.
   void select_kernel(const PlanOptions& options) {
@@ -348,9 +334,9 @@ Workspace CudaAsyncAllocator::allocate(uint64_t bytes, StreamRef stream) const {
 }
 
 void CudaAsyncAllocator::deallocate(Workspace workspace,
-                                    StreamRef stream) const {
-  // Destructors are noexcept; a failure here has nowhere useful to go.
-  cudaFreeAsync(workspace.ptr, stream.get());
+                                    StreamRef stream) const noexcept {
+  if (cudaFreeAsync(workspace.ptr, stream.get()) != cudaSuccess)
+    std::terminate();
 }
 
 }  // namespace katal

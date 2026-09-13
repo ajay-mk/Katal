@@ -29,6 +29,7 @@ struct Workspace {
 ///
 /// Taken by value, so an implementation should be a cheap handle that refers
 /// to the pool rather than owning it.
+/// Deallocation must not throw; it is also called during exception unwinding.
 template <class A>
 concept WorkspaceAllocator =
     requires(A allocator, uint64_t bytes, StreamRef stream, Workspace w) {
@@ -41,7 +42,7 @@ concept WorkspaceAllocator =
 class CudaAsyncAllocator {
  public:
   Workspace allocate(uint64_t bytes, StreamRef stream) const;
-  void deallocate(Workspace workspace, StreamRef stream) const;
+  void deallocate(Workspace workspace, StreamRef stream) const noexcept;
 };
 
 namespace util {
@@ -75,6 +76,8 @@ class ScopedWorkspace {
 /// A selected kernel, ready to run. Building one is the expensive part; running
 /// it is not, so a residual evaluation should build its plans once and execute
 /// them every iteration.
+/// Borrows its Context: the Context must outlive the Plan and all submitted
+/// work. A cached shared_ptr retains the Plan, not its Context.
 class Plan {
  public:
   Plan(Plan&&) noexcept;
@@ -126,6 +129,7 @@ class Plan {
 /// Throws `Errc::UnsupportedPattern` for a pattern Katal does not lower,
 /// `Errc::ExtentMismatch` when a shared label disagrees across operands, and
 /// `Errc::CutensorError` when cuTENSOR refuses the descriptor.
+/// A cuTENSOR NOT_SUPPORTED status is reported as UnsupportedPattern.
 Plan make_plan(const Context& context, const Equation& equation,
                const TensorRef& a, const TensorRef& b, const TensorRef& d,
                PlanOptions options = {});

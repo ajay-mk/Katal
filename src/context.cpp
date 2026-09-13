@@ -1,4 +1,5 @@
 #include <mutex>
+#include <stdexcept>
 
 #include "context_impl.hpp"
 
@@ -25,6 +26,7 @@ std::mutex& process_mutex() {
 // finalize() call the handle leaks and the operating system reclaims it.
 Context* g_context = nullptr;
 Config g_config;
+bool g_runtime_active = false;
 
 }  // namespace
 
@@ -36,8 +38,26 @@ void initialize(Config config) {
 
 void finalize() {
   const std::lock_guard<std::mutex> lock(process_mutex());
+  if (g_runtime_active)
+    throw std::logic_error("katal: Runtime owns the default context");
   delete g_context;
   g_context = nullptr;
+}
+
+Runtime::Runtime(Config config) {
+  const std::lock_guard<std::mutex> lock(process_mutex());
+  if (g_context != nullptr)
+    throw std::logic_error("katal: the default context already exists");
+  g_config = config;
+  g_context = new Context(std::move(config));
+  g_runtime_active = true;
+}
+
+Runtime::~Runtime() {
+  const std::lock_guard<std::mutex> lock(process_mutex());
+  delete g_context;
+  g_context = nullptr;
+  g_runtime_active = false;
 }
 
 bool initialized() noexcept {
