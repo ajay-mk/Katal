@@ -12,13 +12,19 @@
 - `Context` owns the cuTENSOR handle and plan cache. `Plan` holds a selected
   operation ready for repeated execution. `einsum` uses cached plans;
   an explicit Plan lets callers hoist setup out of a loop.
+  A Plan borrows its Context: keep the Context alive until all its Plans are
+  destroyed and their submitted GPU work is finished. Keeping a cached
+  `shared_ptr<Plan>` does not retain the Context.
 - Tensor allocation and execution workspace are separate policies. Changing
   a Tensor to managed storage does not change the temporary device workspace
   that `einsum` obtains through its workspace allocator.
 
 Use `katal::Runtime` to scope the default context, or manage an explicit
 Context. This walkthrough targets one CUDA device. A stream is borrowed,
-not owned; keep it alive through allocation use and release.
+not owned; keep it alive through allocation use and release. Construct a Runtime
+before using the default context. It rejects an already initialized context or
+another Runtime, and `finalize()` is rejected while a Runtime owns the context.
+With explicit initialization, finish all Plans and GPU work before `finalize()`.
 
 ## Managed tensor storage
 

@@ -15,10 +15,11 @@ remove synchronization requirements. See [ownership and allocator lifetimes](ten
 for the storage contract. The examples below instead demonstrate
 passing caller-owned buffers through `TensorRef`.
 
-## CCSD correlation energy
+## Doubles contribution to the correlation energy
 
-The closed-shell CCSD correlation energy is two contractions over every
-index, direct and exchange, reducing to a single number:
+With singles set to zero, the closed-shell correlation energy uses two
+contractions over every index, direct and exchange, reducing to a single
+number. This example does not include the singles contributions to CCSD:
 
 ```
 E = 2 sum_ijab <ij|ab> t[i,j,a,b] - sum_ijab <ij|ba> t[i,j,a,b]
@@ -41,12 +42,18 @@ double correlation_energy(double* t2, double* oovv, double* energy,
 
   katal::einsum("ijab,ijab->", 1.0, t, oovv_ref, 0.0, e);
   double direct = 0.0;
-  cudaMemcpy(&direct, energy, sizeof(direct), cudaMemcpyDeviceToHost);
+  if (const auto status = cudaMemcpy(&direct, energy, sizeof(direct),
+                                      cudaMemcpyDeviceToHost);
+      status != cudaSuccess)
+    throw katal::Error(katal::Errc::CudaError, "", cudaGetErrorString(status));
 
   // The exchange term swaps the two virtual labels of the integrals.
   katal::einsum("ijab,ijba->", 1.0, t, oovv_ref, 0.0, e);
   double exchange = 0.0;
-  cudaMemcpy(&exchange, energy, sizeof(exchange), cudaMemcpyDeviceToHost);
+  if (const auto status = cudaMemcpy(&exchange, energy, sizeof(exchange),
+                                      cudaMemcpyDeviceToHost);
+      status != cudaSuccess)
+    throw katal::Error(katal::Errc::CudaError, "", cudaGetErrorString(status));
 
   return 2 * direct - exchange;
 }
