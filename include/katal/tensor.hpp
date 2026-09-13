@@ -26,6 +26,7 @@ void deallocate_managed_bytes(void* data, StreamRef stream) noexcept;
 }  // namespace detail
 
 /// A standard allocator backed by the device's stream-ordered memory pool.
+/// All GPU uses must run on this stream, which must outlive the allocation.
 template <class T>
 class PooledDeviceAllocator {
  public:
@@ -98,6 +99,7 @@ class ManagedAllocator {
 };
 
 /// Dense tensor metadata plus shared ownership of its allocation.
+/// Copies alias the data. A ref() also borrows this object's extent metadata.
 template <class Allocator = PooledDeviceAllocator<std::byte>>
 class Tensor {
  public:
@@ -186,10 +188,12 @@ class Tensor {
   }
 
   std::size_t volume() const {
+    bool empty = false;
     for (std::int64_t e : extent_) {
       if (e < 0) throw std::invalid_argument("katal: negative tensor extent");
-      if (e == 0) return 0;
+      if (e == 0) empty = true;
     }
+    if (empty) return 0;
 
     std::size_t result = 1;
     for (std::int64_t e : extent_) {

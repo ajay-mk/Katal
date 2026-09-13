@@ -1,11 +1,92 @@
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <type_traits>
+#include <utility>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/tensor.hpp>
+
+TEST_CASE("negative tensor extents are rejected even after zero", "[tensor]") {
+  using Tensor = katal::Tensor<std::allocator<std::byte>>;
+  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {0, -1}), std::invalid_argument);
+  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {-1, 0}), std::invalid_argument);
+  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {2, 0, -1}),
+                    std::invalid_argument);
+}
+
+TEST_CASE("empty tensors and scalars have distinct storage", "[tensor]") {
+  using Tensor = katal::Tensor<std::allocator<std::byte>>;
+  const Tensor empty(katal::Dtype::F64, {3, 0, 4});
+  REQUIRE(empty.size() == 0);
+  REQUIRE(empty.bytes() == 0);
+  REQUIRE(empty.data() == nullptr);
+
+  const Tensor scalar(katal::Dtype::F64, {});
+  REQUIRE(scalar.size() == 1);
+  REQUIRE(scalar.bytes() == sizeof(double));
+  REQUIRE(scalar.data() != nullptr);
+}
+
+TEST_CASE("tensor allocation sizes are checked before allocating", "[tensor]") {
+  using Tensor = katal::Tensor<std::allocator<std::byte>>;
+  constexpr auto large = std::numeric_limits<std::int64_t>::max();
+  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {large, 3}), std::length_error);
+  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {large}), std::length_error);
+  REQUIRE_THROWS_AS(Tensor(static_cast<katal::Dtype>(99), {2}),
+                    std::invalid_argument);
+}
+
+namespace {
+struct AllocationCounts {
+  int allocations = 0;
+  int deallocations = 0;
+};
+
+template <class T>
+struct CountingAllocator {
+  using value_type = T;
+  AllocationCounts* counts;
+
+  T* allocate(std::size_t n) {
+    auto* data = std::allocator<T>{}.allocate(n);
+    ++counts->allocations;
+    return data;
+  }
+
+  void deallocate(T* data, std::size_t n) noexcept {
+    ++counts->deallocations;
+    std::allocator<T>{}.deallocate(data, n);
+  }
+};
+}  // namespace
+
+TEST_CASE("tensor copies and moves retain storage until the last owner",
+          "[tensor]") {
+  using Tensor = katal::Tensor<CountingAllocator<std::byte>>;
+  AllocationCounts counts;
+  std::optional<Tensor> survivor;
+  {
+    Tensor tensor(katal::Dtype::F64, {2, 3}, {&counts});
+    Tensor copy = tensor;
+    Tensor moved = std::move(copy);
+    REQUIRE(moved.data() == tensor.data());
+    REQUIRE(moved.size() == 6);
+    static_cast<std::byte*>(moved.data())[0] = std::byte{42};
+    REQUIRE(static_cast<const std::byte*>(tensor.data())[0] == std::byte{42});
+    survivor.emplace(std::move(moved));
+    REQUIRE(counts.allocations == 1);
+    REQUIRE(counts.deallocations == 0);
+  }
+  REQUIRE(counts.deallocations == 0);
+  REQUIRE(static_cast<const std::byte*>(survivor->data())[0] == std::byte{42});
+  survivor.reset();
+  REQUIRE(counts.deallocations == 1);
+}
 
 TEST_CASE("managed allocators preserve their stream when rebound", "[tensor]") {
   using Bytes = katal::ManagedAllocator<std::byte>;
