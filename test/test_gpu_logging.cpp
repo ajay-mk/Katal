@@ -8,6 +8,7 @@
 #include <cuda_runtime.h>
 
 #include <katal/plan.hpp>
+#include <katal/tensor.hpp>
 
 namespace {
 
