@@ -18,6 +18,8 @@ if(APPLE AND NOT CMAKE_OSX_SYSROOT)
 endif()
 
 option(KATAL_BUILD_TESTS "Build Katal tests" ON)
+option(KATAL_ENABLE_LOGGING
+       "Log Katal cache and planning diagnostics to stderr" OFF)
 
 set(KATAL_MAX_RANK
     12
@@ -39,6 +41,8 @@ if(cuTENSOR_FOUND AND CUDAToolkit_FOUND)
   set(KATAL_HAVE_CUTENSOR ON)
   set(katal_scope PUBLIC)
   add_library(katal src/context.cpp src/plan.cpp src/tensor.cpp)
+  target_compile_definitions(
+    katal PRIVATE KATAL_ENABLE_LOGGING=$<BOOL:${KATAL_ENABLE_LOGGING}>)
   target_link_libraries(katal PRIVATE Katal::cutensor CUDA::cudart)
 else()
   set(KATAL_HAVE_CUTENSOR OFF)

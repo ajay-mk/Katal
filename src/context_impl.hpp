@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "cutensor_status.hpp"
+#include "log.hpp"
 
 #include <katal/context.hpp>
 #include <katal/plan.hpp>
@@ -68,12 +69,30 @@ class Context::Impl {
   template <class Make>
   std::shared_ptr<const Plan> cached(const std::string& key, Make make) const {
     const std::lock_guard<std::mutex> lock(mutex_);
-    if (config_.plan_cache_entries == 0)
+    if (config_.plan_cache_entries == 0) {
+      KATAL_LOG("cache.bypass device=" << device_ << " key="
+                                       << std::hash<std::string>{}(key));
       return std::make_shared<const Plan>(make());
-    if (const auto it = plans_.find(key); it != plans_.end()) return it->second;
+    }
+    if (const auto it = plans_.find(key); it != plans_.end()) {
+      KATAL_LOG("cache.hit device="
+                << device_ << " key=" << std::hash<std::string>{}(key)
+                << " equation=" << util::log_quote(it->second->equation()));
+      return it->second;
+    }
+    KATAL_LOG("cache.miss device=" << device_
+                                   << " key=" << std::hash<std::string>{}(key));
     auto plan = std::make_shared<const Plan>(make());
-    if (plans_.size() >= config_.plan_cache_entries) plans_.clear();
+    if (plans_.size() >= config_.plan_cache_entries) {
+      KATAL_LOG("cache.clear device=" << device_
+                                      << " removed=" << plans_.size());
+      plans_.clear();
+    }
     plans_.emplace(key, plan);
+    KATAL_LOG("cache.insert device="
+              << device_ << " key=" << std::hash<std::string>{}(key)
+              << " equation=" << util::log_quote(plan->equation())
+              << " entries=" << plans_.size());
     return plan;
   }
 

@@ -7,8 +7,13 @@
 #include "context_impl.hpp"
 #include "cutensor_status.hpp"
 #include "cutensor_types.hpp"
+#include "log.hpp"
 
 #include <katal/plan.hpp>
+
+#if KATAL_ENABLE_LOGGING
+#include <chrono>
+#endif
 
 namespace katal {
 namespace {
@@ -292,13 +297,42 @@ void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
 Plan make_plan(const Context& context, const Equation& equation,
                const TensorRef& a, const TensorRef& b, const TensorRef& d,
                PlanOptions options) {
-  return Plan(
-      std::make_unique<Plan::Impl>(context, equation, a, b, d, options));
+#if KATAL_ENABLE_LOGGING
+  const auto start = std::chrono::steady_clock::now();
+#endif
+  Plan plan(std::make_unique<Plan::Impl>(context, equation, a, b, d, options));
+#if KATAL_ENABLE_LOGGING
+  const auto elapsed = std::chrono::duration<double, std::micro>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
+#endif
+  KATAL_LOG("plan.created device="
+            << context.device() << " equation="
+            << util::log_quote(equation.text()) << " a=" << util::log_tensor(a)
+            << " b=" << util::log_tensor(b) << " output=" << util::log_tensor(d)
+            << ' ' << util::log_options(options) << " workspace_bytes="
+            << plan.workspace_size() << " host_plan_us=" << elapsed);
+  return plan;
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
                const TensorRef& a, const TensorRef& d, PlanOptions options) {
-  return Plan(std::make_unique<Plan::Impl>(context, equation, a, d, options));
+#if KATAL_ENABLE_LOGGING
+  const auto start = std::chrono::steady_clock::now();
+#endif
+  Plan plan(std::make_unique<Plan::Impl>(context, equation, a, d, options));
+#if KATAL_ENABLE_LOGGING
+  const auto elapsed = std::chrono::duration<double, std::micro>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
+#endif
+  KATAL_LOG("plan.created device="
+            << context.device()
+            << " equation=" << util::log_quote(equation.text())
+            << " a=" << util::log_tensor(a) << " output=" << util::log_tensor(d)
+            << ' ' << util::log_options(options) << " workspace_bytes="
+            << plan.workspace_size() << " host_plan_us=" << elapsed);
+  return plan;
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
