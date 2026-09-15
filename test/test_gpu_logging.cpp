@@ -94,9 +94,11 @@ TEST_CASE("einsum diagnostics preserve binary and unary results",
   katal::Tensor<Managed> b(katal::Dtype::F64, {2, 2});
   katal::Tensor<Managed> d(katal::Dtype::F64, {2, 2});
   katal::Tensor<Managed> transposed(katal::Dtype::F64, {2, 2});
+  const double a_values[]{1, 2, 3, 4};
+  const double b_values[]{5, 6, 7, 8};
   for (std::size_t i = 0; i < a.size(); ++i) {
-    static_cast<double*>(a.data())[i] = 1.0;
-    static_cast<double*>(b.data())[i] = 2.0;
+    static_cast<double*>(a.data())[i] = a_values[i];
+    static_cast<double*>(b.data())[i] = b_values[i];
   }
   std::string output;
   {
@@ -108,9 +110,13 @@ TEST_CASE("einsum diagnostics preserve binary and unary results",
     REQUIRE(cudaStreamSynchronize(nullptr) == cudaSuccess);
     output = capture.str();
   }
+  // Column-major values of A * B and its transpose.
+  const double expected[]{23, 34, 31, 46};
+  const double expected_transposed[]{23, 31, 34, 46};
   for (std::size_t i = 0; i < d.size(); ++i) {
-    REQUIRE(static_cast<const double*>(d.data())[i] == 4.0);
-    REQUIRE(static_cast<const double*>(transposed.data())[i] == 4.0);
+    REQUIRE(static_cast<const double*>(d.data())[i] == expected[i]);
+    REQUIRE(static_cast<const double*>(transposed.data())[i] ==
+            expected_transposed[i]);
   }
 #if KATAL_ENABLE_LOGGING
   REQUIRE(output.find("equation=\"ij,jk->ik\"") != std::string::npos);
