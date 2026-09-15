@@ -25,12 +25,56 @@ paths, or to build the host-only layers on a machine without them. A downstream 
 | Option | Default | Effect |
 | --- | --- | --- |
 | `KATAL_BUILD_TESTS` | `ON` | build the test executables |
+| `KATAL_ENABLE_LOGGING` | `OFF` | compile cache and planning diagnostics into the GPU backend |
 | `KATAL_MAX_RANK` | `12` | largest describable tensor rank |
 
 With a GPU backend configured, start with the
 [pooled and managed Tensor example](examples.md#pooled-and-managed-tensor-storage).
 
 ## Validation
+
+### Optional diagnostics
+
+Build the GPU backend with `-DKATAL_ENABLE_LOGGING=ON` to write Katal
+diagnostics to stderr. No Logger object or runtime setup is needed.
+The default `OFF` build removes logging calls, formatting, and timers at
+compile time. This does not change cuTENSOR's independent logging settings.
+
+Messages start with `[katal]`. Cache events are `cache.hit`, `cache.miss`,
+`cache.bypass` (caching disabled), `cache.insert`, and `cache.clear` (the full
+cache is cleared). The `key` field is a diagnostic hash for correlating events
+within a run, not a persistent or collision-free operation ID. Hit and
+insertion records include the equation; tensor values are never printed.
+
+`plan.created` records a successful Plan construction: equation, tensor shapes,
+data types, strides, alignment, planning options, required workspace bytes,
+and `host_plan_us`. This time covers construction in `make_plan`, not equation
+parsing, cache lookup, logging output, or GPU execution. No GPU synchronization
+is added. A retained Plan's execution does not perform a cache lookup and
+therefore produces no cache event.
+
+Planning options use the enum values from `options.hpp`: `algo` is
+`0=Default`, `1=DefaultPatient`, `2=Gett`, `3=Tgett`, `4=Ttgt`;
+`workspace_preference` is `0=Min`, `1=Default`, `2=Max`. `compute=output`
+uses the output type and `kernel_rank=-1` leaves kernel rank unspecified.
+Empty strides mean the tensor's dense layout. A workspace requirement of zero
+needs no scratch allocation.
+
+Diagnostics are best-effort: output failures do not replace normal operation
+errors. Enabled logging adds host overhead, including output during cache
+access; leave it off for performance measurements.
+
+cuTENSOR has its own logging, enabled separately before launching a program:
+
+```sh
+CUTENSOR_LOG_LEVEL=4 CUTENSOR_LOG_FILE=cutensor.log ./your_program
+```
+
+Use level `5` for API tracing. Katal does not enable or intercept this logger,
+and does not claim to report cuTENSOR's internal cache hit counts.
+See NVIDIA's [logging guide](https://docs.nvidia.com/cuda/cutensor/latest/user_guide.html#logging).
+
+### Build and test checks
 
 Run `ctest --test-dir build --output-on-failure` on a CUDA GPU for the complete
 configured suite. On a CUDA-equipped build machine without a GPU, use
