@@ -1,5 +1,20 @@
 # Examples
 
+## Pooled and managed Tensor storage
+
+Start with `examples/tensor_storage.cpp`, built as
+`build/examples/tensor_storage` when CUDA and cuTENSOR are available. It
+initializes column-major matrices, computes `ab,bc->ac`, waits for the GPU,
+and verifies every output value.
+
+The same function uses `katal::Tensor<Allocator>` with either
+`katal::PooledDeviceAllocator<std::byte>` or
+`katal::ManagedAllocator<std::byte>`. Both paths use explicit transfers so
+that only allocation changes. Managed memory is not pooled and does not
+remove synchronization requirements. See [ownership and allocator lifetimes](tensors.md)
+for the storage contract. The examples below instead demonstrate
+passing caller-owned buffers through `TensorRef`.
+
 ## CCSD correlation energy
 
 The closed-shell CCSD correlation energy is two contractions over every

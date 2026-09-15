@@ -1,7 +1,9 @@
 #ifndef KATAL_TENSOR_HPP_
 #define KATAL_TENSOR_HPP_
 
+#include <bit>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <new>
@@ -18,10 +20,13 @@ namespace detail {
 
 void* allocate_device_bytes(std::size_t bytes, StreamRef stream);
 void deallocate_device_bytes(void* data, StreamRef stream) noexcept;
+void* allocate_managed_bytes(std::size_t bytes);
+void deallocate_managed_bytes(void* data, StreamRef stream) noexcept;
 
 }  // namespace detail
 
 /// A standard allocator backed by the device's stream-ordered memory pool.
+/// All GPU uses must run on this stream, which must outlive the allocation.
 template <class T>
 class PooledDeviceAllocator {
  public:
@@ -57,7 +62,44 @@ class PooledDeviceAllocator {
   StreamRef stream_;
 };
 
+/// Host/device storage whose GPU uses must all run on the supplied stream.
+/// The stream must outlive the allocation; deallocation waits for its work.
+template <class T>
+class ManagedAllocator {
+ public:
+  using value_type = T;
+
+  ManagedAllocator() = default;
+  explicit ManagedAllocator(StreamRef stream) : stream_(stream) {}
+
+  template <class U>
+  ManagedAllocator(const ManagedAllocator<U>& other) noexcept
+      : stream_(other.stream()) {}
+
+  [[nodiscard]] T* allocate(std::size_t n) {
+    if (n > std::numeric_limits<std::size_t>::max() / sizeof(T))
+      throw std::bad_array_new_length();
+    return static_cast<T*>(detail::allocate_managed_bytes(n * sizeof(T)));
+  }
+
+  void deallocate(T* data, std::size_t) noexcept {
+    detail::deallocate_managed_bytes(data, stream_);
+  }
+
+  StreamRef stream() const noexcept { return stream_; }
+
+  template <class U>
+  friend bool operator==(const ManagedAllocator& a,
+                         const ManagedAllocator<U>& b) noexcept {
+    return a.stream().get() == b.stream().get();
+  }
+
+ private:
+  StreamRef stream_;
+};
+
 /// Dense tensor metadata plus shared ownership of its allocation.
+/// Copies alias the data. A ref() also borrows this object's extent metadata.
 template <class Allocator = PooledDeviceAllocator<std::byte>>
 class Tensor {
  public:
@@ -90,9 +132,19 @@ class Tensor {
   }
 
   TensorRef ref() const noexcept {
-    return TensorRef{
-        const_cast<void*>(data()), type_, {extent_.data(), extent_.size()}, {},
-        Layout::ColumnMajor,       1};
+    std::uint32_t alignment = 1;
+    if (const auto address = reinterpret_cast<std::uintptr_t>(data());
+        address != 0) {
+      const int bits = std::countr_zero(address);
+      // Cap at CUDA's allocation alignment so equivalent buffers share plans.
+      alignment <<= bits < 8 ? bits : 8;
+    }
+    return TensorRef{const_cast<void*>(data()),
+                     type_,
+                     {extent_.data(), extent_.size()},
+                     {},
+                     Layout::ColumnMajor,
+                     alignment};
   }
 
  private:
@@ -136,10 +188,12 @@ class Tensor {
   }
 
   std::size_t volume() const {
+    bool empty = false;
     for (std::int64_t e : extent_) {
       if (e < 0) throw std::invalid_argument("katal: negative tensor extent");
-      if (e == 0) return 0;
+      if (e == 0) empty = true;
     }
+    if (empty) return 0;
 
     std::size_t result = 1;
     for (std::int64_t e : extent_) {

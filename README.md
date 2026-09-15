@@ -5,37 +5,26 @@ cuTENSOR.
 
 **Work in progress.** Equation parsing, mode classification, and the cuTENSOR
 backend for contraction, permutation, reduction, and copy are implemented and
-tested, with plan caching and a pluggable workspace allocator. See
-`examples/` for CCSD-shaped calls. Documentation will follow once the API
-settles.
+tested, with plan caching and a pluggable workspace allocator. The API is not
+stable yet.
 
-## Building
+## Quick start
 
-Needs a C++20 compiler and CMake 3.24 or newer. Catch2 v3 is used for the
-tests; an installed copy is preferred and one is fetched if none is found.
+Needs a C++20 compiler and CMake 3.24 or newer. GPU execution also requires
+the CUDA Toolkit and cuTENSOR; without them, only the host-side layers build.
 
 ```sh
-cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-| Option | Default | Effect |
-| --- | --- | --- |
-| `KATAL_BUILD_TESTS` | `ON` | build the test executables |
-| `KATAL_BUILD_BENCHMARKS` | `OFF` | build the benchmark harness |
-| `KATAL_ENABLE_JIT` | `OFF` | allow cuTENSOR JIT compilation |
-| `KATAL_MAX_RANK` | `12` | largest describable tensor rank |
+## Documentation
 
-## Development
-
-```sh
-pre-commit install
-```
-
-That wires up formatting, include grouping, and a clang-tidy naming check
-before each commit. The clang-tidy hook reads `build/compile_commands.json`,
-so configure once before committing.
+- [Overview](docs/index.md)
+- [Building, testing, and development](docs/building.md)
+- [Tensor ownership and allocators](docs/tensors.md)
+- [Examples](docs/examples.md)
 
 ## License
 

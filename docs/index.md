@@ -45,6 +45,15 @@ the equation it computes instead of as descriptor-building boilerplate.
     Bring your own device allocator, or let Katal manage scratch with
     `cudaMallocAsync`.
 
+-   __Tensor storage__
+
+    ---
+
+    `Tensor<Allocator>` owns shared, column-major storage; `TensorRef` borrows
+    it. Choose pooled device or managed allocation independently of execution
+    workspace. See [tensor ownership and allocators](tensors.md).
+
 </div>
 
+[Getting started](building.md){ .md-button }
 [API reference](api/index.html){ .md-button }

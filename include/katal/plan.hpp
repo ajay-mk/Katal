@@ -149,11 +149,11 @@ std::shared_ptr<const Plan> cached_plan(
     const Context& context, std::string_view equation, const TensorRef& a,
     const TensorRef& d, std::optional<PlanOptions> options = {});
 
-/// Parse, plan, allocate scratch and run, in one call.
+/// Look up a cached plan, allocate scratch and run, in one call.
 ///
-/// Pays for all of that on every call. Negligible against a large contraction,
-/// dominant for a small one, so a loop over tile-sized work should build a
-/// `Plan` once and execute it instead.
+/// Parsing and planning happen on a cache miss. Every call still looks up the
+/// plan and allocates scratch; hoist a Plan and its workspace out of a hot loop
+/// to avoid that overhead.
 template <WorkspaceAllocator A = CudaAsyncAllocator>
 void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
             const TensorRef& b, Scalar beta, const TensorRef& d,
