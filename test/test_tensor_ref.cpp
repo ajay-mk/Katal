@@ -1,6 +1,7 @@
 #include <array>
 #include <complex>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -51,6 +52,22 @@ TEST_CASE("dense strides", "[tensor_ref]") {
     REQUIRE(dense_strides({one.data(), 1}, Layout::RowMajor) == Extents{1});
     REQUIRE(dense_strides({}, Layout::RowMajor) == Extents{});
   }
+}
+
+TEST_CASE("dense strides reject invalid or unrepresentable shapes",
+          "[tensor_ref]") {
+  const auto largest = std::numeric_limits<std::int64_t>::max();
+  const Extents overflow{largest, 2, 1};
+  REQUIRE_THROWS_AS(dense_strides(overflow, Layout::ColumnMajor),
+                    std::length_error);
+  const Extents reversed{1, 2, largest};
+  REQUIRE_THROWS_AS(dense_strides(reversed, Layout::RowMajor),
+                    std::length_error);
+  const Extents negative{0, -1};
+  REQUIRE_THROWS_AS(dense_strides(negative, Layout::ColumnMajor),
+                    std::invalid_argument);
+  const Extents boundary{largest, 1};
+  REQUIRE(dense_strides(boundary, Layout::ColumnMajor) == Extents{1, largest});
 }
 
 TEST_CASE("mode_order", "[tensor_ref]") {

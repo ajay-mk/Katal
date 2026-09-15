@@ -1,4 +1,4 @@
-// The closed-shell CCSD correlation energy, as a first look at Katal.
+// The doubles-only closed-shell correlation energy, as a first look at Katal.
 //
 //   E = 2 sum_ijab <ij|ab> t[i,j,a,b] - sum_ijab <ij|ba> t[i,j,a,b]
 //
@@ -41,12 +41,12 @@ void correlation_energy(const char* label) {
 
   // Contracting over every index leaves nothing, so the result has rank zero.
   ein("ijab,ijab->", T{1}, t2, oovv, T{0}, energy);
-  cudaDeviceSynchronize();
+  example::check(cudaDeviceSynchronize());
   const T direct = energy.scalar();
 
   // The exchange term swaps the two virtual labels of the integrals.
   ein("ijab,ijba->", T{1}, t2, oovv, T{0}, energy);
-  cudaDeviceSynchronize();
+  example::check(cudaDeviceSynchronize());
   const T exchange = energy.scalar();
 
   std::printf("%s\n", label);
@@ -57,9 +57,13 @@ void correlation_energy(const char* label) {
 
 }  // namespace
 
-int main() {
+int main() try {
+  const katal::Runtime runtime;
   correlation_energy<double>("real (f64)");
   correlation_energy<std::complex<double>>("complex (c64)");
   std::printf("\nrandom amplitudes, so neither energy is physical\n");
   return 0;
+} catch (const std::exception& error) {
+  std::fprintf(stderr, "%s\n", error.what());
+  return 1;
 }

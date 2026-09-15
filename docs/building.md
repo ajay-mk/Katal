@@ -19,16 +19,12 @@ ctest --test-dir build --output-on-failure
 ```
 
 Omit the two dependency hints if CUDA and cuTENSOR are in standard search
-paths, or to build the host-only layers on a machine without them. HDF5 is
-optional and separate from the core library. A downstream project uses
+paths, or to build the host-only layers on a machine without them. A downstream project uses
 `find_package(Katal REQUIRED)` and links `Katal::katal` after installation.
 
 | Option | Default | Effect |
 | --- | --- | --- |
 | `KATAL_BUILD_TESTS` | `ON` | build the test executables |
-| `KATAL_BUILD_BENCHMARKS` | `OFF` | reserved for the benchmark harness; not wired into this build |
-| `KATAL_ENABLE_JIT` | `OFF` | allow cuTENSOR JIT compilation |
-| `KATAL_ENABLE_HDF5` | `ON` | build the optional HDF5 reader when found |
 | `KATAL_MAX_RANK` | `12` | largest describable tensor rank |
 
 With a GPU backend configured, start with the

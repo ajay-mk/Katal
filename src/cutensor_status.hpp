@@ -9,12 +9,14 @@
 /// Turns a cuTENSOR status into a katal::Error. The equation argument is
 /// required rather than optional because it is what makes a cuTENSOR failure
 /// diagnosable.
-#define KATAL_CHECK(expr, equation)                                  \
-  do {                                                               \
-    const cutensorStatus_t katal_status_ = (expr);                   \
-    if (katal_status_ != CUTENSOR_STATUS_SUCCESS)                    \
-      throw ::katal::Error(::katal::Errc::CutensorError, (equation), \
-                           cutensorGetErrorString(katal_status_));   \
+#define KATAL_CHECK(expr, equation)                                            \
+  do {                                                                         \
+    const cutensorStatus_t katal_status_ = (expr);                             \
+    if (katal_status_ != CUTENSOR_STATUS_SUCCESS)                              \
+      throw ::katal::Error(katal_status_ == CUTENSOR_STATUS_NOT_SUPPORTED      \
+                               ? ::katal::Errc::UnsupportedPattern             \
+                               : ::katal::Errc::CutensorError,                 \
+                           (equation), cutensorGetErrorString(katal_status_)); \
   } while (false)
 
 /// The same for a CUDA runtime call.

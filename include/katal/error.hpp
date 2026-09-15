@@ -20,9 +20,9 @@ enum class Errc {
   /// A label carries two different extents across the operands.
   ExtentMismatch,
   /// Well formed and correctly shaped, but not something Katal lowers: a
-  /// free
-  /// reduction beside a contraction, a broadcast, a diagonal, or more operands
-  /// than the current lowering handles.
+  /// free reduction beside a contraction, a broadcast, a diagonal, more
+  /// operands than the current lowering handles, or a cuTENSOR operation
+  /// reported as not supported.
   UnsupportedPattern,
   /// The requested compute type cannot represent the operands, or alpha and
   /// beta cannot be expressed in it.
@@ -34,9 +34,6 @@ enum class Errc {
   CutensorError,
   /// A CUDA runtime call failed.
   CudaError,
-  /// A file could not be read or written, or held something other than what
-  /// was asked for.
-  IoError,
 };
 
 inline const std::error_category& error_category() noexcept {
@@ -62,8 +59,6 @@ inline const std::error_category& error_category() noexcept {
           return "cuTENSOR error";
         case Errc::CudaError:
           return "CUDA error";
-        case Errc::IoError:
-          return "file I/O error";
       }
       return "unrecognized Katal error";
     }

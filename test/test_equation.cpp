@@ -81,6 +81,14 @@ TEST_CASE("equation parse rejections", "[equation]") {
 }
 
 TEST_CASE("classification picks the kernel", "[equation]") {
+  SECTION("the tensor rank limit does not limit the union of labels") {
+    if (katal::max_rank < 9) SKIP("needs rank-nine tensors");
+    const auto c = Equation::parse("abcdefghi,efghijklm->abcdjklm").classify();
+    REQUIRE(c.kind == Lowering::Contract);
+    REQUIRE(c.contracted == katal::util::Index("efghi"));
+    REQUIRE(c.free_a == katal::util::Index("abcd"));
+    REQUIRE(c.free_b == katal::util::Index("jklm"));
+  }
   SECTION("binary contraction") {
     const Classification c = Equation::parse("ij,jk->ik").classify();
     REQUIRE(c.kind == Lowering::Contract);

@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 
@@ -20,6 +21,9 @@ class Context::Impl {
  public:
   explicit Impl(Config config) : config_(std::move(config)) {
     KATAL_CHECK(cutensorCreate(&handle_), "");
+    std::unique_ptr<std::remove_pointer_t<cutensorHandle_t>,
+                    decltype(&cutensorDestroy)>
+        guard(handle_, &cutensorDestroy);
     if (config_.plan_cache_capacity > 0)
       KATAL_CHECK(
           cutensorHandleResizePlanCache(
@@ -34,12 +38,14 @@ class Context::Impl {
       cutensorHandleReadPlanCacheFromFile(
           handle_, config_.plan_cache_file.c_str(), &lines);
     }
+    handle_ = guard.release();
   }
 
   ~Impl() {
     // Destructors are noexcept and swallow errors; there is nothing useful to
     // do with a failure here.
     if (handle_ == nullptr) return;
+    plans_.clear();
     if (!config_.plan_cache_file.empty())
       cutensorHandleWritePlanCacheToFile(handle_,
                                          config_.plan_cache_file.c_str());
@@ -62,6 +68,8 @@ class Context::Impl {
   template <class Make>
   std::shared_ptr<const Plan> cached(const std::string& key, Make make) const {
     const std::lock_guard<std::mutex> lock(mutex_);
+    if (config_.plan_cache_entries == 0)
+      return std::make_shared<const Plan>(make());
     if (const auto it = plans_.find(key); it != plans_.end()) return it->second;
     auto plan = std::make_shared<const Plan>(make());
     if (plans_.size() >= config_.plan_cache_entries) plans_.clear();

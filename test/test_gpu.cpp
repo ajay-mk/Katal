@@ -1,4 +1,5 @@
 #include <array>
+#include <complex>
 #include <cstdint>
 #include <numeric>
 #include <span>
@@ -100,6 +101,63 @@ void agrees_with_reference(std::string_view equation,
 }
 
 }  // namespace
+
+TEST_CASE("complex padded tensors execute across layouts", "[gpu]") {
+  if (!have_gpu()) SKIP("no CUDA device");
+  using Complex = std::complex<double>;
+  std::vector<Complex> a(10), b(6), initial(8, Complex{-17.0, 3.0});
+  for (std::size_t i = 0; i < a.size(); ++i)
+    a[i] = {double(i + 1), -0.5 * double(i)};
+  for (std::size_t i = 0; i < b.size(); ++i) b[i] = {0.25 * double(i + 1), 1.0};
+  DeviceBuffer<Complex> da(a), db(b), dd(initial);
+  const std::array<std::int64_t, 2> ea{2, 3}, eb{3, 2}, ed{2, 2};
+  const std::array<std::int64_t, 2> sa{5, 1}, sd{1, 4};
+  auto ar = katal::make_ref(da.get(), katal::Dtype::C64, ea);
+  ar.stride = sa;
+  auto br = katal::make_ref(db.get(), katal::Dtype::C64, eb,
+                            katal::Layout::ColumnMajor);
+  auto dr = katal::make_ref(dd.get(), katal::Dtype::C64, ed,
+                            katal::Layout::ColumnMajor);
+  dr.stride = sd;
+  const Complex alpha{0.75, -0.5}, beta{-0.25, 0.5};
+  katal::einsum("ij,jk->ik", alpha, ar, br, beta, dr);
+  REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+  auto expected = initial;
+  ar.data = a.data();
+  br.data = b.data();
+  dr.data = expected.data();
+  const std::array<katal::TensorRef, 2> inputs{ar, br};
+  katal::test::reference_einsum<Complex>(katal::Equation::parse("ij,jk->ik"),
+                                         alpha, inputs, beta, dr);
+  const auto got = dd.to_host();
+  for (std::size_t i = 0; i < got.size(); ++i)
+    REQUIRE(std::abs(got[i] - expected[i]) < 1e-11);
+}
+
+TEST_CASE("a retained plan executes after cache eviction", "[gpu]") {
+  if (!have_gpu()) SKIP("no CUDA device");
+  katal::Config config;
+  config.plan_cache_entries = 1;
+  const katal::Context context(config);
+  DeviceBuffer<double> a(std::vector<double>{1, 2, 3, 4});
+  DeviceBuffer<double> b(std::vector<double>{5, 6, 7, 8});
+  DeviceBuffer<double> d(std::vector<double>(4));
+  const std::array<std::int64_t, 2> extent{2, 2};
+  const auto ar = katal::make_ref(a.get(), katal::Dtype::F64, extent);
+  const auto br = katal::make_ref(b.get(), katal::Dtype::F64, extent);
+  const auto dr = katal::make_ref(d.get(), katal::Dtype::F64, extent);
+  const auto retained = katal::cached_plan(context, "ij,jk->ik", ar, br, dr);
+  const auto evict = katal::cached_plan(context, "ij->ji", ar, dr);
+  const auto rebuilt = katal::cached_plan(context, "ij,jk->ik", ar, br, dr);
+  REQUIRE(rebuilt.get() != retained.get());
+  const katal::util::ScopedWorkspace scratch(katal::CudaAsyncAllocator{},
+                                             retained->workspace_size(),
+                                             katal::StreamRef{});
+  retained->execute(1.0, a.get(), b.get(), 0.0, d.get(), d.get(),
+                    scratch.get());
+  REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+  REQUIRE(d.to_host() == std::vector<double>{19, 22, 43, 50});
+}
 
 TEST_CASE("gpu contraction matches the host reference", "[gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
@@ -291,9 +349,15 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
   REQUIRE(allocations == deallocations);
 
   const std::vector<double> got = dd.to_host();
-  bool nonzero = false;
-  for (double v : got) nonzero = nonzero || v != 0.0;
-  REQUIRE(nonzero);
+  std::vector<double> want(d.size(), 0.0);
+  const std::array<katal::TensorRef, 2> host{
+      katal::make_ref(const_cast<double*>(a.data()), katal::Dtype::F64, ea),
+      katal::make_ref(const_cast<double*>(b.data()), katal::Dtype::F64, eb)};
+  katal::test::reference_einsum<double>(
+      katal::Equation::parse("ijab,abcd->ijcd"), 1.0, host, 0.0,
+      katal::make_ref(want.data(), katal::Dtype::F64, ed));
+  for (std::size_t i = 0; i < got.size(); ++i)
+    REQUIRE_THAT(got[i], WithinRel(want[i], 1e-12));
 }
 
 TEST_CASE("the plan cache returns the same plan for the same problem",
@@ -345,7 +409,14 @@ TEST_CASE("every algorithm gives the same answer", "[gpu]") {
   DeviceBuffer<double> da(a), db(b);
   const katal::Equation eq = katal::Equation::parse("ijab,abcd->ijcd");
 
-  std::vector<double> reference;
+  std::vector<double> reference(zero.size(), 0.0);
+  const std::array<katal::TensorRef, 2> host{
+      katal::make_ref(const_cast<double*>(a.data()), katal::Dtype::F64, ea),
+      katal::make_ref(const_cast<double*>(b.data()), katal::Dtype::F64, eb)};
+  katal::test::reference_einsum<double>(
+      eq, 1.0, host, 0.0,
+      katal::make_ref(reference.data(), katal::Dtype::F64, ed));
+  bool default_ran = false;
   for (const katal::Algo algo :
        {katal::Algo::Default, katal::Algo::DefaultPatient, katal::Algo::Gett,
         katal::Algo::Tgett, katal::Algo::Ttgt})
@@ -364,32 +435,33 @@ TEST_CASE("every algorithm gives the same answer", "[gpu]") {
       options.algo = algo;
       options.workspace = workspace;
 
-      // Not every algorithm is available for every problem and workspace, and
-      // being told so is the correct outcome rather than a failure.
+      // Only an explicitly unsupported planning combination may be skipped.
+      std::optional<katal::Plan> plan;
       try {
-        const katal::Plan plan =
-            katal::make_plan(katal::default_context(), eq, ar, br, dr, options);
-        void* scratch = nullptr;
-        if (plan.workspace_size() > 0)
-          REQUIRE(cudaMalloc(&scratch, plan.workspace_size()) == cudaSuccess);
-        plan.execute(1.0, da.get(), db.get(), 0.0, dd.get(), dd.get(),
-                     {scratch, plan.workspace_size()});
-        REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
-        cudaFree(scratch);
-      } catch (const katal::Error&) {
+        plan.emplace(katal::make_plan(katal::default_context(), eq, ar, br, dr,
+                                      options));
+      } catch (const katal::Error& error) {
+        REQUIRE(error.code() == katal::Errc::UnsupportedPattern);
+        REQUIRE_FALSE((algo == katal::Algo::Default &&
+                       workspace == katal::WorkspacePreference::Default));
         continue;
       }
+      const katal::util::ScopedWorkspace scratch(katal::CudaAsyncAllocator{},
+                                                 plan->workspace_size(),
+                                                 katal::StreamRef{});
+      plan->execute(1.0, da.get(), db.get(), 0.0, dd.get(), dd.get(),
+                    scratch.get());
+      REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+      if (algo == katal::Algo::Default &&
+          workspace == katal::WorkspacePreference::Default)
+        default_ran = true;
 
       const std::vector<double> got = dd.to_host();
-      if (reference.empty()) {
-        reference = got;
-        continue;
-      }
       for (std::size_t i = 0; i < got.size(); ++i)
         REQUIRE_THAT(got[i], WithinRel(reference[i], 1e-12));
     }
 
-  REQUIRE_FALSE(reference.empty());
+  REQUIRE(default_ran);
 }
 
 TEST_CASE("gpu rejections name the problem", "[gpu]") {

@@ -169,7 +169,7 @@ inline Classification Equation::classify_binary() const {
                     " appear in one input only and not in the result; a free "
                     "reduction cannot be fused into a contraction");
 
-  if (const util::Index broadcast = d - (a | b); broadcast.rank() > 0)
+  if (const util::Index broadcast = (d - a) - b; broadcast.rank() > 0)
     throw Error(Errc::UnsupportedPattern, text_,
                 "label(s) " + quoted(broadcast) +
                     " appear in the result but in no input; broadcasting is "

@@ -37,13 +37,14 @@ enum class WorkspacePreference {
 /// How to plan a contraction, as opposed to what to contract.
 ///
 /// A Context carries one of these as its default, so a program can set a policy
-/// once instead of at every call site. Passing one to `make_plan` or `einsum`
-/// overrides that default for the one call.
+/// once for `cached_plan` and `einsum`. An explicit option overrides that
+/// policy. `make_plan` uses its own argument, defaulting to PlanOptions{};
+/// it does not inherit the Context policy.
 struct PlanOptions {
   /// Accumulation type. Unset follows the output tensor, which is the only
   /// choice cuTENSOR always accepts; asking for f64 accumulation over f32
   /// storage, for instance, is not a supported combination. Set it to widen
-  /// deliberately, or to opt into a reduced-precision mode such as TF32.
+  /// deliberately where supported. TF32 is not exposed by this interface.
   std::optional<Dtype> compute;
 
   /// Caps the scratch a plan may use. 0 takes whatever `workspace` suggests.
@@ -51,7 +52,6 @@ struct PlanOptions {
 
   Algo algo = Algo::Default;
 
-  /// Never the worst choice on any shape measured so far.
   WorkspacePreference workspace = WorkspacePreference::Default;
 
   /// Picks the n-th best kernel by cuTENSOR's own model, 0 being its first

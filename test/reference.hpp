@@ -32,10 +32,10 @@ inline Extents strides_of(const TensorRef& t) {
   return s;
 }
 
-inline std::size_t position_of(const util::Index& idx, util::Label l) {
-  for (std::size_t i = 0; i < idx.rank(); ++i)
+inline std::size_t position_of(std::string_view idx, util::Label l) {
+  for (std::size_t i = 0; i < idx.size(); ++i)
     if (idx[i] == l) return i;
-  return idx.rank();
+  return idx.size();
 }
 
 /// Brute-force einsum over host memory: `out = alpha * <equation> + beta *
@@ -54,10 +54,12 @@ void reference_einsum(const Equation& eq, T alpha,
                       std::span<const TensorRef> in, T beta,
                       const TensorRef& out) {
   // Every distinct label, and the extent each one runs over.
-  util::Index all = eq.result();
-  for (std::size_t k = 0; k < eq.n_operands(); ++k) all = all | eq.operand(k);
+  std::string all(eq.result());
+  for (std::size_t k = 0; k < eq.n_operands(); ++k)
+    for (auto label : eq.operand(k))
+      if (all.find(label) == std::string::npos) all.push_back(label);
 
-  std::vector<std::int64_t> extent(all.rank(), 0);
+  std::vector<std::int64_t> extent(all.size(), 0);
   const auto bind = [&](const util::Index& idx,
                         std::span<const std::int64_t> e) {
     for (std::size_t p = 0; p < idx.rank(); ++p) {
@@ -101,7 +103,7 @@ void reference_einsum(const Equation& eq, T alpha,
     } while (advance_counter(c, out.extent));
   }
 
-  std::vector<std::int64_t> c(all.rank(), 0);
+  std::vector<std::int64_t> c(all.size(), 0);
   do {
     T term = alpha;
     for (std::size_t k = 0; k < in.size(); ++k) {
