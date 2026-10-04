@@ -28,6 +28,28 @@ inline cutensorDataType_t to_cutensor(Dtype type) {
   throw Error(Errc::DtypeMismatch, "", "unrecognized data type");
 }
 
+/// The storage type for a cuTENSOR data type, which is how the scalar type an
+/// operation expects comes back.
+inline Dtype from_cutensor(cutensorDataType_t type) {
+  switch (type) {
+    case CUTENSOR_R_32F:
+      return Dtype::F32;
+    case CUTENSOR_R_64F:
+      return Dtype::F64;
+    case CUTENSOR_C_32F:
+      return Dtype::C32;
+    case CUTENSOR_C_64F:
+      return Dtype::C64;
+    case CUTENSOR_R_16F:
+      return Dtype::F16;
+    case CUTENSOR_R_16BF:
+      return Dtype::Bf16;
+    default:
+      throw Error(Errc::DtypeMismatch, "",
+                  "cuTENSOR uses a scalar type Katal does not represent");
+  }
+}
+
 /// The cuTENSOR compute descriptor for an accumulation type. cuTENSOR has no
 /// complex compute descriptors: a complex contraction accumulates in the real
 /// descriptor of the matching precision.
