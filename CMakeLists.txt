@@ -18,6 +18,7 @@ if(APPLE AND NOT CMAKE_OSX_SYSROOT)
 endif()
 
 option(KATAL_BUILD_TESTS "Build Katal tests" ON)
+option(KATAL_BUILD_BENCHMARKS "Build GPU timing benchmarks" OFF)
 option(KATAL_ENABLE_LOGGING
        "Log Katal cache and planning diagnostics to stderr" OFF)
 
@@ -58,6 +59,10 @@ target_include_directories(
 target_compile_features(katal ${katal_scope} cxx_std_20)
 
 add_subdirectory(examples)
+
+if(KATAL_BUILD_BENCHMARKS)
+  add_subdirectory(bench)
+endif()
 
 if(KATAL_BUILD_TESTS)
   enable_testing()

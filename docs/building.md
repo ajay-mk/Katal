@@ -25,6 +25,7 @@ paths, or to build the host-only layers on a machine without them. A downstream 
 | Option | Default | Effect |
 | --- | --- | --- |
 | `KATAL_BUILD_TESTS` | `ON` | build the test executables |
+| `KATAL_BUILD_BENCHMARKS` | `OFF` | build the GPU timing drivers in `bench/` |
 | `KATAL_ENABLE_LOGGING` | `OFF` | compile cache and planning diagnostics into the GPU backend |
 | `KATAL_MAX_RANK` | `12` | largest describable tensor rank |
 
@@ -103,3 +104,17 @@ mkdocs build --strict
 ```
 
 The generated site is written to `docs-build/site/`.
+
+## Timing benchmarks
+
+With CUDA and cuTENSOR available, configure with `-DKATAL_BUILD_BENCHMARKS=ON`
+to build `bench/grid`, `bench/overhead`, and `bench/shapes`.
+`grid` compares two contraction layouts over occupied/virtual dimensions;
+`overhead` compares hoisted execution with cached and uncached einsum;
+`shapes` compares contraction shapes/layouts with cuBLAS DGEMM.
+
+These drivers use synthetic zero-filled FP64 tensors and report minimum device
+elapsed times across repeated trials. They are timing tools, not numerical
+correctness tests or full SeQuant residual benchmarks. They require a CUDA GPU;
+CUDA/cuBLAS failures exit unsuccessfully. Without CUDA and cuTENSOR, enabling
+the option leaves these targets unbuilt and the host-only build available.
