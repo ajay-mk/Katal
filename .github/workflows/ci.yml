@@ -63,8 +63,8 @@ jobs:
   # installs cuTENSOR and the CUDA runtime headers so they are, on a machine
   # that is not a developer's own. No GPU is involved: the library is plain C++
   # against cuTENSOR's C API, and nvcc is here only because FindCUDAToolkit
-  # uses it to locate the toolkit root. The gpu-labelled cases need a device
-  # and are run locally.
+  # uses it to locate the toolkit root. The gpu-labelled cases need a device;
+  # gpu.yml runs them on Modal.
   cuda-build:
     runs-on: ubuntu-latest
     env:
@@ -129,7 +129,7 @@ jobs:
             test -x "build/bench/${benchmark}"
           done
 
-      # The gpu-labelled cases need a device; they are run locally.
+      # The gpu-labelled cases need a device; gpu.yml runs them on Modal.
       - name: Test
         run: ctest --test-dir build --output-on-failure --label-exclude gpu
 

@@ -100,6 +100,26 @@ builds a downstream consumer, and checks that CUDA headers do not leak through
 the public API. Set `CUDAToolkit_ROOT` and `CUTENSOR_ROOT` in the environment
 when validating GPU dependencies outside standard search paths.
 
+### GPU tests in CI
+
+The `gpu` workflow runs `ctest -L gpu` on a Modal L4. It runs on pushes to
+`main`, on pull requests labelled `gpu`, and on demand from the Actions tab.
+Until the repository has `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` secrets,
+from a Modal account's token settings, the job passes with a notice and runs
+nothing. Pull requests from forks never receive the secrets.
+
+The same run works from a checkout with the Modal client and a token:
+
+```sh
+pip install modal
+modal token new
+modal run tools/modal_gpu.py
+```
+
+It uploads the working tree, so uncommitted changes are tested too. The job
+uses an L4, Modal's cheapest GPU, so that it fits the free tier's monthly
+credit, and the function's 30-minute timeout bounds a runaway run.
+
 ## Development
 
 ```sh
