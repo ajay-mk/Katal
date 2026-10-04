@@ -46,7 +46,9 @@ double time_best(const std::function<void()>& run) {
   return best;
 }
 
-void run_point(const char* spelling, const std::string& equation,
+/// Returns false when the point could not be run, e.g. out of device memory,
+/// so the sweep can report it and move on to the remaining points.
+bool run_point(const char* spelling, const std::string& equation,
                std::int64_t o, std::int64_t v) {
   const auto arrow = equation.find("->");
   const auto comma = equation.find(',');
@@ -79,10 +81,11 @@ void run_point(const char* spelling, const std::string& equation,
     std::printf("  %4lld %5lld  %-5s %8.1f %10.4f %9.2f   %s\n", (long long)o,
                 (long long)v, spelling, gib, ms, tflops,
                 ms < kLaunchBoundMs ? "launch bound" : "");
+    return true;
   } catch (const std::exception& e) {
     std::printf("  %4lld %5lld  %-5s %8.1f   %s\n", (long long)o, (long long)v,
                 spelling, gib, e.what());
-    throw;
+    return false;
   }
 }
 
@@ -97,14 +100,16 @@ int run() {
               "ms", "TFLOP/s");
   std::printf("  %s\n", std::string(72, '-').c_str());
 
+  int failed = 0;
   for (const std::int64_t o : {4, 8, 16}) {
     for (const std::int64_t v : {8, 16, 32, 64, 128, 256}) {
-      run_point("acbd", "ijcd,acbd->ijab", o, v);
-      run_point("abcd", "ijab,abcd->ijcd", o, v);
+      failed += !run_point("acbd", "ijcd,acbd->ijab", o, v);
+      failed += !run_point("abcd", "ijab,abcd->ijcd", o, v);
     }
     std::printf("  %s\n", std::string(72, '-').c_str());
   }
-  return 0;
+  if (failed > 0) std::printf("\n%d point(s) failed\n", failed);
+  return failed > 0 ? 1 : 0;
 }
 
 int main() {
