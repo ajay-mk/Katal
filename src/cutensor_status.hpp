@@ -6,17 +6,31 @@
 
 #include <katal/error.hpp>
 
+namespace katal::util {
+
+/// The Errc a failing cuTENSOR status is reported as.
+inline Errc errc_of(cutensorStatus_t status) noexcept {
+  switch (status) {
+    case CUTENSOR_STATUS_NOT_SUPPORTED:
+      return Errc::UnsupportedPattern;
+    case CUTENSOR_STATUS_INSUFFICIENT_WORKSPACE:
+      return Errc::WorkspaceTooSmall;
+    default:
+      return Errc::CutensorError;
+  }
+}
+
+}  // namespace katal::util
+
 /// Turns a cuTENSOR status into a katal::Error. The equation argument is
 /// required rather than optional because it is what makes a cuTENSOR failure
 /// diagnosable.
-#define KATAL_CHECK(expr, equation)                                            \
-  do {                                                                         \
-    const cutensorStatus_t katal_status_ = (expr);                             \
-    if (katal_status_ != CUTENSOR_STATUS_SUCCESS)                              \
-      throw ::katal::Error(katal_status_ == CUTENSOR_STATUS_NOT_SUPPORTED      \
-                               ? ::katal::Errc::UnsupportedPattern             \
-                               : ::katal::Errc::CutensorError,                 \
-                           (equation), cutensorGetErrorString(katal_status_)); \
+#define KATAL_CHECK(expr, equation)                                           \
+  do {                                                                        \
+    const cutensorStatus_t katal_status_ = (expr);                            \
+    if (katal_status_ != CUTENSOR_STATUS_SUCCESS)                             \
+      throw ::katal::Error(::katal::util::errc_of(katal_status_), (equation), \
+                           cutensorGetErrorString(katal_status_));            \
   } while (false)
 
 /// The same for a CUDA runtime call.
