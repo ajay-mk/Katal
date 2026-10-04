@@ -7,11 +7,11 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 
 #include <katal/config.hpp>
+#include <katal/error.hpp>
 #include <katal/util/static_vector.hpp>
 
 namespace katal::util {
@@ -63,7 +63,9 @@ class Index {
 
   constexpr void push_back(Label l) {
     if (labels_.size() == labels_.capacity())
-      throw std::length_error("index rank exceeds the configured maximum rank");
+      throw Error(
+          Errc::RankMismatch, {},
+          "an index has more than " + std::to_string(max_rank) + " labels");
     labels_.push_back(l);
   }
 
@@ -120,11 +122,14 @@ constexpr Index operator^(const Index& a, const Index& b) {
 }
 
 /// The permutation taking `from` to `to`, i.e. `p` with `to[i] == from[p[i]]`.
-/// Throws `std::invalid_argument` unless the two are permutations of each
-/// other; a silently wrong permutation would be silently wrong numerics.
+/// Throws `Errc::RankMismatch` or `Errc::UnsupportedPattern` unless the two
+/// are permutations of each other; a silently wrong permutation would be
+/// silently wrong numerics.
 constexpr Permutation permute_from_to(const Index& from, const Index& to) {
   if (from.rank() != to.rank())
-    throw std::invalid_argument("katal: permute_from_to rank mismatch");
+    throw Error(Errc::RankMismatch, {},
+                "permute_from_to: \"" + std::string(from) + "\" and \"" +
+                    std::string(to) + "\" differ in rank");
 
   Permutation p;
   // ponytail: O(n^2) with a used-slot mask, which is what makes it correct for
@@ -137,9 +142,10 @@ constexpr Permutation permute_from_to(const Index& from, const Index& to) {
     for (; j < from.rank(); ++j)
       if (!used[j] && from[j] == l) break;
     if (j == from.rank())
-      throw std::invalid_argument(
-          "katal: permute_from_to has no unused source label matching the "
-          "destination");
+      throw Error(Errc::UnsupportedPattern, {},
+                  "permute_from_to: \"" + std::string(to) +
+                      "\" is not a permutation of \"" + std::string(from) +
+                      "\"");
     used[j] = 1;
     p.push_back(j);
   }

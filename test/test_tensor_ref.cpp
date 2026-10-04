@@ -3,18 +3,22 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <string>
 #include <vector>
 
+#include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/tensor_ref.hpp>
 
 using katal::dense_strides;
 using katal::Dtype;
+using katal::Errc;
 using katal::Extents;
 using katal::Layout;
 using katal::mode_order;
 using katal::TensorRef;
+using katal::test::thrown_code;
 using katal::util::Index;
 
 namespace {
@@ -58,17 +62,17 @@ TEST_CASE("dense strides reject invalid or unrepresentable shapes",
           "[tensor_ref]") {
   const auto largest = std::numeric_limits<std::int64_t>::max();
   const Extents overflow{largest, 2, 1};
-  REQUIRE_THROWS_AS(dense_strides(overflow, Layout::ColumnMajor),
-                    std::length_error);
+  REQUIRE(thrown_code([&] { dense_strides(overflow, Layout::ColumnMajor); }) ==
+          Errc::ExtentMismatch);
   const Extents reversed{1, 2, largest};
-  REQUIRE_THROWS_AS(dense_strides(reversed, Layout::RowMajor),
-                    std::length_error);
+  REQUIRE(thrown_code([&] { dense_strides(reversed, Layout::RowMajor); }) ==
+          Errc::ExtentMismatch);
   const Extents negative{0, -1};
-  REQUIRE_THROWS_AS(dense_strides(negative, Layout::ColumnMajor),
-                    std::invalid_argument);
+  REQUIRE(thrown_code([&] { dense_strides(negative, Layout::ColumnMajor); }) ==
+          Errc::ExtentMismatch);
   const Extents zero{3, 0, 4};
-  REQUIRE_THROWS_AS(dense_strides(zero, Layout::RowMajor),
-                    std::invalid_argument);
+  REQUIRE(thrown_code([&] { dense_strides(zero, Layout::RowMajor); }) ==
+          Errc::ExtentMismatch);
   const Extents boundary{largest, 1};
   REQUIRE(dense_strides(boundary, Layout::ColumnMajor) == Extents{1, largest});
 }
@@ -131,5 +135,19 @@ TEST_CASE("mode_order", "[tensor_ref]") {
     TensorRef bad = t;
     bad.stride = {two.data(), 2};
     REQUIRE_THROWS_AS(mode_order(Index("ijkl"), bad), katal::Error);
+  }
+
+  SECTION("a rank error quotes the equation and names the operand") {
+    const TensorRef t =
+        katal::make_ref(&storage, Dtype::F64, span_of(shape), Layout::RowMajor);
+    try {
+      mode_order(Index("ijk"), t, "ijk,kl->ijl");
+      FAIL("expected a rejection");
+    } catch (const katal::Error& e) {
+      REQUIRE(e.code() == Errc::RankMismatch);
+      REQUIRE(e.equation() == "ijk,kl->ijl");
+      REQUIRE(std::string(e.what()).find("operand \"ijk\" has 3 labels") !=
+              std::string::npos);
+    }
   }
 }

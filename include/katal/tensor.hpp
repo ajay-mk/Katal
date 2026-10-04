@@ -7,7 +7,6 @@
 #include <limits>
 #include <memory>
 #include <new>
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -113,8 +112,9 @@ class Tensor {
   explicit Tensor(Dtype type, Extents extent, Allocator allocator = {})
       : type_(type), extent_(std::move(extent)), size_(volume()) {
     const std::size_t element_bytes = size_of(type_);
+    // Too large to allocate is out of memory, as the allocators report it.
     if (size_ > std::numeric_limits<std::size_t>::max() / element_bytes)
-      throw std::length_error("katal: tensor allocation is too large");
+      throw std::bad_array_new_length();
     bytes_ = size_ * element_bytes;
     storage_ = std::make_shared<Storage>(bytes_, std::move(allocator));
   }
@@ -183,7 +183,7 @@ class Tensor {
       case Dtype::C64:
         return 16;
     }
-    throw std::invalid_argument("katal: unrecognized tensor data type");
+    throw Error(Errc::DtypeMismatch, {}, "unrecognized tensor data type");
   }
 
   /// Every extent must be positive: an empty tensor has nothing for a GPU
@@ -191,13 +191,14 @@ class Tensor {
   std::size_t volume() const {
     for (std::int64_t e : extent_)
       if (e <= 0)
-        throw std::invalid_argument("katal: tensor extents must be positive");
+        throw Error(Errc::ExtentMismatch, {},
+                    "tensor extents must be positive");
 
     std::size_t result = 1;
     for (std::int64_t e : extent_) {
       const auto n = static_cast<std::size_t>(e);
       if (result > std::numeric_limits<std::size_t>::max() / n)
-        throw std::length_error("katal: tensor extent product is too large");
+        throw std::bad_array_new_length();
       result *= n;
     }
     return result;

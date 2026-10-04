@@ -17,7 +17,8 @@ enum class Errc {
   /// A label count disagrees with an extent count, or a rank exceeds
   /// `katal::max_rank`.
   RankMismatch,
-  /// A label carries two different extents across the operands.
+  /// A label carries two different extents across the operands, an extent is
+  /// not positive, or a shape is too large to address.
   ExtentMismatch,
   /// Well formed and correctly shaped, but not something Katal lowers: a
   /// free reduction beside a contraction, a broadcast, a diagonal, more

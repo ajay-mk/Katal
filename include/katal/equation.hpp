@@ -95,8 +95,10 @@ class Equation {
 inline util::Index Equation::make_index(std::string_view piece) const {
   try {
     return util::Index(piece);
-  } catch (const std::length_error& e) {
-    throw Error(Errc::RankMismatch, text_, e.what());
+  } catch (const Error&) {
+    throw Error(Errc::RankMismatch, text_,
+                "an operand or the result has more than " +
+                    std::to_string(max_rank) + " labels");
   }
 }
 
