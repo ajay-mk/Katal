@@ -79,9 +79,10 @@ inline TensorRef make_ref(void* data, Dtype type,
 inline Extents dense_strides(std::span<const std::int64_t> extent,
                              Layout layout) {
   for (const auto e : extent)
-    if (e < 0) throw std::invalid_argument("katal: negative tensor extent");
+    if (e <= 0)
+      throw std::invalid_argument("katal: tensor extents must be positive");
   const auto product = [](std::int64_t stride, std::int64_t e) {
-    if (e != 0 && stride > std::numeric_limits<std::int64_t>::max() / e)
+    if (stride > std::numeric_limits<std::int64_t>::max() / e)
       throw std::length_error("katal: dense stride is too large");
     return stride * e;
   };

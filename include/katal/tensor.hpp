@@ -116,8 +116,7 @@ class Tensor {
     if (size_ > std::numeric_limits<std::size_t>::max() / element_bytes)
       throw std::length_error("katal: tensor allocation is too large");
     bytes_ = size_ * element_bytes;
-    if (bytes_ != 0)
-      storage_ = std::make_shared<Storage>(bytes_, std::move(allocator));
+    storage_ = std::make_shared<Storage>(bytes_, std::move(allocator));
   }
 
   Dtype type() const noexcept { return type_; }
@@ -187,13 +186,12 @@ class Tensor {
     throw std::invalid_argument("katal: unrecognized tensor data type");
   }
 
+  /// Every extent must be positive: an empty tensor has nothing for a GPU
+  /// operation to read, and rejecting it here is clearer than at planning.
   std::size_t volume() const {
-    bool empty = false;
-    for (std::int64_t e : extent_) {
-      if (e < 0) throw std::invalid_argument("katal: negative tensor extent");
-      if (e == 0) empty = true;
-    }
-    if (empty) return 0;
+    for (std::int64_t e : extent_)
+      if (e <= 0)
+        throw std::invalid_argument("katal: tensor extents must be positive");
 
     std::size_t result = 1;
     for (std::int64_t e : extent_) {
