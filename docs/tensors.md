@@ -9,6 +9,12 @@
   until GPU work completes, and the metadata alive while using the view.
   In particular, `tensor.ref()` borrows that Tensor object's extents, even
   when another Tensor still owns the shared allocation.
+- `ConstTensorRef` is the read-only form. Inputs and planning take it, and a
+  `TensorRef` converts to it, so only the output of `einsum` must be writable.
+  `make_ref` returns a `ConstTensorRef` for a pointer to const, and a const
+  Tensor's `ref()` does too. `make_ref` and `ref()` record the largest
+  alignment the address satisfies, up to 256 bytes, so a pointer into the
+  middle of an allocation is described correctly.
 - `Context` owns the cuTENSOR handle and plan cache. `Plan` holds a selected
   operation ready for repeated execution. `einsum` uses cached plans;
   an explicit Plan lets callers hoist setup out of a loop.

@@ -26,7 +26,7 @@ void append(std::string& key, const void* bytes, std::size_t n) {
   if (n != 0) key.append(static_cast<const char*>(bytes), n);
 }
 
-void append_tensor(std::string& key, const TensorRef& t) {
+void append_tensor(std::string& key, const ConstTensorRef& t) {
   const auto type = static_cast<int32_t>(t.type);
   const auto layout = static_cast<int32_t>(t.layout);
   append(key, &type, sizeof(type));
@@ -41,7 +41,7 @@ void append_tensor(std::string& key, const TensorRef& t) {
 }
 
 std::string plan_key(std::string_view equation, PlanOptions options,
-                     std::initializer_list<const TensorRef*> tensors) {
+                     std::initializer_list<const ConstTensorRef*> tensors) {
   std::string key(equation);
   key.push_back('\0');
   const int32_t compute =
@@ -56,7 +56,7 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   append(key, &workspace, sizeof(workspace));
   append(key, &rank, sizeof(rank));
   append(key, &jit, sizeof(jit));
-  for (const TensorRef* t : tensors) append_tensor(key, *t);
+  for (const ConstTensorRef* t : tensors) append_tensor(key, *t);
   return key;
 }
 
@@ -73,7 +73,7 @@ std::vector<int32_t> mode_ids(const util::Index& modes) {
 /// but without naming the label responsible.
 void check_extents(
     const Equation& equation,
-    std::initializer_list<std::pair<const util::Index*, const TensorRef*>>
+    std::initializer_list<std::pair<const util::Index*, const ConstTensorRef*>>
         operands) {
   std::array<std::int64_t, 256> extent{};
   for (const auto& [modes, tensor] : operands)
@@ -97,8 +97,9 @@ void check_extents(
 
 class Plan::Impl {
  public:
-  Impl(const Context& context, const Equation& equation, const TensorRef& a,
-       const TensorRef& b, const TensorRef& d, PlanOptions options)
+  Impl(const Context& context, const Equation& equation,
+       const ConstTensorRef& a, const ConstTensorRef& b,
+       const ConstTensorRef& d, PlanOptions options)
       : Impl(context, equation, 2) {
     const Classification classification = equation.classify();
     if (classification.kind != Lowering::Contract)
@@ -136,8 +137,8 @@ class Plan::Impl {
   ///
   /// A copy therefore runs a reduction kernel rather than cudaMemcpyAsync.
   /// Add the memcpy path if the copy case ever matters.
-  Impl(const Context& context, const Equation& equation, const TensorRef& a,
-       const TensorRef& d, PlanOptions options)
+  Impl(const Context& context, const Equation& equation,
+       const ConstTensorRef& a, const ConstTensorRef& d, PlanOptions options)
       : Impl(context, equation, 1) {
     if (equation.classify().kind == Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
@@ -242,7 +243,8 @@ class Plan::Impl {
 
   /// Unset follows the output, except that half-precision output accumulates
   /// in single precision: that is the pairing cuTENSOR supports for both.
-  static Dtype compute_type(const PlanOptions& options, const TensorRef& d) {
+  static Dtype compute_type(const PlanOptions& options,
+                            const ConstTensorRef& d) {
     if (options.compute) return *options.compute;
     if (d.type == Dtype::F16 || d.type == Dtype::Bf16) return Dtype::F32;
     return d.type;
@@ -297,7 +299,7 @@ class Plan::Impl {
   }
 
   void describe(cutensorTensorDescriptor_t* desc, const ModeOrder& modes,
-                const TensorRef& tensor) {
+                const ConstTensorRef& tensor) {
     KATAL_CHECK(cutensorCreateTensorDescriptor(
                     handle_, desc, static_cast<uint32_t>(modes.modes.rank()),
                     modes.extent.data(), modes.stride.data(),
@@ -354,8 +356,8 @@ void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
-               const TensorRef& a, const TensorRef& b, const TensorRef& d,
-               PlanOptions options) {
+               const ConstTensorRef& a, const ConstTensorRef& b,
+               const ConstTensorRef& d, PlanOptions options) {
 #if KATAL_ENABLE_LOGGING
   const auto start = std::chrono::steady_clock::now();
 #endif
@@ -375,7 +377,8 @@ Plan make_plan(const Context& context, const Equation& equation,
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
-               const TensorRef& a, const TensorRef& d, PlanOptions options) {
+               const ConstTensorRef& a, const ConstTensorRef& d,
+               PlanOptions options) {
 #if KATAL_ENABLE_LOGGING
   const auto start = std::chrono::steady_clock::now();
 #endif
@@ -396,8 +399,9 @@ Plan make_plan(const Context& context, const Equation& equation,
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         std::string_view equation,
-                                        const TensorRef& a, const TensorRef& b,
-                                        const TensorRef& d,
+                                        const ConstTensorRef& a,
+                                        const ConstTensorRef& b,
+                                        const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
   // An unset override takes the context's policy, which is where a program
   // sets planning once instead of at every call site.
@@ -410,7 +414,8 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         std::string_view equation,
-                                        const TensorRef& a, const TensorRef& d,
+                                        const ConstTensorRef& a,
+                                        const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
   const PlanOptions resolved =
       options.value_or(context.impl().config().plan_options);

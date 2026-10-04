@@ -1,7 +1,6 @@
 #ifndef KATAL_TENSOR_HPP_
 #define KATAL_TENSOR_HPP_
 
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -130,20 +129,15 @@ class Tensor {
     return storage_ ? storage_->data() : nullptr;
   }
 
-  TensorRef ref() const noexcept {
-    std::uint32_t alignment = 1;
-    if (const auto address = reinterpret_cast<std::uintptr_t>(data());
-        address != 0) {
-      const int bits = std::countr_zero(address);
-      // Cap at CUDA's allocation alignment so equivalent buffers share plans.
-      alignment <<= bits < 8 ? bits : 8;
-    }
-    return TensorRef{const_cast<void*>(data()),
-                     type_,
-                     {extent_.data(), extent_.size()},
-                     {},
-                     Layout::ColumnMajor,
-                     alignment};
+  /// A reference to write through. Copies share storage, so this is how an
+  /// output is passed; a const Tensor gives only a ConstTensorRef.
+  TensorRef ref() noexcept {
+    return make_ref(data(), type_, {extent_.data(), extent_.size()},
+                    Layout::ColumnMajor);
+  }
+  ConstTensorRef ref() const noexcept {
+    return make_ref(data(), type_, {extent_.data(), extent_.size()},
+                    Layout::ColumnMajor);
   }
 
  private:
