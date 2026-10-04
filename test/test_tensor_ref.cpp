@@ -66,6 +66,9 @@ TEST_CASE("dense strides reject invalid or unrepresentable shapes",
   const Extents negative{0, -1};
   REQUIRE_THROWS_AS(dense_strides(negative, Layout::ColumnMajor),
                     std::invalid_argument);
+  const Extents zero{3, 0, 4};
+  REQUIRE_THROWS_AS(dense_strides(zero, Layout::RowMajor),
+                    std::invalid_argument);
   const Extents boundary{largest, 1};
   REQUIRE(dense_strides(boundary, Layout::ColumnMajor) == Extents{1, largest});
 }
