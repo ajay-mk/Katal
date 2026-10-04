@@ -199,8 +199,8 @@ katal::Plan workspace_hungry_plan(const katal::TensorRef& a,
                           options);
 }
 
-constexpr std::array<std::int64_t, 4> kHungryA{8, 8, 16, 16},
-    kHungryB{16, 16, 8, 8}, kHungryD{8, 8, 8, 8};
+constexpr std::array<std::int64_t, 4> hungry_a{8, 8, 16, 16},
+    hungry_b{16, 16, 8, 8}, hungry_d{8, 8, 8, 8};
 
 void require_workspace_too_small(const std::function<void()>& run) {
   try {
@@ -240,9 +240,9 @@ TEST_CASE("half-precision reductions execute", "[gpu]") {
 
 TEST_CASE("execute rejects a workspace smaller than the plan needs", "[gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
-  const auto ar = katal::make_ref(nullptr, katal::Dtype::F64, kHungryA);
-  const auto br = katal::make_ref(nullptr, katal::Dtype::F64, kHungryB);
-  const auto dr = katal::make_ref(nullptr, katal::Dtype::F64, kHungryD);
+  const auto ar = katal::make_ref(nullptr, katal::Dtype::F64, hungry_a);
+  const auto br = katal::make_ref(nullptr, katal::Dtype::F64, hungry_b);
+  const auto dr = katal::make_ref(nullptr, katal::Dtype::F64, hungry_d);
   const katal::Plan plan = workspace_hungry_plan(ar, br, dr);
   if (plan.workspace_size() == 0) SKIP("this plan needs no workspace");
 
@@ -268,15 +268,15 @@ TEST_CASE("execute accepts a workspace of exactly the plan's size", "[gpu]") {
     for (std::int64_t e : extent) n *= e;
     return static_cast<std::size_t>(n);
   };
-  std::vector<double> a(elements(kHungryA)), b(elements(kHungryB));
+  std::vector<double> a(elements(hungry_a)), b(elements(hungry_b));
   for (std::size_t i = 0; i < a.size(); ++i) a[i] = double(i % 7) - 3.0;
   for (std::size_t i = 0; i < b.size(); ++i) b[i] = double(i % 5) - 2.0;
   const DeviceBuffer<double> da(a), db(b),
-      dd(std::vector<double>(elements(kHungryD), 0.0));
+      dd(std::vector<double>(elements(hungry_d), 0.0));
 
-  const auto ar = katal::make_ref(da.get(), katal::Dtype::F64, kHungryA);
-  const auto br = katal::make_ref(db.get(), katal::Dtype::F64, kHungryB);
-  const auto dr = katal::make_ref(dd.get(), katal::Dtype::F64, kHungryD);
+  const auto ar = katal::make_ref(da.get(), katal::Dtype::F64, hungry_a);
+  const auto br = katal::make_ref(db.get(), katal::Dtype::F64, hungry_b);
+  const auto dr = katal::make_ref(dd.get(), katal::Dtype::F64, hungry_d);
   const katal::Plan plan = workspace_hungry_plan(ar, br, dr);
   const katal::util::ScopedWorkspace<katal::CudaAsyncAllocator> scratch(
       {}, plan.workspace_size(), {});
@@ -287,9 +287,9 @@ TEST_CASE("execute accepts a workspace of exactly the plan's size", "[gpu]") {
 
   // Integer inputs keep every sum exact, so the comparison can be exact too.
   std::vector<double> want(d.size(), 0.0);
-  auto ha = katal::make_ref(a.data(), katal::Dtype::F64, kHungryA);
-  auto hb = katal::make_ref(b.data(), katal::Dtype::F64, kHungryB);
-  auto hd = katal::make_ref(want.data(), katal::Dtype::F64, kHungryD);
+  auto ha = katal::make_ref(a.data(), katal::Dtype::F64, hungry_a);
+  auto hb = katal::make_ref(b.data(), katal::Dtype::F64, hungry_b);
+  auto hd = katal::make_ref(want.data(), katal::Dtype::F64, hungry_d);
   const std::array<katal::TensorRef, 2> in{ha, hb};
   katal::test::reference_einsum<double>(
       katal::Equation::parse("ijab,cdba->ijdc"), 1.0, in, 0.0, hd);
