@@ -4,6 +4,11 @@
 
 #include <cstddef>
 
+/// 1 when this Katal was built with the cuTENSOR backend. Without it only the
+/// host-side layers work: Context, Plan, einsum and the device allocators are
+/// still declared, but nothing defines them, so using one fails to link.
+#cmakedefine01 KATAL_HAVE_CUTENSOR
+
 namespace katal {
 
 /// Largest tensor rank Katal can describe, and so the inline capacity of an
