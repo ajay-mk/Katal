@@ -38,13 +38,19 @@ uses of that allocation must use that stream, which must outlive the storage.
 Wait for GPU work before accessing the data on the CPU, and finish CPU writes
 before submitting GPU work. Last-owner release waits for the stream before
 freeing managed memory. A CUDA cleanup failure terminates rather than throwing
-from destruction or freeing storage that may still be in use.
+from destruction or freeing storage that may still be in use. The exception is
+a failure that means the CUDA context is already lost, such as after an illegal
+address fault: the memory goes with the context, so cleanup returns and the
+original error can still be reported.
 
 Managed allocations use `cudaMallocManaged` / `cudaFree`; they are not pooled.
 Pooled device allocations use `cudaMallocAsync` / `cudaFreeAsync` on their
 allocator's stream, without a host-side wait during release. Allocation
-exhaustion throws `std::bad_alloc`; other CUDA allocation errors throw
-`katal::Error`. Both allocators terminate on a failed cleanup call.
+exhaustion throws `std::bad_alloc`, as does a tensor too large to address;
+other CUDA allocation errors throw `katal::Error`. Every other failure in Katal
+is a `katal::Error`, including an extent that is not positive
+(`Errc::ExtentMismatch`) and a rank beyond `katal::max_rank`
+(`Errc::RankMismatch`).
 
 See the [pooled and managed Tensor example](examples.md#pooled-and-managed-tensor-storage)
 for a complete matrix product using either allocator.

@@ -2,23 +2,26 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <new>
 #include <optional>
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
+#include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/tensor.hpp>
 
+using katal::test::thrown_code;
+
 TEST_CASE("zero and negative tensor extents are rejected", "[tensor]") {
   using Tensor = katal::Tensor<std::allocator<std::byte>>;
-  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {3, 0, 4}),
-                    std::invalid_argument);
-  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {0, -1}), std::invalid_argument);
-  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {-1, 0}), std::invalid_argument);
-  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {2, 0, -1}),
-                    std::invalid_argument);
+  using katal::Errc;
+  for (const katal::Extents& e :
+       {katal::Extents{3, 0, 4}, katal::Extents{0, -1}, katal::Extents{-1, 0},
+        katal::Extents{2, 0, -1}})
+    REQUIRE(thrown_code([&] { Tensor(katal::Dtype::F64, e); }) ==
+            Errc::ExtentMismatch);
 }
 
 TEST_CASE("a rank-zero tensor holds one element", "[tensor]") {
@@ -32,10 +35,17 @@ TEST_CASE("a rank-zero tensor holds one element", "[tensor]") {
 TEST_CASE("tensor allocation sizes are checked before allocating", "[tensor]") {
   using Tensor = katal::Tensor<std::allocator<std::byte>>;
   constexpr auto large = std::numeric_limits<std::int64_t>::max();
-  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {large, 3}), std::length_error);
-  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {large}), std::length_error);
-  REQUIRE_THROWS_AS(Tensor(static_cast<katal::Dtype>(99), {2}),
-                    std::invalid_argument);
+  // Too large to allocate is out of memory, reported as the allocators do.
+  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {large, 3}), std::bad_alloc);
+  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {large}), std::bad_alloc);
+  REQUIRE(thrown_code([] { Tensor(static_cast<katal::Dtype>(99), {2}); }) ==
+          katal::Errc::DtypeMismatch);
+}
+
+TEST_CASE("extents beyond the maximum rank are a katal::Error", "[tensor]") {
+  katal::Extents e;
+  for (std::size_t i = 0; i < katal::max_rank; ++i) e.push_back(1);
+  REQUIRE(thrown_code([&] { e.push_back(1); }) == katal::Errc::RankMismatch);
 }
 
 namespace {

@@ -5,12 +5,14 @@
 #include <array>
 #include <cstddef>
 #include <initializer_list>
-#include <stdexcept>
+
+#include <katal/error.hpp>
 
 namespace katal::util {
 
 /// A fixed-capacity sequence that never allocates, sized for the single-digit
-/// ranks tensors actually have. Throws rather than growing.
+/// ranks tensors actually have. Throws `Errc::RankMismatch` rather than
+/// growing, since every capacity in Katal is the maximum rank.
 ///
 /// C++26 spells this std::inplace_vector; delete this header once that can be
 /// required. `T` must be default-constructible, since the whole array is
@@ -40,7 +42,9 @@ class StaticVector {
 
   constexpr void push_back(const T& v) {
     if (size_ == N)
-      throw std::length_error("katal: static_vector capacity exceeded");
+      throw Error(Errc::RankMismatch, {},
+                  "more than " + std::to_string(N) +
+                      " entries; the maximum rank is too small");
     data_[size_++] = v;
   }
 

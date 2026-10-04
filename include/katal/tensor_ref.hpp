@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <string>
+#include <string_view>
 
 #include <katal/config.hpp>
 #include <katal/error.hpp>
@@ -75,15 +77,20 @@ inline TensorRef make_ref(void* data, Dtype type,
   return TensorRef{data, type, extent, {}, layout, 256};
 }
 
-/// Strides, in elements, of a dense tensor with these extents.
+/// Strides, in elements, of a dense tensor with these extents. Throws
+/// `Errc::ExtentMismatch` for an extent that is not positive or a stride that
+/// overflows. `equation_text` is quoted in that error, when there is one.
 inline Extents dense_strides(std::span<const std::int64_t> extent,
-                             Layout layout) {
+                             Layout layout,
+                             std::string_view equation_text = {}) {
   for (const auto e : extent)
     if (e <= 0)
-      throw std::invalid_argument("katal: tensor extents must be positive");
-  const auto product = [](std::int64_t stride, std::int64_t e) {
+      throw Error(Errc::ExtentMismatch, equation_text,
+                  "tensor extents must be positive");
+  const auto product = [&](std::int64_t stride, std::int64_t e) {
     if (stride > std::numeric_limits<std::int64_t>::max() / e)
-      throw std::length_error("katal: dense stride is too large");
+      throw Error(Errc::ExtentMismatch, equation_text,
+                  "a dense stride overflows std::int64_t");
     return stride * e;
   };
   Extents stride;
@@ -116,21 +123,26 @@ struct ModeOrder {
 /// describes the same memory, and a contraction is invariant under a
 /// consistent renaming of its modes. Reversing is what stops cuTENSOR from
 /// seeing the slowest-varying mode first and picking a kernel that transposes.
-inline ModeOrder mode_order(const util::Index& modes, const TensorRef& t) {
+///
+/// `equation_text` is the whole equation `modes` came from, which a rank error
+/// quotes; the message names the operand's own labels.
+inline ModeOrder mode_order(const util::Index& modes, const TensorRef& t,
+                            std::string_view equation_text = {}) {
+  const std::string operand = "operand \"" + std::string(modes) + "\"";
   if (modes.rank() != t.extent.size())
-    throw Error(Errc::RankMismatch, std::string(modes),
-                "the operand has " + std::to_string(modes.rank()) +
+    throw Error(Errc::RankMismatch, equation_text,
+                operand + " has " + std::to_string(modes.rank()) +
                     " labels but " + std::to_string(t.extent.size()) +
                     " extents");
   if (!t.stride.empty() && t.stride.size() != t.extent.size())
-    throw Error(Errc::RankMismatch, std::string(modes),
-                "the operand has " + std::to_string(t.extent.size()) +
+    throw Error(Errc::RankMismatch, equation_text,
+                operand + " has " + std::to_string(t.extent.size()) +
                     " extents but " + std::to_string(t.stride.size()) +
                     " strides");
 
   Extents given_stride;
   if (t.stride.empty())
-    given_stride = dense_strides(t.extent, t.layout);
+    given_stride = dense_strides(t.extent, t.layout, equation_text);
   else
     for (std::int64_t s : t.stride) given_stride.push_back(s);
 

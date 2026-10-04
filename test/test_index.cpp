@@ -1,9 +1,11 @@
-#include <stdexcept>
 #include <string>
 
+#include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/util/index.hpp>
+
+using katal::test::thrown_code;
 
 // POSIX <strings.h> declares an `index` function at global scope, so the
 // using-declarations below sit inside each test case, where they hide it.
@@ -109,10 +111,10 @@ TEST_CASE("permute_from_to", "[index]") {
   }
 
   SECTION("rejects indices that are not permutations of each other") {
-    REQUIRE_THROWS_AS(permute_from_to(Index("ijk"), Index("ij")),
-                      std::invalid_argument);
-    REQUIRE_THROWS_AS(permute_from_to(Index("ijk"), Index("ijl")),
-                      std::invalid_argument);
+    REQUIRE(thrown_code([] { permute_from_to(Index("ijk"), Index("ij")); }) ==
+            katal::Errc::RankMismatch);
+    REQUIRE(thrown_code([] { permute_from_to(Index("ijk"), Index("ijl")); }) ==
+            katal::Errc::UnsupportedPattern);
   }
 }
 
@@ -121,11 +123,12 @@ TEST_CASE("index capacity", "[index]") {
 
   SECTION("rank beyond the configured maximum is rejected") {
     const std::string too_many(katal::max_rank + 1, 'a');
-    REQUIRE_THROWS_AS(Index(too_many), std::length_error);
+    REQUIRE(thrown_code([&] { Index{too_many}; }) == katal::Errc::RankMismatch);
   }
 
   SECTION("labels longer than a label can hold are rejected") {
-    REQUIRE_THROWS_AS(Index("i extremelylonglabel"), std::length_error);
+    REQUIRE(thrown_code([] { Index{"i extremelylonglabel"}; }) ==
+            katal::Errc::RankMismatch);
   }
 }
 

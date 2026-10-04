@@ -1,6 +1,6 @@
-#include <exception>
 #include <new>
 
+#include "cuda_status.hpp"
 #include <cuda_runtime.h>
 
 #include <katal/tensor.hpp>
@@ -18,8 +18,7 @@ void* allocate_device_bytes(std::size_t bytes, StreamRef stream) {
 }
 
 void deallocate_device_bytes(void* data, StreamRef stream) noexcept {
-  if (data != nullptr && cudaFreeAsync(data, stream.get()) != cudaSuccess)
-    std::terminate();
+  if (data != nullptr) util::check_release(cudaFreeAsync(data, stream.get()));
 }
 
 void* allocate_managed_bytes(std::size_t bytes) {
@@ -36,8 +35,12 @@ void deallocate_managed_bytes(void* data, StreamRef stream) noexcept {
   if (data == nullptr) return;
   // Last-owner release can happen while a kernel still borrows this storage.
   // Cleanup cannot throw, and a failed wait must not permit premature freeing.
-  if (cudaStreamSynchronize(stream.get()) != cudaSuccess) std::terminate();
-  if (cudaFree(data) != cudaSuccess) std::terminate();
+  if (const cudaError_t synced = cudaStreamSynchronize(stream.get());
+      synced != cudaSuccess) {
+    util::check_release(synced);
+    return;
+  }
+  util::check_release(cudaFree(data));
 }
 
 }  // namespace katal::detail
