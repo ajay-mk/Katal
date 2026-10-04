@@ -1,9 +1,11 @@
 #include <array>
 #include <complex>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "thrown.hpp"
@@ -150,4 +152,55 @@ TEST_CASE("mode_order", "[tensor_ref]") {
               std::string::npos);
     }
   }
+}
+
+TEST_CASE("make_ref derives the alignment from the address", "[tensor_ref]") {
+  alignas(256) std::array<double, 8> buffer{};
+  const auto alignment = [&](std::size_t offset_bytes) {
+    return katal::make_ref(
+               reinterpret_cast<std::byte*>(buffer.data()) + offset_bytes,
+               Dtype::F64, span_of(shape))
+        .alignment;
+  };
+  REQUIRE(alignment(0) == 256);
+  // A sub-block of a larger allocation, the usual case in coupled-cluster
+  // codes, used to be asserted 256-byte aligned too.
+  REQUIRE(alignment(sizeof(double)) == 8);
+  REQUIRE(alignment(2 * sizeof(double)) == 16);
+  REQUIRE(alignment(1) == 1);
+  REQUIRE(alignment(512) == 256);
+  REQUIRE(katal::make_ref(nullptr, Dtype::F64, span_of(shape)).alignment ==
+          256);
+}
+
+TEST_CASE("inputs are const-correct", "[tensor_ref]") {
+  std::array<double, 120> storage{};
+  const std::array<double, 120>& read_only = storage;
+
+  STATIC_REQUIRE(std::is_same_v<decltype(katal::make_ref(read_only.data(),
+                                                         Dtype::F64, shape)),
+                                katal::ConstTensorRef>);
+  STATIC_REQUIRE(std::is_same_v<decltype(katal::make_ref(storage.data(),
+                                                         Dtype::F64, shape)),
+                                TensorRef>);
+  STATIC_REQUIRE(
+      std::is_same_v<decltype(katal::make_ref(nullptr, Dtype::F64, shape)),
+                     TensorRef>);
+  // Writable converts to read-only, never the reverse.
+  STATIC_REQUIRE(std::is_convertible_v<TensorRef, katal::ConstTensorRef>);
+  STATIC_REQUIRE_FALSE(std::is_convertible_v<katal::ConstTensorRef, TensorRef>);
+
+  TensorRef writable =
+      katal::make_ref(storage.data(), Dtype::F64, span_of(shape));
+  const std::array<std::int64_t, 4> stride{60, 20, 5, 1};
+  writable.stride = {stride.data(), stride.size()};
+  writable.layout = Layout::RowMajor;
+  const katal::ConstTensorRef read = writable;
+  REQUIRE(read.data == writable.data);
+  REQUIRE(read.type == writable.type);
+  REQUIRE(read.extent.data() == writable.extent.data());
+  REQUIRE(read.stride.data() == writable.stride.data());
+  REQUIRE(read.layout == writable.layout);
+  REQUIRE(read.alignment == writable.alignment);
+  REQUIRE(mode_order(Index("ijkl"), read).modes == Index("lkji"));
 }

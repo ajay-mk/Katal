@@ -1,7 +1,10 @@
 #ifndef KATAL_TENSOR_REF_HPP_
 #define KATAL_TENSOR_REF_HPP_
 
+#include <bit>
 #include <complex>
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <span>
@@ -52,10 +55,13 @@ enum class Layout { RowMajor, ColumnMajor };
 using Extents = util::StaticVector<std::int64_t, max_rank>;
 
 /// A tensor Katal does not own: a pointer plus a shape. Trivially copyable,
-/// passed by value.
-struct TensorRef {
+/// passed by value. Spelled through `TensorRef`, which may be written, and
+/// `ConstTensorRef`, which is only read; a TensorRef converts to a
+/// ConstTensorRef wherever an input is expected.
+template <class Pointer>
+struct BasicTensorRef {
   /// Device memory, owned by the caller and required to outlive every use.
-  void* data = nullptr;
+  Pointer data = nullptr;
   /// Element type of `data`, which the compute type may exceed.
   Dtype type = Dtype::F64;
   /// One extent per mode, in the order the equation names them. The span is a
@@ -68,13 +74,51 @@ struct TensorRef {
   Layout layout = Layout::RowMajor;
   /// Alignment of `data` in bytes, asserted rather than enforced: a value
   /// larger than the pointer actually satisfies is a way to get wrong answers.
+  /// `make_ref` and `Tensor::ref` derive it from the address.
   std::uint32_t alignment = 256;
+
+  /// Any reference can be read through.
+  operator BasicTensorRef<const void*>() const noexcept  // NOLINT: implicit
+    requires std::same_as<Pointer, void*>
+  {
+    return {data, type, extent, stride, layout, alignment};
+  }
 };
+
+using TensorRef = BasicTensorRef<void*>;
+using ConstTensorRef = BasicTensorRef<const void*>;
+
+/// The largest power of two that divides `data`, capped at 256 so that
+/// equivalent buffers share plans: CUDA allocations are 256-byte aligned, and
+/// cuTENSOR gains nothing beyond that. A null pointer reads as 256, so a plan
+/// built from shapes alone matches a fresh allocation.
+inline std::uint32_t alignment_of(const void* data) noexcept {
+  constexpr int cap = 8;
+  const auto address = reinterpret_cast<std::uintptr_t>(data);
+  if (address == 0) return std::uint32_t{1} << cap;
+  const int bits = std::countr_zero(address);
+  return std::uint32_t{1} << (bits < cap ? bits : cap);
+}
 
 inline TensorRef make_ref(void* data, Dtype type,
                           std::span<const std::int64_t> extent,
                           Layout layout = Layout::RowMajor) {
-  return TensorRef{data, type, extent, {}, layout, 256};
+  return TensorRef{data, type, extent, {}, layout, alignment_of(data)};
+}
+
+/// For an input that is only read.
+inline ConstTensorRef make_ref(const void* data, Dtype type,
+                               std::span<const std::int64_t> extent,
+                               Layout layout = Layout::RowMajor) {
+  return ConstTensorRef{data, type, extent, {}, layout, alignment_of(data)};
+}
+
+/// Shapes alone, for planning before any buffer exists. Without this a null
+/// pointer would match both forms above.
+inline TensorRef make_ref(std::nullptr_t, Dtype type,
+                          std::span<const std::int64_t> extent,
+                          Layout layout = Layout::RowMajor) {
+  return make_ref(static_cast<void*>(nullptr), type, extent, layout);
 }
 
 /// Strides, in elements, of a dense tensor with these extents. Throws
@@ -126,7 +170,7 @@ struct ModeOrder {
 ///
 /// `equation_text` is the whole equation `modes` came from, which a rank error
 /// quotes; the message names the operand's own labels.
-inline ModeOrder mode_order(const util::Index& modes, const TensorRef& t,
+inline ModeOrder mode_order(const util::Index& modes, const ConstTensorRef& t,
                             std::string_view equation_text = {}) {
   const std::string operand = "operand \"" + std::string(modes) + "\"";
   if (modes.rank() != t.extent.size())

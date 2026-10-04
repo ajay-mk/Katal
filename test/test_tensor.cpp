@@ -132,4 +132,10 @@ TEST_CASE("an owning tensor exposes a shared execution view", "[tensor]") {
   REQUIRE(ref.layout == tensor.layout());
   REQUIRE(ref.alignment >= alignof(double));
   REQUIRE(reinterpret_cast<std::uintptr_t>(ref.data) % ref.alignment == 0);
+
+  // Copies share storage, so a const Tensor still reads the same data, but
+  // only through a reference that cannot be written.
+  STATIC_REQUIRE(std::is_same_v<decltype(copy.ref()), katal::ConstTensorRef>);
+  STATIC_REQUIRE(std::is_same_v<decltype(tensor.ref()), katal::TensorRef>);
+  REQUIRE(copy.ref().data == tensor.data());
 }
