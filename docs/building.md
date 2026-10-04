@@ -47,8 +47,8 @@ The default `OFF` build removes logging calls, formatting, and timers at
 compile time. This does not change cuTENSOR's independent logging settings.
 
 Messages start with `[katal]`. Cache events are `cache.hit`, `cache.miss`,
-`cache.bypass` (caching disabled), `cache.insert`, and `cache.clear` (the full
-cache is cleared). The `key` field is a diagnostic hash for correlating events
+`cache.bypass` (caching disabled), `cache.insert`, and `cache.evict` (the least
+recently used plan made room for a new one). The `key` field is a diagnostic hash for correlating events
 within a run, not a persistent or collision-free operation ID. Hit and
 insertion records include the equation; tensor values are never printed.
 

@@ -1,4 +1,5 @@
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <new>
 #include <utility>
@@ -182,6 +183,7 @@ class Plan::Impl {
   void contract(Scalar alpha, const void* a, const void* b, Scalar beta,
                 const void* c, void* d, Workspace workspace,
                 StreamRef stream) const {
+    check_device();
     check_workspace(workspace);
     // Stack objects, so this path still allocates nothing.
     const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
@@ -195,6 +197,7 @@ class Plan::Impl {
 
   void reduce(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
               Workspace workspace, StreamRef stream) const {
+    check_device();
     check_workspace(workspace);
     const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
     const util::ScalarBytes beta_bytes(beta, scalar_type_);
@@ -206,6 +209,18 @@ class Plan::Impl {
   }
 
  private:
+  /// The handle and every descriptor belong to the device the context was
+  /// built on; handing them to another device's stream is undefined.
+  /// cudaGetDevice is a host-side read, so this costs the hot path little.
+  void check_device() const {
+    int current = 0;
+    KATAL_CHECK_CUDA(cudaGetDevice(&current), equation_);
+    if (current != device_)
+      throw Error(Errc::CudaError, equation_,
+                  "this plan belongs to device " + std::to_string(device_) +
+                      " but device " + std::to_string(current) + " is current");
+  }
+
   void check_workspace(Workspace workspace) const {
     if (workspace.size < workspace_size_)
       throw Error(Errc::WorkspaceTooSmall, equation_,
@@ -218,8 +233,11 @@ class Plan::Impl {
   // in either public constructor throws after acquiring a resource.
   Impl(const Context& context, const Equation& equation, std::size_t n_operands)
       : handle_(context.impl().handle()),
+        device_(context.device()),
         equation_(equation.text()),
-        n_operands_(n_operands) {}
+        n_operands_(n_operands) {
+    check_device();
+  }
 
   /// Unset follows the output, except that half-precision output accumulates
   /// in single precision: that is the pairing cuTENSOR supports for both.
@@ -287,6 +305,7 @@ class Plan::Impl {
   }
 
   cutensorHandle_t handle_ = nullptr;
+  int device_ = 0;
   cutensorTensorDescriptor_t desc_a_ = nullptr;
   cutensorTensorDescriptor_t desc_b_ = nullptr;
   cutensorTensorDescriptor_t desc_d_ = nullptr;
@@ -304,26 +323,33 @@ Plan::Plan(Plan&&) noexcept = default;
 Plan& Plan::operator=(Plan&&) noexcept = default;
 Plan::~Plan() = default;
 
-uint64_t Plan::workspace_size() const noexcept {
-  return impl_->workspace_size();
+const Plan::Impl& Plan::impl() const noexcept {
+  assert(impl_ != nullptr && "katal: use of a moved-from Plan");
+  return *impl_;
 }
-std::string_view Plan::equation() const noexcept { return impl_->equation(); }
+
+uint64_t Plan::workspace_size() const noexcept {
+  return impl().workspace_size();
+}
+std::string_view Plan::equation() const noexcept { return impl().equation(); }
 
 void Plan::execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                    const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
-  if (impl_->n_operands() != 2)
-    throw Error(Errc::UnsupportedPattern, impl_->equation(),
+  const Impl& plan = impl();
+  if (plan.n_operands() != 2)
+    throw Error(Errc::UnsupportedPattern, plan.equation(),
                 "this plan takes one operand; use the one-operand execute");
-  impl_->contract(alpha, a, b, beta, c, d, workspace, stream);
+  plan.contract(alpha, a, b, beta, c, d, workspace, stream);
 }
 
 void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
                    void* d, Workspace workspace, StreamRef stream) const {
-  if (impl_->n_operands() != 1)
-    throw Error(Errc::UnsupportedPattern, impl_->equation(),
+  const Impl& plan = impl();
+  if (plan.n_operands() != 1)
+    throw Error(Errc::UnsupportedPattern, plan.equation(),
                 "this plan takes two operands; use the two-operand execute");
-  impl_->reduce(alpha, a, beta, c, d, workspace, stream);
+  plan.reduce(alpha, a, beta, c, d, workspace, stream);
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
