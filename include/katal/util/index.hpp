@@ -32,11 +32,18 @@ class Index {
  public:
   Index() = default;
 
-  /// Whitespace is ignored, so `"ij, jk -> ik"` and `"ij,jk->ik"` spell the
-  /// same equation.
+  /// ASCII whitespace is ignored, so `"ij, jk -> ik"` and `"ij,jk->ik"` spell
+  /// the same equation, as does one split across lines in a raw string.
   constexpr explicit Index(std::string_view s) {
     for (char c : s)
-      if (c != ' ' && c != '\t') push_back(c);
+      if (!is_space(c)) push_back(c);
+  }
+
+  /// The characters `std::isspace` accepts in the C locale. Spelled out
+  /// because `std::isspace` is neither constexpr nor locale-independent.
+  static constexpr bool is_space(char c) noexcept {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' ||
+           c == '\r';
   }
 
   constexpr std::size_t rank() const noexcept { return labels_.size(); }
@@ -106,7 +113,8 @@ constexpr Index operator+(const Index& a, const Index& b) {
   return r;
 }
 
-/// Symmetric difference: the implicit result index when an equation omits `->`.
+/// Symmetric difference: `a`'s labels missing from `b`, then `b`'s missing from
+/// `a`. Concatenates, so the result can exceed either operand's rank.
 constexpr Index operator^(const Index& a, const Index& b) {
   return (a - b) + (b - a);
 }
