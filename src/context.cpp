@@ -1,5 +1,6 @@
 #include <mutex>
 #include <stdexcept>
+#include <utility>
 
 #include "context_impl.hpp"
 
@@ -12,7 +13,7 @@ Context::Context(Context&&) noexcept = default;
 Context& Context::operator=(Context&&) noexcept = default;
 Context::~Context() = default;
 
-int Context::device() const noexcept { return impl_->device(); }
+int Context::device() const noexcept { return impl().device(); }
 
 namespace {
 
@@ -32,8 +33,12 @@ bool g_runtime_active = false;
 
 void initialize(Config config) {
   const std::lock_guard<std::mutex> lock(process_mutex());
+  if (g_context != nullptr)
+    throw std::logic_error(
+        "katal: the default context already exists, so this Config cannot "
+        "take effect; call finalize() first");
   g_config = config;
-  if (g_context == nullptr) g_context = new Context(config);
+  g_context = new Context(std::move(config));
 }
 
 void finalize() {

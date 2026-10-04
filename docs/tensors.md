@@ -25,6 +25,12 @@ not owned; keep it alive through allocation use and release. Construct a Runtime
 before using the default context. It rejects an already initialized context or
 another Runtime, and `finalize()` is rejected while a Runtime owns the context.
 With explicit initialization, finish all Plans and GPU work before `finalize()`.
+`initialize()` throws once the default context exists, since its `Config` could
+no longer take effect; call `finalize()` first to change it.
+
+A context serves the CUDA device that was current when it was built. Planning
+or executing with a different device current throws `Errc::CudaError`, so a
+program that drives several devices builds one context per device.
 
 ## Managed tensor storage
 

@@ -77,7 +77,9 @@ class ScopedWorkspace {
 /// it is not, so a residual evaluation should build its plans once and execute
 /// them every iteration.
 /// Borrows its Context: the Context must outlive the Plan and all submitted
-/// work. A cached shared_ptr retains the Plan, not its Context.
+/// work. A cached shared_ptr retains the Plan, not its Context. Runs only on
+/// its Context's device, and a moved-from Plan may only be destroyed or
+/// assigned to.
 class Plan {
  public:
   Plan(Plan&&) noexcept;
@@ -115,6 +117,7 @@ class Plan {
 
  private:
   explicit Plan(std::unique_ptr<Impl> impl);
+  const Impl& impl() const noexcept;
   friend Plan make_plan(const Context&, const Equation&, const TensorRef&,
                         const TensorRef&, const TensorRef&, PlanOptions);
   friend Plan make_plan(const Context&, const Equation&, const TensorRef&,
