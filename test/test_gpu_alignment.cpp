@@ -17,8 +17,11 @@ TEST_CASE("a contraction on offset pointers is correct", "[gpu]") {
     SKIP("no CUDA device");
 
   // Each operand starts one element past a 256-byte boundary, so the largest
-  // alignment any of them satisfies is 8 bytes.
-  constexpr std::size_t n = 32, offset = 1, elements = offset + n * n;
+  // alignment any of them satisfies is 8 bytes. `elements` is a whole number
+  // of 256-byte blocks, which keeps every operand at the same offset.
+  constexpr std::size_t n = 32, offset = 1;
+  constexpr std::size_t block = 256 / sizeof(double);
+  constexpr std::size_t elements = (offset + n * n + block - 1) / block * block;
   std::vector<double> a(n * n), b(n * n);
   for (std::size_t i = 0; i < n * n; ++i) {
     a[i] = static_cast<double>(i % 7) - 3;
@@ -42,6 +45,7 @@ TEST_CASE("a contraction on offset pointers is correct", "[gpu]") {
       static_cast<const double*>(db), katal::Dtype::F64, extent);
   const katal::TensorRef rd = katal::make_ref(dd, katal::Dtype::F64, extent);
   REQUIRE(ra.alignment == 8);
+  REQUIRE(rb.alignment == 8);
   REQUIRE(rd.alignment == 8);
 
   katal::einsum("ij,jk->ik", 1.0, ra, rb, 0.0, rd);
@@ -58,4 +62,26 @@ TEST_CASE("a contraction on offset pointers is correct", "[gpu]") {
         expected += a[i * n + j] * b[j * n + k];
       REQUIRE(got[i * n + k] == expected);
     }
+}
+
+TEST_CASE("a plan refuses a pointer less aligned than it was built for",
+          "[gpu]") {
+  int devices = 0;
+  if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0)
+    SKIP("no CUDA device");
+
+  // Planned from shapes alone, so it assumes 256-byte alignment.
+  const std::array<std::int64_t, 2> extent{4, 4};
+  const auto t = katal::make_ref(nullptr, katal::Dtype::F64, extent);
+  const katal::Plan plan = katal::make_plan(
+      katal::default_context(), katal::Equation::parse("ij,jk->ik"), t, t, t);
+
+  // The check runs before anything is queued, so no memory is touched.
+  const auto* misaligned = reinterpret_cast<const void*>(std::uintptr_t{8});
+  try {
+    plan.execute(1.0, misaligned, nullptr, 0.0, nullptr, nullptr, {});
+    FAIL("expected an alignment rejection");
+  } catch (const katal::Error& e) {
+    REQUIRE(e.code() == katal::Errc::UnsupportedPattern);
+  }
 }

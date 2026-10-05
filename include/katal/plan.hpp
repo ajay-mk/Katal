@@ -99,8 +99,10 @@ class Plan {
   /// Computes `d = alpha * <equation over a and b> + beta * c`.
   ///
   /// The pointers are device memory shaped as the TensorRefs this plan was
-  /// built from; anything else is undefined rather than diagnosed. `c` and `d`
-  /// may be the same pointer, which is how to accumulate.
+  /// built from; anything else is undefined rather than diagnosed, except
+  /// that a pointer less aligned than its TensorRef was throws
+  /// `Errc::UnsupportedPattern`. `c` and `d` may be the same pointer, which is
+  /// how to accumulate.
   ///
   /// Throws `Errc::WorkspaceTooSmall` if `workspace` is smaller than
   /// `workspace_size()`, before any work is queued.

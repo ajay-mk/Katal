@@ -1,7 +1,9 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <new>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -119,6 +121,7 @@ class Plan::Impl {
     describe(&desc_a_, ma, a);
     describe(&desc_b_, mb, b);
     describe(&desc_d_, md, d);
+    alignment_ = {a.alignment, b.alignment, d.alignment};
 
     // C and D share a descriptor: beta scales the output in place.
     KATAL_CHECK(cutensorCreateContraction(
@@ -153,6 +156,7 @@ class Plan::Impl {
 
     describe(&desc_a_, ma, a);
     describe(&desc_d_, md, d);
+    alignment_ = {a.alignment, 0, d.alignment};
 
     KATAL_CHECK(
         cutensorCreateReduction(
@@ -186,6 +190,10 @@ class Plan::Impl {
                 const void* c, void* d, Workspace workspace,
                 StreamRef stream) const {
     check_device();
+    check_alignment("a", a, alignment_[0]);
+    check_alignment("b", b, alignment_[1]);
+    check_alignment("c", c, alignment_[2]);
+    check_alignment("d", d, alignment_[2]);
     check_workspace(workspace);
     // Stack objects, so this path still allocates nothing.
     const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
@@ -200,6 +208,9 @@ class Plan::Impl {
   void reduce(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
               Workspace workspace, StreamRef stream) const {
     check_device();
+    check_alignment("a", a, alignment_[0]);
+    check_alignment("c", c, alignment_[2]);
+    check_alignment("d", d, alignment_[2]);
     check_workspace(workspace);
     const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
     const util::ScalarBytes beta_bytes(beta, scalar_type_);
@@ -221,6 +232,18 @@ class Plan::Impl {
       throw Error(Errc::CudaError, equation_,
                   "this plan belongs to device " + std::to_string(device_) +
                       " but device " + std::to_string(current) + " is current");
+  }
+
+  /// The kernel was chosen for the alignment the plan was built with; a less
+  /// aligned pointer would make it read or write misaligned, so refuse it.
+  void check_alignment(const char* name, const void* ptr,
+                       std::uint32_t planned) const {
+    if (alignment_of(ptr) < planned)
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  std::string("pointer ") + name + " is aligned to " +
+                      std::to_string(alignment_of(ptr)) +
+                      " bytes but this plan was built for " +
+                      std::to_string(planned));
   }
 
   void check_workspace(Workspace workspace) const {
@@ -316,6 +339,8 @@ class Plan::Impl {
   cutensorPlanPreference_t pref_ = nullptr;
   cutensorPlan_t plan_ = nullptr;
   uint64_t workspace_size_ = 0;
+  /// Planned alignment of a, b and d, which c shares; b is unused by reduce.
+  std::array<std::uint32_t, 3> alignment_{};
   std::string equation_;
   Dtype scalar_type_ = Dtype::F64;
   std::size_t n_operands_ = 2;
