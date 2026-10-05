@@ -10,7 +10,30 @@
 #include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 
+#include <katal/plan.hpp>
 #include <katal/tensor.hpp>
+
+namespace {
+
+// Templates, so that an ill-formed call reads as false rather than as a
+// compile error.
+template <class T>
+constexpr bool has_temporary_ref = requires { std::declval<T>().ref(); };
+
+template <class T>
+constexpr bool calls_take_tensors = requires(T& t, const T& c) {
+  katal::einsum("ij,jk->ik", 1.0, t, c, 0.0, t);
+  katal::einsum("ij->ji", 1.0, c, 0.0, t);
+  katal::cached_plan(katal::default_context(), "ij,jk->ik", t, c, c);
+  katal::make_plan(katal::default_context(), katal::Equation{}, c, t);
+};
+
+template <class T>
+constexpr bool einsum_writes_const = requires(T& t, const T& c) {
+  katal::einsum("ij,jk->ik", 1.0, t, t, 0.0, c);
+};
+
+}  // namespace
 
 using katal::test::thrown_code;
 
@@ -151,6 +174,12 @@ TEST_CASE("a tensor converts to the reference ref() returns", "[tensor]") {
   STATIC_REQUIRE(!std::is_convertible_v<const Tensor&, katal::TensorRef>);
   STATIC_REQUIRE(!std::is_convertible_v<Tensor, katal::TensorRef>);
   STATIC_REQUIRE(!std::is_convertible_v<Tensor, katal::ConstTensorRef>);
+  STATIC_REQUIRE(!has_temporary_ref<Tensor>);
+
+  // The calls themselves accept Tensors, and refuse a const one as einsum's
+  // output. Unevaluated, so no device is needed.
+  STATIC_REQUIRE(calls_take_tensors<Tensor>);
+  STATIC_REQUIRE(!einsum_writes_const<Tensor>);
 
   Tensor tensor(katal::Dtype::F32, {3, 5});
   const Tensor& view = tensor;

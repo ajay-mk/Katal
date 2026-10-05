@@ -21,8 +21,9 @@
   `ConstTensorRef`, since C++ will not chain the two conversions for an input.
 - A Tensor converts to the reference `ref()` would return, so it can be
   passed to `einsum`, `make_plan` and `cached_plan` directly:
-  `einsum("ij,jk->ik", 1.0, a, b, 0.0, d)`. A temporary Tensor does not
-  convert, because the reference would outlive the extents it borrows.
+  `einsum("ij,jk->ik", 1.0, a, b, 0.0, d)`. A temporary Tensor neither
+  converts nor has a `ref()`, so a reference cannot be stored from one and
+  outlive the extents it borrows.
 - `Context` owns the cuTENSOR handle and plan cache. `Plan` holds a selected
   operation ready for repeated execution. `einsum` uses cached plans;
   an explicit Plan lets callers hoist setup out of a loop.
