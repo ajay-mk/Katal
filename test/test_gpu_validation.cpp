@@ -1,10 +1,12 @@
 #include <array>
-#include <stdexcept>
 
+#include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cuda_runtime.h>
 
 #include <katal/plan.hpp>
+
+using katal::test::thrown_code;
 
 TEST_CASE("plan construction validates ranks before inspecting extents",
           "[gpu]") {
@@ -122,14 +124,15 @@ TEST_CASE("Runtime rejects competing owners and premature finalization",
   {
     const katal::Runtime runtime;
     const auto* context = &katal::default_context();
-    REQUIRE_THROWS_AS(katal::Runtime{}, std::logic_error);
-    REQUIRE_THROWS_AS(katal::finalize(), std::logic_error);
+    REQUIRE(thrown_code([] { katal::Runtime{}; }) == katal::Errc::InvalidState);
+    REQUIRE(thrown_code([] { katal::finalize(); }) ==
+            katal::Errc::InvalidState);
     REQUIRE(katal::initialized());
     REQUIRE(&katal::default_context() == context);
   }
   REQUIRE_FALSE(katal::initialized());
   katal::initialize();
-  REQUIRE_THROWS_AS(katal::Runtime{}, std::logic_error);
+  REQUIRE(thrown_code([] { katal::Runtime{}; }) == katal::Errc::InvalidState);
   REQUIRE(katal::initialized());
   katal::finalize();
 }

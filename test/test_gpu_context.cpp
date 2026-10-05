@@ -2,17 +2,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cuda_runtime.h>
 
 #include <katal/plan.hpp>
 
 namespace {
+
+using katal::test::thrown_code;
 
 int device_count() {
   int devices = 0;
@@ -85,7 +87,8 @@ TEST_CASE("initialize after the default context exists throws", "[gpu]") {
   katal::initialize();
   katal::Config config;
   config.plan_cache_entries = 0;
-  REQUIRE_THROWS_AS(katal::initialize(config), std::logic_error);
+  REQUIRE(thrown_code([&] { katal::initialize(config); }) ==
+          katal::Errc::InvalidState);
   katal::finalize();
   REQUIRE_NOTHROW(katal::initialize(config));
   katal::finalize();

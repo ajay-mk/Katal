@@ -83,7 +83,7 @@ class Context {
 /// Sets up the process-wide context eagerly. Optional: the first call that
 /// needs one does it lazily with default configuration. Calling it explicitly
 /// puts the slow one-time cuTENSOR initialisation somewhere you chose.
-/// Throws std::logic_error if the context already exists, since its Config
+/// Throws `Errc::InvalidState` if the context already exists, since its Config
 /// could no longer take effect; call `finalize` first to change it.
 void initialize(Config config = {});
 
@@ -91,13 +91,13 @@ void initialize(Config config = {});
 /// Without this the handle is leaked on purpose, because destroying it from a
 /// static destructor races CUDA's own teardown.
 /// All borrowed references, Plans and GPU work must be finished first.
-/// Throws std::logic_error while a Runtime owns the default context.
+/// Throws `Errc::InvalidState` while a Runtime owns the default context.
 void finalize();
 
 bool initialized() noexcept;
 
-/// Exclusive scope owner of the default context. Throws std::logic_error if
-/// a context already exists. Declare before its Plans and GPU resources, and
+/// Exclusive scope owner of the default context. Throws `Errc::InvalidState`
+/// if a context already exists. Declare before its Plans and GPU resources, and
 /// finish submitted work before leaving the scope.
 class Runtime {
  public:
