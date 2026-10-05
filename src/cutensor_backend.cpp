@@ -99,8 +99,8 @@ class CutensorKernel final : public Kernel {
     const Operand& d = operation.output;
     describe(&desc_a_, a);
     describe(&desc_d_, d);
-    const auto compute =
-        util::to_compute(operation.compute, operation.precision);
+    const auto compute = util::to_compute(
+        operation.compute, operation.precision, operation.equation);
 
     switch (operation.kind) {
       case OpKind::Contraction: {
@@ -304,6 +304,15 @@ class CutensorBackend final : public Backend {
               handle_, static_cast<uint32_t>(config.plan_cache_capacity)),
           "");
     KATAL_CHECK_CUDA(cudaGetDevice(&device_), "");
+    int major = 0;
+    int minor = 0;
+    KATAL_CHECK_CUDA(cudaDeviceGetAttribute(
+                         &major, cudaDevAttrComputeCapabilityMajor, device_),
+                     "");
+    KATAL_CHECK_CUDA(cudaDeviceGetAttribute(
+                         &minor, cudaDevAttrComputeCapabilityMinor, device_),
+                     "");
+    compute_capability_ = major * 10 + minor;
     handle_ = guard.release();
   }
 
@@ -333,6 +342,10 @@ class CutensorBackend final : public Backend {
 
   std::unique_ptr<Kernel> plan(const Operation& operation,
                                const PlanOptions& options) const override {
+    if (compute_capability_ < util::min_compute_capability(operation.precision))
+      throw Error(Errc::UnsupportedPattern, operation.equation,
+                  "this precision needs a newer GPU than device " +
+                      std::to_string(device_));
     return std::make_unique<CutensorKernel>(handle_, device_, operation,
                                             options);
   }
@@ -340,6 +353,7 @@ class CutensorBackend final : public Backend {
  private:
   cutensorHandle_t handle_ = nullptr;
   int device_ = 0;
+  int compute_capability_ = 0;
 };
 
 }  // namespace

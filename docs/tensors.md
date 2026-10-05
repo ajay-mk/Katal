@@ -8,7 +8,9 @@ are the tensor-core compute modes in `PlanOptions::precision` (TF32 and the
 like, which apply to contractions only and are ignored by every other
 operation), but none of those are tested; whether a combination runs is up to
 cuTENSOR and the GPU, and one it refuses is `UnsupportedPattern` at plan
-time. Inputs of different types may meet where cuTENSOR allows it, such as a
+time. The emulated modes (`Bf16x9`, `F16x4`, `Int8x8`) also need a CUDA
+version that provides them; on one that does not, cuTENSOR quietly computes
+in native F32 or F64 instead. Inputs of different types may meet where cuTENSOR allows it, such as a
 C64 tensor contracted with an F64 one into C64.
 
 ## Ownership and execution

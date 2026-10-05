@@ -38,8 +38,13 @@ enum class WorkspacePreference {
 /// beyond what the `compute` type alone can say. Each runs on tensor cores
 /// and needs a recent GPU and particular storage types, according to
 /// cuTENSOR's contraction table; anything else is refused at plan time as
-/// `Errc::UnsupportedPattern`. Other operations ignore it. Katal passes
-/// these through untested.
+/// `Errc::UnsupportedPattern`. Katal checks the GPU generation itself, since
+/// cuTENSOR may otherwise run an emulated mode in native precision. The
+/// emulated modes (`Bf16x9`, `F16x4`, `Int8x8`) also depend on the CUDA
+/// version, which NVIDIA does not document per mode; where CUDA lacks one,
+/// cuTENSOR still computes in native F32 or F64 rather than failing, so the
+/// result is at least as accurate as asked but not faster. Other operations
+/// ignore it. Katal passes these through untested.
 enum class Precision {
   /// Exactly the `compute` type. The default.
   Native,
