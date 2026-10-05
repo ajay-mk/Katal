@@ -139,3 +139,33 @@ TEST_CASE("an owning tensor exposes a shared execution view", "[tensor]") {
   STATIC_REQUIRE(std::is_same_v<decltype(tensor.ref()), katal::TensorRef>);
   REQUIRE(copy.ref().data == tensor.data());
 }
+
+TEST_CASE("a tensor converts to the reference ref() returns", "[tensor]") {
+  using Tensor = katal::Tensor<std::allocator<std::byte>>;
+
+  // A const Tensor converts only to a read-only reference, and a temporary
+  // not at all, since its extents would be gone before the reference is used.
+  STATIC_REQUIRE(std::is_convertible_v<Tensor&, katal::TensorRef>);
+  STATIC_REQUIRE(std::is_convertible_v<Tensor&, katal::ConstTensorRef>);
+  STATIC_REQUIRE(std::is_convertible_v<const Tensor&, katal::ConstTensorRef>);
+  STATIC_REQUIRE(!std::is_convertible_v<const Tensor&, katal::TensorRef>);
+  STATIC_REQUIRE(!std::is_convertible_v<Tensor, katal::TensorRef>);
+  STATIC_REQUIRE(!std::is_convertible_v<Tensor, katal::ConstTensorRef>);
+
+  Tensor tensor(katal::Dtype::F32, {3, 5});
+  const Tensor& view = tensor;
+  const auto same = [&](const auto& ref) {
+    REQUIRE(ref.data == tensor.data());
+    REQUIRE(ref.type == katal::Dtype::F32);
+    REQUIRE(ref.extent.data() == tensor.extents().data());
+    REQUIRE(ref.extent.size() == 2);
+    REQUIRE(ref.layout == katal::Layout::ColumnMajor);
+    REQUIRE(ref.alignment == tensor.ref().alignment);
+  };
+  const katal::TensorRef write = tensor;
+  const katal::ConstTensorRef read = tensor;
+  const katal::ConstTensorRef read_const = view;
+  same(write);
+  same(read);
+  same(read_const);
+}

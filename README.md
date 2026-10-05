@@ -24,7 +24,7 @@ int main() {
   katal::Tensor<> r(katal::Dtype::F64, {4, 4, 20, 20});   // i j c d
 
   // r = 0.5 * t2 . v + 1.0 * r, planned once and cached by shape.
-  katal::einsum("ijab,abcd->ijcd", 0.5, t2.ref(), v.ref(), 1.0, r.ref());
+  katal::einsum("ijab,abcd->ijcd", 0.5, t2, v, 1.0, r);
 
   // einsum is asynchronous: wait before reading r or leaving the Runtime.
   cudaDeviceSynchronize();

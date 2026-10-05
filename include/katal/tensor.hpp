@@ -140,6 +140,14 @@ class Tensor {
                     Layout::ColumnMajor);
   }
 
+  /// Lets a Tensor be passed straight to einsum, make_plan and cached_plan,
+  /// with the same const rules as ref(). A temporary Tensor does not convert,
+  /// since the reference would outlive the extents it borrows.
+  operator TensorRef() & noexcept { return ref(); }
+  operator ConstTensorRef() const& noexcept { return ref(); }
+  operator TensorRef() && = delete;
+  operator ConstTensorRef() const&& = delete;
+
  private:
   using Traits = std::allocator_traits<Allocator>;
 
