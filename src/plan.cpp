@@ -3,6 +3,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -198,7 +199,9 @@ class Plan::Impl {
     op.output = operand(equation.result(), d);
     check_extents(equation,
                   {{&equation.operand(0), &a}, {&equation.result(), &d}});
-    finish(std::move(op), d, options);
+    PlanOptions widened = options;
+    if (!widened.compute) widened.compute = conversion_compute(a.type, d.type);
+    finish(std::move(op), d, widened);
     alignment_ = {a.alignment, 0, d.alignment};
   }
 
@@ -333,6 +336,23 @@ class Plan::Impl {
     if (options.compute) return *options.compute;
     if (d.type == Dtype::F16 || d.type == Dtype::Bf16) return Dtype::F32;
     return d.type;
+  }
+
+  /// A permutation that converts accumulates in the wider of its two types,
+  /// which is what cuTENSOR requires: F64 to F32 runs in double precision,
+  /// not in the output's single. Unset when the types match, so the usual
+  /// default applies.
+  static std::optional<Dtype> conversion_compute(Dtype a, Dtype d) {
+    if (a == d) return std::nullopt;
+    const auto wide = [](Dtype t) {
+      return t == Dtype::F64 || t == Dtype::C64;
+    };
+    const auto complex = [](Dtype t) {
+      return t == Dtype::C32 || t == Dtype::C64;
+    };
+    const bool either_complex = complex(a) || complex(d);
+    if (wide(a) || wide(d)) return either_complex ? Dtype::C64 : Dtype::F64;
+    return either_complex ? Dtype::C32 : Dtype::F32;
   }
 
   /// The kernel was chosen for the alignment the plan was built with; a less

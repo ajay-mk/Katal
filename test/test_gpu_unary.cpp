@@ -158,11 +158,19 @@ TEST_CASE("a dedicated permutation", "[unary][gpu]") {
     REQUIRE(dd.to_host() == std::vector<double>{7, 8, 9, 7, 8, 9});
   }
 
-  SECTION("a conversion to another type") {
+  SECTION("a conversion to a narrower type") {
     const DeviceBuffer<float> dd(std::vector<float>(6));
     katal::permute("ij->ji", 1.0, ar,
                    katal::make_ref(dd.get(), Dtype::F32, e32));
     REQUIRE(dd.to_host() == std::vector<float>{1, 4, 2, 5, 3, 6});
+  }
+
+  SECTION("a conversion to a wider type") {
+    const DeviceBuffer<float> df(std::vector<float>{1, 2, 3, 4, 5, 6});
+    const DeviceBuffer<double> dd(std::vector<double>(6));
+    katal::permute("ij->ji", 1.0, katal::make_ref(df.get(), Dtype::F32, e23),
+                   katal::make_ref(dd.get(), Dtype::F64, e32));
+    REQUIRE(dd.to_host() == std::vector<double>{1, 4, 2, 5, 3, 6});
   }
 }
 
@@ -215,10 +223,11 @@ TEST_CASE("unary and permutation misuse", "[unary][gpu]") {
     const auto max =
         katal::cached_plan(context, "ij->ji", katal::BinaryOp::Max, a, d);
     const auto perm = katal::cached_permutation_plan(context, "ij->ji", a, d);
-    const auto conj = katal::cached_plan(context, "ij->ji", katal::conj(a), d);
+    const auto neg = katal::cached_plan(
+        context, "ij->ji", katal::apply(katal::UnaryOp::Neg, a), d);
     REQUIRE(sum != max);
     REQUIRE(sum != perm);
-    REQUIRE(sum != conj);
+    REQUIRE(sum != neg);
     REQUIRE(perm == katal::cached_permutation_plan(context, "ij->ji", a, d));
   }
 }

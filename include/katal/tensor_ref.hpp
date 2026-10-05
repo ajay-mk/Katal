@@ -126,9 +126,10 @@ struct BasicTensorRef {
 using TensorRef = BasicTensorRef<void*>;
 using ConstTensorRef = BasicTensorRef<const void*>;
 
-/// The same input, read through `op`: `einsum("ij,jk->ik", 1.0,
-/// apply(UnaryOp::Abs, a), b, 0.0, d)` contracts |a| with b. Replaces any
-/// operator the reference already carried.
+/// The same input, read through `op`: `reduce("ij->i", BinaryOp::Max, 1.0,
+/// apply(UnaryOp::Abs, a), 0.0, d)` takes the largest magnitude in each row.
+/// Replaces any operator the reference already carried. Contractions accept
+/// only Identity and Conj.
 inline ConstTensorRef apply(UnaryOp op, ConstTensorRef tensor) noexcept {
   tensor.op = op;
   return tensor;

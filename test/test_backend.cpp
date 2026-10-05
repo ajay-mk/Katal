@@ -310,3 +310,31 @@ TEST_CASE("an elementwise plan passes c apart from d", "[backend]") {
     CHECK(record->runs.empty());
   }
 }
+
+TEST_CASE("a converting permutation accumulates in the wider type",
+          "[backend]") {
+  auto record = std::make_shared<Record>();
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const std::array<std::int64_t, 2> ea{2, 3}, ed{3, 2};
+  using katal::Dtype;
+  const auto compute = [&](Dtype from, Dtype to,
+                           katal::PlanOptions options = {}) {
+    katal::make_permutation_plan(context, katal::Equation::parse("ij->ji"),
+                                 katal::make_ref(nullptr, from, ea),
+                                 katal::make_ref(nullptr, to, ed), options);
+    REQUIRE(record->operation);
+    CHECK(record->operation->kind == OpKind::Permutation);
+    return record->operation->compute;
+  };
+
+  CHECK(compute(Dtype::F64, Dtype::F32) == Dtype::F64);
+  CHECK(compute(Dtype::F32, Dtype::F64) == Dtype::F64);
+  CHECK(compute(Dtype::C64, Dtype::C32) == Dtype::C64);
+  CHECK(compute(Dtype::F16, Dtype::F32) == Dtype::F32);
+  CHECK(compute(Dtype::F32, Dtype::F32) == Dtype::F32);
+  CHECK(compute(Dtype::F16, Dtype::F16) == Dtype::F32);
+  katal::PlanOptions options;
+  options.compute = Dtype::F32;
+  CHECK(compute(Dtype::F64, Dtype::F32, options) == Dtype::F32);
+}

@@ -207,7 +207,8 @@ Plan make_plan(const Context& context, const Equation& equation,
 /// A dedicated permutation, `d = alpha * a`, through cuTENSOR's own
 /// permutation kernel rather than a reduction. The result may also
 /// broadcast `a` along labels it lacks, as in `"i->ij"`, and may have a
-/// different type, such as F32 from F16. See
+/// different type, such as F32 from F16 or F64; unless `options.compute` is
+/// set, a conversion accumulates in the wider of the two types. See
 /// `Equation::classify_permutation`.
 Plan make_permutation_plan(const Context& context, const Equation& equation,
                            const ConstTensorRef& a, const ConstTensorRef& d,
