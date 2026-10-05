@@ -99,7 +99,8 @@ class CutensorKernel final : public Kernel {
     const Operand& d = operation.output;
     describe(&desc_a_, a);
     describe(&desc_d_, d);
-    const auto compute = util::to_compute(operation.compute);
+    const auto compute =
+        util::to_compute(operation.compute, operation.precision);
 
     switch (operation.kind) {
       case OpKind::Contraction: {

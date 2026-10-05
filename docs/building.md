@@ -62,8 +62,9 @@ therefore produces no cache event.
 Planning options use the enum values from `options.hpp`: `algo` is
 `0=Default`, `1=DefaultPatient`, `2=Gett`, `3=Tgett`, `4=Ttgt`;
 `workspace_preference` is `0=Min`, `1=Default`, `2=Max`. `compute=output`
-uses the output type, or F32 for an F16 or BF16 output, and `kernel_rank=-1`
-leaves kernel rank unspecified.
+uses the output type, or F32 for an F16 or BF16 output, `kernel_rank=-1`
+leaves kernel rank unspecified, and `precision` is `0=Native`, `1=Tf32`, `2=Tf32x3`,
+`3=Bf16x9`, `4=F16x4`, `5=Int8x8`.
 Empty strides mean the tensor's dense layout. A workspace requirement of zero
 needs no scratch allocation.
 

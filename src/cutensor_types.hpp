@@ -69,6 +69,35 @@ inline cutensorComputeDescriptor_t to_compute(Dtype type) {
   throw Error(Errc::DtypeMismatch, "", "unrecognized compute type");
 }
 
+/// The descriptor for a tensor-core mode, or for `compute` when Native.
+inline cutensorComputeDescriptor_t to_compute(Dtype compute,
+                                              Precision precision) {
+  switch (precision) {
+    case Precision::Native:
+      return to_compute(compute);
+    case Precision::Tf32:
+      return CUTENSOR_COMPUTE_DESC_TF32;
+    case Precision::Tf32x3:
+      return CUTENSOR_COMPUTE_DESC_3XTF32;
+#if CUTENSOR_VERSION >= 20800
+    // The release these were checked against; older ones may lack them.
+    case Precision::Bf16x9:
+      return CUTENSOR_COMPUTE_DESC_9X16BF;
+    case Precision::F16x4:
+      return CUTENSOR_COMPUTE_DESC_4X16F;
+    case Precision::Int8x8:
+      return CUTENSOR_COMPUTE_DESC_8XINT8;
+#else
+    case Precision::Bf16x9:
+    case Precision::F16x4:
+    case Precision::Int8x8:
+      throw Error(Errc::UnsupportedPattern, "",
+                  "this precision needs cuTENSOR 2.8 or newer");
+#endif
+  }
+  throw Error(Errc::DtypeMismatch, "", "unrecognized precision");
+}
+
 inline cutensorAlgo_t to_cutensor(Algo algo) {
   switch (algo) {
     case Algo::Default:

@@ -66,6 +66,8 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   const auto workspace = static_cast<int32_t>(options.workspace);
   const int32_t rank = options.kernel_rank.value_or(-1);
   const auto jit = static_cast<int32_t>(options.jit);
+  const auto precision = static_cast<int32_t>(options.precision);
+  append(key, &precision, sizeof(precision));
   append(key, &algo, sizeof(algo));
   append(key, &workspace, sizeof(workspace));
   append(key, &rank, sizeof(rank));
@@ -452,6 +454,7 @@ class Plan::Impl {
                   "the output carries a unary operator; only inputs can");
     op.compute = compute_type(options, d.type);
     compute_ = op.compute;
+    op.precision = options.precision;
     op.equation = equation_;
     kernel_ = backend_->plan(op, options);
 
