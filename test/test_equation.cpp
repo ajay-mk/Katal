@@ -2,6 +2,7 @@
 #include <string>
 #include <system_error>
 
+#include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/equation.hpp>
@@ -10,6 +11,7 @@ using katal::Classification;
 using katal::Equation;
 using katal::Errc;
 using katal::Lowering;
+using katal::test::thrown_code;
 
 namespace {
 
@@ -282,6 +284,14 @@ TEST_CASE("elementwise classification", "[equation]") {
       REQUIRE(e.code() == Errc::UnsupportedPattern);
       REQUIRE(mentions(e, "label(s) \"j\" appear"));
     }
+  }
+
+  SECTION("summed labels from both inputs can exceed one index") {
+    const std::string text =
+        distinct_labels(0) + "," + distinct_labels(1) + "->";
+    REQUIRE(thrown_code([&] {
+              Equation::parse(text).classify_elementwise();
+            }) == Errc::UnsupportedPattern);
   }
 
   SECTION("one or three inputs") {

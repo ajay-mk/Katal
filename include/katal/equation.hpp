@@ -289,11 +289,13 @@ inline Classification Equation::classify_elementwise() const {
                     std::to_string(operands_.size()));
 
   const util::Index &a = operands_[0], &b = operands_[1], &d = result_;
-  // Checked per input, as in classify_binary.
+  // Checked and rendered per input, as in classify_binary: the two together
+  // can carry more labels than one index holds.
   const util::Index summed_a = a - d, summed_b = b - d;
   if (summed_a.rank() > 0 || summed_b.rank() > 0)
     throw Error(Errc::UnsupportedPattern, text_,
-                "label(s) " + quoted(summed_a | summed_b) +
+                "label(s) \"" + std::string(summed_a) +
+                    std::string(summed_b - summed_a) + "\"" +
                     " appear in an input but not in the result; an "
                     "elementwise operation sums over nothing, so use einsum");
 
