@@ -62,6 +62,8 @@ inline std::string log_tensor(const ConstTensorRef& tensor) {
   output << "] layout="
          << (tensor.layout == Layout::ColumnMajor ? "column" : "row")
          << " alignment=" << tensor.alignment;
+  if (tensor.op != UnaryOp::Identity)
+    output << " op=" << static_cast<int>(tensor.op);
   return output.str();
 }
 

@@ -203,3 +203,26 @@ TEST_CASE("inputs are const-correct", "[tensor_ref]") {
   REQUIRE(read.alignment == writable.alignment);
   REQUIRE(mode_order(Index("ijkl"), read).modes == Index("lkji"));
 }
+
+TEST_CASE("apply and conj mark an input without copying it", "[tensor_ref]") {
+  std::array<double, 4> storage{};
+  const std::array<std::int64_t, 2> extent{2, 2};
+  const katal::TensorRef t =
+      katal::make_ref(storage.data(), Dtype::F64, extent);
+  REQUIRE(t.op == katal::UnaryOp::Identity);
+
+  const katal::ConstTensorRef c = katal::conj(t);
+  REQUIRE(c.op == katal::UnaryOp::Conj);
+  REQUIRE(c.data == storage.data());
+  REQUIRE(c.extent.data() == extent.data());
+  REQUIRE(c.alignment == t.alignment);
+
+  // apply replaces rather than composes.
+  REQUIRE(katal::apply(katal::UnaryOp::Abs, c).op == katal::UnaryOp::Abs);
+
+  // The write-to-read conversion keeps the operator.
+  katal::TensorRef marked = t;
+  marked.op = katal::UnaryOp::Neg;
+  const katal::ConstTensorRef read = marked;
+  REQUIRE(read.op == katal::UnaryOp::Neg);
+}

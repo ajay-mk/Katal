@@ -32,6 +32,8 @@ void append_tensor(std::string& key, const ConstTensorRef& t) {
   append(key, &type, sizeof(type));
   append(key, &layout, sizeof(layout));
   append(key, &t.alignment, sizeof(t.alignment));
+  const auto op = static_cast<int32_t>(t.op);
+  append(key, &op, sizeof(op));
   const auto extents = static_cast<uint32_t>(t.extent.size());
   const auto strides = static_cast<uint32_t>(t.stride.size());
   append(key, &extents, sizeof(extents));
@@ -41,7 +43,11 @@ void append_tensor(std::string& key, const ConstTensorRef& t) {
 }
 
 /// `op` is -1 for an einsum plan, which the tensor count already tells apart
-/// from a one-operand one, and the BinaryOp for an elementwise plan.
+/// from a one-operand one; the BinaryOp for an elementwise plan or a
+/// reduction, which the tensor count tells apart too; and `permutation_key`
+/// for a permutation.
+constexpr int32_t permutation_key = 1000;
+
 std::string plan_key(std::string_view equation, PlanOptions options,
                      std::initializer_list<const ConstTensorRef*> tensors,
                      int32_t op = -1) {
@@ -105,7 +111,11 @@ void check_extents(
 class Plan::Impl {
  public:
   /// Which execute overload a plan answers to.
-  enum class Form { Contraction, OneOperand, Elementwise };
+  enum class Form { Contraction, OneOperand, Elementwise, Permutation };
+
+  /// Selects the permutation constructor, whose arguments match the
+  /// one-operand einsum's.
+  struct PermutationTag {};
 
   Impl(const Context& context, const Equation& equation,
        const ConstTensorRef& a, const ConstTensorRef& b,
@@ -132,6 +142,12 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation,
        const ConstTensorRef& a, const ConstTensorRef& d,
        const PlanOptions& options)
+      : Impl(context, equation, BinaryOp::Add, a, d, options) {}
+
+  /// The one-operand form, reducing with `reduce` rather than a sum.
+  Impl(const Context& context, const Equation& equation, BinaryOp reduce,
+       const ConstTensorRef& a, const ConstTensorRef& d,
+       const PlanOptions& options)
       : Impl(context, equation, Form::OneOperand) {
     if (equation.classify().kind == Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
@@ -139,6 +155,7 @@ class Plan::Impl {
 
     backend::Operation op;
     op.kind = backend::OpKind::Reduction;
+    op.binary = reduce;
     op.inputs = {operand(equation.operand(0), a)};
     op.output = operand(equation.result(), d);
     check_extents(equation,
@@ -166,6 +183,23 @@ class Plan::Impl {
                              {&equation.result(), &d}});
     finish(std::move(op), d, options);
     alignment_ = {a.alignment, b.alignment, d.alignment};
+  }
+
+  /// A dedicated permutation, `d = alpha * a`.
+  Impl(const Context& context, const Equation& equation, PermutationTag,
+       const ConstTensorRef& a, const ConstTensorRef& d,
+       const PlanOptions& options)
+      : Impl(context, equation, Form::Permutation) {
+    equation.classify_permutation();
+
+    backend::Operation op;
+    op.kind = backend::OpKind::Permutation;
+    op.inputs = {operand(equation.operand(0), a)};
+    op.output = operand(equation.result(), d);
+    check_extents(equation,
+                  {{&equation.operand(0), &a}, {&equation.result(), &d}});
+    finish(std::move(op), d, options);
+    alignment_ = {a.alignment, 0, d.alignment};
   }
 
   Impl(const Impl&) = delete;
@@ -200,6 +234,25 @@ class Plan::Impl {
     const std::array<Scalar, 2> scalars{alpha, beta};
     const std::array<const void*, 1> inputs{a};
     kernel_->run(scalars, inputs, c, d, workspace, stream);
+  }
+
+  void permute(Scalar alpha, const void* a, Scalar beta, void* d,
+               Workspace workspace, StreamRef stream) const {
+    if (beta.value() != 0.0)
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  "a permutation plan writes d = alpha * a and cannot add "
+                  "beta * c; use einsum for that");
+    backend_->check_device(equation_, "plan");
+    if (a == d)
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  "pointer a is also the output; a permutation runs out of "
+                  "place");
+    check_alignment("a", a, alignment_[0]);
+    check_alignment("d", d, alignment_[2]);
+    check_workspace(workspace);
+    const std::array<Scalar, 1> scalars{alpha};
+    const std::array<const void*, 1> inputs{a};
+    kernel_->run(scalars, inputs, nullptr, d, workspace, stream);
   }
 
   void combine(Scalar alpha, const void* a, Scalar beta, const void* b,
@@ -257,11 +310,15 @@ class Plan::Impl {
     result.stride = order.stride;
     result.type = tensor.type;
     result.alignment = tensor.alignment;
+    result.op = tensor.op;
     return result;
   }
 
   void finish(backend::Operation op, const ConstTensorRef& d,
               const PlanOptions& options) {
+    if (d.op != UnaryOp::Identity)
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  "the output carries a unary operator; only inputs can");
     op.compute = compute_type(options, d);
     compute_ = op.compute;
     op.equation = equation_;
@@ -320,6 +377,8 @@ std::string form_name(Plan::Impl::Form form) {
       return "one-operand";
     case Plan::Impl::Form::Elementwise:
       return "elementwise";
+    case Plan::Impl::Form::Permutation:
+      return "one-operand";
   }
   return "matching";
 }
@@ -355,6 +414,8 @@ void Plan::execute(Scalar alpha, const void* a, const void* b, Scalar beta,
 void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
                    void* d, Workspace workspace, StreamRef stream) const {
   const Impl& plan = impl();
+  if (plan.form() == Impl::Form::Permutation)
+    return plan.permute(alpha, a, beta, d, workspace, stream);
   if (plan.form() != Impl::Form::OneOperand)
     throw Error(Errc::UnsupportedPattern, plan.equation(),
                 "this plan takes two operands; use the " +
@@ -478,6 +539,80 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
       [&] {
         return make_plan(context, Equation::parse(equation), op, a, b, d,
                          resolved);
+      });
+}
+
+Plan make_plan(const Context& context, const Equation& equation,
+               BinaryOp reduce, const ConstTensorRef& a,
+               const ConstTensorRef& d, PlanOptions options) {
+#if KATAL_ENABLE_LOGGING
+  const auto start = std::chrono::steady_clock::now();
+#endif
+  Plan plan(
+      std::make_unique<Plan::Impl>(context, equation, reduce, a, d, options));
+#if KATAL_ENABLE_LOGGING
+  const auto elapsed = std::chrono::duration<double, std::micro>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
+#endif
+  KATAL_LOG("plan.created device="
+            << context.device()
+            << " equation=" << util::log_quote(equation.text())
+            << " reduce=" << util::log_binary(reduce)
+            << " a=" << util::log_tensor(a) << " output=" << util::log_tensor(d)
+            << ' ' << util::log_options(options) << " workspace_bytes="
+            << plan.workspace_size() << " host_plan_us=" << elapsed);
+  return plan;
+}
+
+Plan make_permutation_plan(const Context& context, const Equation& equation,
+                           const ConstTensorRef& a, const ConstTensorRef& d,
+                           PlanOptions options) {
+#if KATAL_ENABLE_LOGGING
+  const auto start = std::chrono::steady_clock::now();
+#endif
+  Plan plan(std::make_unique<Plan::Impl>(
+      context, equation, Plan::Impl::PermutationTag{}, a, d, options));
+#if KATAL_ENABLE_LOGGING
+  const auto elapsed = std::chrono::duration<double, std::micro>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
+#endif
+  KATAL_LOG("plan.created device="
+            << context.device()
+            << " equation=" << util::log_quote(equation.text())
+            << " permutation a=" << util::log_tensor(a) << " output="
+            << util::log_tensor(d) << ' ' << util::log_options(options)
+            << " workspace_bytes=" << plan.workspace_size()
+            << " host_plan_us=" << elapsed);
+  return plan;
+}
+
+std::shared_ptr<const Plan> cached_plan(const Context& context,
+                                        std::string_view equation,
+                                        BinaryOp reduce,
+                                        const ConstTensorRef& a,
+                                        const ConstTensorRef& d,
+                                        std::optional<PlanOptions> options) {
+  const PlanOptions resolved =
+      options.value_or(context.impl().config().plan_options);
+  return context.impl().cached(
+      plan_key(equation, resolved, {&a, &d}, static_cast<int32_t>(reduce)),
+      [&] {
+        return make_plan(context, Equation::parse(equation), reduce, a, d,
+                         resolved);
+      });
+}
+
+std::shared_ptr<const Plan> cached_permutation_plan(
+    const Context& context, std::string_view equation, const ConstTensorRef& a,
+    const ConstTensorRef& d, std::optional<PlanOptions> options) {
+  const PlanOptions resolved =
+      options.value_or(context.impl().config().plan_options);
+  return context.impl().cached(
+      plan_key(equation, resolved, {&a, &d}, permutation_key), [&] {
+        return make_permutation_plan(context, Equation::parse(equation), a, d,
+                                     resolved);
       });
 }
 

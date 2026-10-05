@@ -28,6 +28,68 @@ cutensorOperator_t to_cutensor(BinaryOp op) {
   return CUTENSOR_OP_ADD;
 }
 
+cutensorOperator_t to_cutensor(UnaryOp op) {
+  switch (op) {
+    case UnaryOp::Identity:
+      return CUTENSOR_OP_IDENTITY;
+    case UnaryOp::Conj:
+      return CUTENSOR_OP_CONJ;
+    case UnaryOp::Neg:
+      return CUTENSOR_OP_NEG;
+    case UnaryOp::Abs:
+      return CUTENSOR_OP_ABS;
+    case UnaryOp::Sqrt:
+      return CUTENSOR_OP_SQRT;
+    case UnaryOp::Rcp:
+      return CUTENSOR_OP_RCP;
+    case UnaryOp::Exp:
+      return CUTENSOR_OP_EXP;
+    case UnaryOp::Log:
+      return CUTENSOR_OP_LOG;
+    case UnaryOp::Sin:
+      return CUTENSOR_OP_SIN;
+    case UnaryOp::Cos:
+      return CUTENSOR_OP_COS;
+    case UnaryOp::Tan:
+      return CUTENSOR_OP_TAN;
+    case UnaryOp::Sinh:
+      return CUTENSOR_OP_SINH;
+    case UnaryOp::Cosh:
+      return CUTENSOR_OP_COSH;
+    case UnaryOp::Tanh:
+      return CUTENSOR_OP_TANH;
+    case UnaryOp::Asin:
+      return CUTENSOR_OP_ASIN;
+    case UnaryOp::Acos:
+      return CUTENSOR_OP_ACOS;
+    case UnaryOp::Atan:
+      return CUTENSOR_OP_ATAN;
+    case UnaryOp::Asinh:
+      return CUTENSOR_OP_ASINH;
+    case UnaryOp::Acosh:
+      return CUTENSOR_OP_ACOSH;
+    case UnaryOp::Atanh:
+      return CUTENSOR_OP_ATANH;
+    case UnaryOp::Ceil:
+      return CUTENSOR_OP_CEIL;
+    case UnaryOp::Floor:
+      return CUTENSOR_OP_FLOOR;
+    case UnaryOp::Relu:
+      return CUTENSOR_OP_RELU;
+    case UnaryOp::Sigmoid:
+      return CUTENSOR_OP_SIGMOID;
+    case UnaryOp::Mish:
+      return CUTENSOR_OP_MISH;
+    case UnaryOp::Swish:
+      return CUTENSOR_OP_SWISH;
+    case UnaryOp::SoftPlus:
+      return CUTENSOR_OP_SOFT_PLUS;
+    case UnaryOp::SoftSign:
+      return CUTENSOR_OP_SOFT_SIGN;
+  }
+  return CUTENSOR_OP_IDENTITY;
+}
+
 class CutensorKernel final : public Kernel {
  public:
   CutensorKernel(cutensorHandle_t handle, int device,
@@ -49,8 +111,8 @@ class CutensorKernel final : public Kernel {
         // C and D share a descriptor: beta scales the output in place.
         KATAL_CHECK(cutensorCreateContraction(
                         handle_, &op_, desc_a_, a.modes.data(),
-                        CUTENSOR_OP_IDENTITY, desc_b_, b.modes.data(),
-                        CUTENSOR_OP_IDENTITY, desc_d_, d.modes.data(),
+                        to_cutensor(a.op), desc_b_, b.modes.data(),
+                        to_cutensor(b.op), desc_d_, d.modes.data(),
                         CUTENSOR_OP_IDENTITY, desc_d_, d.modes.data(), compute),
                     equation_);
         break;
@@ -62,9 +124,9 @@ class CutensorKernel final : public Kernel {
         // therefore runs a reduction kernel rather than cudaMemcpyAsync.
         KATAL_CHECK(
             cutensorCreateReduction(
-                handle_, &op_, desc_a_, a.modes.data(), CUTENSOR_OP_IDENTITY,
+                handle_, &op_, desc_a_, a.modes.data(), to_cutensor(a.op),
                 desc_d_, d.modes.data(), CUTENSOR_OP_IDENTITY, desc_d_,
-                d.modes.data(), CUTENSOR_OP_ADD, compute),
+                d.modes.data(), to_cutensor(operation.binary), compute),
             equation_);
         break;
       case OpKind::Elementwise: {
@@ -78,13 +140,19 @@ class CutensorKernel final : public Kernel {
         // The trinary form frees both inputs, with D as C for the gamma term.
         KATAL_CHECK(
             cutensorCreateElementwiseTrinary(
-                handle_, &op_, desc_a_, a.modes.data(), CUTENSOR_OP_IDENTITY,
-                desc_b_, b.modes.data(), CUTENSOR_OP_IDENTITY, desc_d_,
+                handle_, &op_, desc_a_, a.modes.data(), to_cutensor(a.op),
+                desc_b_, b.modes.data(), to_cutensor(b.op), desc_d_,
                 d.modes.data(), CUTENSOR_OP_IDENTITY, desc_d_, d.modes.data(),
                 to_cutensor(operation.binary), CUTENSOR_OP_ADD, compute),
             equation_);
         break;
       }
+      case OpKind::Permutation:
+        KATAL_CHECK(cutensorCreatePermutation(handle_, &op_, desc_a_,
+                                              a.modes.data(), to_cutensor(a.op),
+                                              desc_d_, d.modes.data(), compute),
+                    equation_);
+        break;
     }
     kind_ = operation.kind;
     read_scalar_type();
@@ -112,6 +180,12 @@ class CutensorKernel final : public Kernel {
            StreamRef stream) const override {
     // Stack objects, so this path still allocates nothing.
     const util::ScalarBytes alpha_bytes(scalars[0], scalar_type_);
+    if (kind_ == OpKind::Permutation) {
+      KATAL_CHECK(cutensorPermute(handle_, plan_, alpha_bytes.data(), inputs[0],
+                                  d, stream.get()),
+                  equation_);
+      return;
+    }
     const util::ScalarBytes beta_bytes(scalars[1], scalar_type_);
     switch (kind_) {
       case OpKind::Contraction:
@@ -136,6 +210,8 @@ class CutensorKernel final : public Kernel {
                     equation_);
         return;
       }
+      case OpKind::Permutation:
+        return;  // run above, since it takes no beta
     }
   }
 

@@ -47,14 +47,51 @@ Katal rejects these with `UnsupportedPattern`, naming the labels responsible:
 
 - a label repeated within one operand (a diagonal or trace) or in the result,
 - in einsum, a result label that appears in no input (broadcasting; see
-  [Elementwise operations](#elementwise-operations)),
+  [Elementwise operations](#elementwise-operations) and
+  [Permutations](#permutations)),
 - with two operands, a label in one input that is neither in the other nor in
   the result (a reduction fused into a contraction).
 
 Three or more operands are also `UnsupportedPattern`, since they would need
 a contraction path.
 
-Unary operators such as conjugation are not available yet.
+## Operators on inputs
+
+Any input can be read through one of cuTENSOR's unary operators, without
+changing its data. `katal::conj(t)` conjugates and `katal::apply(op, t)`
+takes any `UnaryOp`, such as `Abs`, `Sqrt`, `Exp` or `Neg`:
+
+```cpp
+// d[i][k] = sum_j conj(a[i][j]) * b[j][k]
+katal::einsum("ij,jk->ik", 1.0, katal::conj(a), b, 0.0, d);
+```
+
+The operator travels in the `ConstTensorRef` (its `op` field), so it works
+with every call and `make_plan` overload, and plans with different
+operators are cached apart. An output must not carry one. Which operators an
+operation accepts for a type is up to cuTENSOR; one it refuses is
+`UnsupportedPattern` when the plan is built.
+
+## Reductions other than a sum
+
+`katal::reduce` is the one-operand einsum with a choice of how the dropped
+labels combine: `BinaryOp::Add`, `Multiply`, `Max` or `Min`.
+
+```cpp
+// d[i] = max_j |a[i][j]|
+katal::reduce("ij->i", katal::BinaryOp::Max, 1.0,
+              katal::apply(katal::UnaryOp::Abs, a), 0.0, d);
+```
+
+## Permutations
+
+The one-operand einsum permutes through a reduction kernel, which is what
+lets it take beta. `katal::permute(equation, alpha, a, d)` computes
+`d = alpha * a` through cuTENSOR's dedicated permutation kernel instead. It
+can also broadcast `a` along result labels it lacks, as in `"j->ij"`, and
+write a different type than it reads, such as F32 from F16. It has no beta,
+and `a` must not be `d`. The hoisted form is `make_permutation_plan`, run
+with the one-operand `Plan::execute` and a beta of zero.
 
 ## Elementwise operations
 

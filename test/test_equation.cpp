@@ -314,3 +314,38 @@ TEST_CASE("elementwise classification", "[equation]") {
     REQUIRE_FALSE(ec);
   }
 }
+
+TEST_CASE("permutation classification", "[equation]") {
+  SECTION("a reordering") {
+    const Classification c = Equation::parse("ijk->kij").classify_permutation();
+    REQUIRE(c.kind == Lowering::Permute);
+    REQUIRE(c.broadcast.rank() == 0);
+  }
+
+  SECTION("the same order is a copy") {
+    REQUIRE(Equation::parse("ij->ij").classify_permutation().kind ==
+            Lowering::Copy);
+  }
+
+  SECTION("a result label the input lacks is broadcast") {
+    const Classification c = Equation::parse("j->ij").classify_permutation();
+    REQUIRE(c.kind == Lowering::Permute);
+    REQUIRE(c.broadcast == katal::util::Index("i"));
+  }
+
+  SECTION("a dropped label is a reduction, not a permutation") {
+    try {
+      Equation::parse("ijk->ik").classify_permutation();
+      FAIL("expected a rejection");
+    } catch (const katal::Error& e) {
+      REQUIRE(e.code() == Errc::UnsupportedPattern);
+      REQUIRE(mentions(e, "\"j\""));
+    }
+  }
+
+  SECTION("two inputs") {
+    std::error_code ec;
+    Equation::parse("ij,jk->ik").classify_permutation(ec);
+    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+  }
+}
