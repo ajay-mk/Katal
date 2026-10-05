@@ -18,8 +18,10 @@
 /// The front end parses and classifies an equation, checks shapes, and
 /// lowers it to an Operation: modes, extents, strides and types, in the terms
 /// every tensor library shares. A Backend turns an Operation into a Kernel
-/// and runs it. Nothing here names cuTENSOR or CUDA, so a second backend
-/// implements these two classes and leaves the front end alone.
+/// and runs it. The Operation, Kernel and Backend types name no library, so a
+/// second backend implements the two classes and leaves the lowering alone;
+/// choosing it is a change to Context::Impl, which builds cuTENSOR's through
+/// make_cutensor_backend. Devices are still CUDA devices.
 namespace katal::backend {
 
 /// What an Operation computes, `d = alpha * op(inputs) + beta * c`:

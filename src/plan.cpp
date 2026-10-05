@@ -2,7 +2,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <new>
 #include <string>
 #include <utility>
 #include <vector>
@@ -200,7 +199,8 @@ class Plan::Impl {
   }
 
   /// Unset follows the output, except that half-precision output accumulates
-  /// in single precision: that is the pairing cuTENSOR supports for both.
+  /// in single precision: that is the pairing cuTENSOR supports for both. A
+  /// front-end policy, so that every backend gets the same default.
   static Dtype compute_type(const PlanOptions& options,
                             const ConstTensorRef& d) {
     if (options.compute) return *options.compute;

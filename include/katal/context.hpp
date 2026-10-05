@@ -77,6 +77,9 @@ class Context {
   }
 
  private:
+  /// For Impl, which builds a context around a backend it is handed.
+  explicit Context(std::unique_ptr<Impl> impl) noexcept;
+
   std::unique_ptr<Impl> impl_;
 };
 

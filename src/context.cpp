@@ -9,6 +9,8 @@
 namespace katal {
 
 Context::Context(Config config) : impl_(std::make_unique<Impl>(config)) {}
+Context::Context(std::unique_ptr<Impl> impl) noexcept
+    : impl_(std::move(impl)) {}
 Context::Context(Context&&) noexcept = default;
 Context& Context::operator=(Context&&) noexcept = default;
 Context::~Context() = default;
