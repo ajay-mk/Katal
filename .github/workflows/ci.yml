@@ -141,7 +141,8 @@ jobs:
 
   # The host layers under AddressSanitizer and UndefinedBehaviorSanitizer.
   # They are constexpr-heavy index arithmetic, which is where an off-by-one
-  # would hide. No ccache: sanitized objects are not worth caching.
+  # would hide. There is no CUDA here, so src/ is not built or sanitized.
+  # No ccache: sanitized objects are not worth caching.
   host-sanitizers:
     runs-on: ubuntu-latest
     steps:

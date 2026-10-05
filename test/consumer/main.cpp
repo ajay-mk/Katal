@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <memory>
 
+#include <katal/config.hpp>
 #include <katal/plan.hpp>
 #include <katal/tensor.hpp>
 
@@ -15,6 +16,13 @@
 #endif
 #ifdef CUDART_VERSION
 #error "the CUDA runtime leaked into a consumer translation unit"
+#endif
+
+// The header and the CMake package must agree on whether there is a backend.
+#ifdef CONSUMER_HAS_BACKEND
+static_assert(KATAL_HAVE_CUTENSOR == 1);
+#else
+static_assert(KATAL_HAVE_CUTENSOR == 0);
 #endif
 
 int main() {
