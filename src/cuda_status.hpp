@@ -24,9 +24,6 @@ inline bool context_lost(cudaError_t status) noexcept {
     case cudaErrorAssert:
     case cudaErrorECCUncorrectable:
     case cudaErrorExternalDevice:
-#if CUDART_VERSION >= 12040
-    case cudaErrorContained:
-#endif
 #if CUDART_VERSION >= 12080
     case cudaErrorTensorMemoryLeak:
 #endif
@@ -34,7 +31,9 @@ inline bool context_lost(cudaError_t status) noexcept {
     case cudaErrorCudartUnloading:
       return true;
     default:
-      return false;
+      // cudaErrorContained (226), a contained device fault, is missing from
+      // older headers, so it is matched by value.
+      return static_cast<int>(status) == 226;
   }
 }
 
