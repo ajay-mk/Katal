@@ -47,10 +47,12 @@ Managed allocations use `cudaMallocManaged` / `cudaFree`; they are not pooled.
 Pooled device allocations use `cudaMallocAsync` / `cudaFreeAsync` on their
 allocator's stream, without a host-side wait during release. Allocation
 exhaustion throws `std::bad_alloc`, as does a tensor too large to address;
-other CUDA allocation errors throw `katal::Error`. Every other failure in Katal
-is a `katal::Error`, including an extent that is not positive
-(`Errc::ExtentMismatch`) and a rank beyond `katal::max_rank`
-(`Errc::RankMismatch`).
+other CUDA allocation errors throw `katal::Error`. Every shape, rank, dtype,
+planning and execution failure is a `katal::Error`, including an extent that
+is not positive (`Errc::ExtentMismatch`) and a rank beyond `katal::max_rank`
+(`Errc::RankMismatch`). Misusing the default-context lifecycle, such as
+creating a `Runtime` while the default context exists, throws
+`std::logic_error`.
 
 See the [pooled and managed Tensor example](examples.md#pooled-and-managed-tensor-storage)
 for a complete matrix product using either allocator.

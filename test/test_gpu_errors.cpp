@@ -34,7 +34,7 @@ TEST_CASE("a rank error from planning quotes the whole equation", "[gpu]") {
   } catch (const katal::Error& e) {
     REQUIRE(e.code() == katal::Errc::RankMismatch);
     REQUIRE(e.equation() == "ij,jk->ik");
-    REQUIRE(std::string(e.what()).find("operand \"jk\"") != std::string::npos);
+    REQUIRE(std::string(e.what()).find("tensor \"jk\"") != std::string::npos);
   }
 }
 
@@ -44,8 +44,8 @@ TEST_CASE("the default workspace allocator reports exhaustion as bad_alloc",
   const katal::CudaAsyncAllocator allocator;
   REQUIRE_THROWS_AS(allocator.allocate(std::uint64_t{1} << 62, {}),
                     std::bad_alloc);
-  // Clear the non-sticky error the failed allocation left behind.
-  cudaGetLastError();
+  // The failure was reported by the throw, so it is not left behind too.
+  REQUIRE(cudaGetLastError() == cudaSuccess);
 }
 
 // Runs in its own process under CTest, since it breaks the CUDA context on

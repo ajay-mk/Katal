@@ -396,7 +396,10 @@ Workspace CudaAsyncAllocator::allocate(uint64_t bytes, StreamRef stream) const {
   Workspace workspace;
   const cudaError_t status =
       cudaMallocAsync(&workspace.ptr, bytes, stream.get());
-  if (status == cudaErrorMemoryAllocation) throw std::bad_alloc();
+  if (status == cudaErrorMemoryAllocation) {
+    (void)cudaGetLastError();  // reported here, so not left for the caller
+    throw std::bad_alloc();
+  }
   KATAL_CHECK_CUDA(status, "");
   workspace.size = bytes;
   return workspace;

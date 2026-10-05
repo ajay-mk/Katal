@@ -11,7 +11,10 @@ void* allocate_device_bytes(std::size_t bytes, StreamRef stream) {
   if (bytes == 0) return nullptr;
   void* data = nullptr;
   const cudaError_t status = cudaMallocAsync(&data, bytes, stream.get());
-  if (status == cudaErrorMemoryAllocation) throw std::bad_alloc();
+  if (status == cudaErrorMemoryAllocation) {
+    (void)cudaGetLastError();  // reported here, so not left for the caller
+    throw std::bad_alloc();
+  }
   if (status != cudaSuccess)
     throw Error(Errc::CudaError, {}, cudaGetErrorString(status));
   return data;
@@ -25,7 +28,10 @@ void* allocate_managed_bytes(std::size_t bytes) {
   if (bytes == 0) return nullptr;
   void* data = nullptr;
   const cudaError_t status = cudaMallocManaged(&data, bytes);
-  if (status == cudaErrorMemoryAllocation) throw std::bad_alloc();
+  if (status == cudaErrorMemoryAllocation) {
+    (void)cudaGetLastError();  // reported here, so not left for the caller
+    throw std::bad_alloc();
+  }
   if (status != cudaSuccess)
     throw Error(Errc::CudaError, {}, cudaGetErrorString(status));
   return data;

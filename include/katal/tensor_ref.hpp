@@ -125,18 +125,19 @@ struct ModeOrder {
 /// seeing the slowest-varying mode first and picking a kernel that transposes.
 ///
 /// `equation_text` is the whole equation `modes` came from, which a rank error
-/// quotes; the message names the operand's own labels.
+/// quotes; the message names the tensor by its own labels.
 inline ModeOrder mode_order(const util::Index& modes, const TensorRef& t,
                             std::string_view equation_text = {}) {
-  const std::string operand = "operand \"" + std::string(modes) + "\"";
+  // Built only on failure, so a valid call allocates nothing for it.
+  const auto tensor = [&] { return "tensor \"" + std::string(modes) + "\""; };
   if (modes.rank() != t.extent.size())
     throw Error(Errc::RankMismatch, equation_text,
-                operand + " has " + std::to_string(modes.rank()) +
+                tensor() + " has " + std::to_string(modes.rank()) +
                     " labels but " + std::to_string(t.extent.size()) +
                     " extents");
   if (!t.stride.empty() && t.stride.size() != t.extent.size())
     throw Error(Errc::RankMismatch, equation_text,
-                operand + " has " + std::to_string(t.extent.size()) +
+                tensor() + " has " + std::to_string(t.extent.size()) +
                     " extents but " + std::to_string(t.stride.size()) +
                     " strides");
 

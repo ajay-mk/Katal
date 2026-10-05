@@ -23,6 +23,10 @@ inline bool context_lost(cudaError_t status) noexcept {
     case cudaErrorInvalidPc:
     case cudaErrorAssert:
     case cudaErrorECCUncorrectable:
+    case cudaErrorExternalDevice:
+#if CUDART_VERSION >= 12080
+    case cudaErrorTensorMemoryLeak:
+#endif
     case cudaErrorContextIsDestroyed:
     case cudaErrorCudartUnloading:
       return true;

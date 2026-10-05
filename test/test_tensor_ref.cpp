@@ -146,7 +146,7 @@ TEST_CASE("mode_order", "[tensor_ref]") {
     } catch (const katal::Error& e) {
       REQUIRE(e.code() == Errc::RankMismatch);
       REQUIRE(e.equation() == "ijk,kl->ijl");
-      REQUIRE(std::string(e.what()).find("operand \"ijk\" has 3 labels") !=
+      REQUIRE(std::string(e.what()).find("tensor \"ijk\" has 3 labels") !=
               std::string::npos);
     }
   }
