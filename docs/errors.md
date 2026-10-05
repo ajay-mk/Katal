@@ -1,12 +1,14 @@
 # Errors
 
-Katal reports failures two ways, and only two:
+Katal reports failures three ways:
 
 - **`std::bad_alloc`** when memory runs out, from a tensor allocator, the
   default workspace allocator, or a tensor too large to address.
 - **`katal::Error`** for everything else. It derives from
   `std::runtime_error`, and carries an `Errc` to branch on and, when there
   is one, the equation that failed.
+- **`std::logic_error`** for misusing the process-wide context, described
+  below.
 
 ```cpp
 try {
@@ -22,7 +24,7 @@ try {
 | `ParseError`         | The equation is malformed: an empty operand, a stray arrow.             |
 | `RankMismatch`       | Labels and extents disagree in count, or a rank exceeds `max_rank`.     |
 | `ExtentMismatch`     | A label has two extents, an extent is not positive, or a shape overflows. |
-| `UnsupportedPattern` | Well formed but not lowered; also cuTENSOR's NOT_SUPPORTED.             |
+| `UnsupportedPattern` | Well formed but not lowered; cuTENSOR's NOT_SUPPORTED; or `execute` got a pointer less aligned than the plan. |
 | `DtypeMismatch`      | The compute type cannot hold the operands, alpha or beta.               |
 | `WorkspaceTooSmall`  | `execute` got less workspace than `Plan::workspace_size()`.             |
 | `CutensorError`      | cuTENSOR failed; the message carries its text.                          |
@@ -36,7 +38,9 @@ Misusing the process-wide context throws `std::logic_error`: a second
 
 `Equation::parse` and `Equation::classify` also have overloads that report
 through a `std::error_code` and never throw. The code compares equal to the
-`Errc` the throwing overload would have raised:
+`Errc` the throwing overload would have raised; any other exception, such as
+`std::bad_alloc`, comes back as `ParseError` from `parse` and
+`UnsupportedPattern` from `classify`:
 
 ```cpp
 std::error_code ec;

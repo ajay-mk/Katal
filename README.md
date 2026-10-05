@@ -11,6 +11,7 @@ stable yet.
 ## Quick start
 
 ```cpp
+#include <cuda_runtime.h>
 #include <katal/plan.hpp>
 #include <katal/tensor.hpp>
 
@@ -24,6 +25,9 @@ int main() {
 
   // r = 0.5 * t2 . v + 1.0 * r, planned once and cached by shape.
   katal::einsum("ijab,abcd->ijcd", 0.5, t2.ref(), v.ref(), 1.0, r.ref());
+
+  // einsum is asynchronous: wait before reading r or leaving the Runtime.
+  cudaDeviceSynchronize();
 }
 ```
 

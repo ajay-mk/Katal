@@ -8,7 +8,8 @@ then optionally `->` and the result. `"ijab,abcd->ijcd"` contracts `a` and `b`.
 - **Labels are single bytes.** Any byte other than `,`, `-`, `>` and ASCII
   whitespace is a label, so `"ij"` is two modes and `"ab"` is not one.
 - **ASCII whitespace is ignored**, newlines included, so an equation may be
-  spaced out or split across lines in a raw string.
+  spaced out or split across lines in a raw string. The arrow itself must be
+  written `->`: `- >` is a `ParseError`.
 - **Each operand and the result has at most `katal::max_rank` labels** (12 by
   default, set with `-DKATAL_MAX_RANK`). The equation as a whole may use more
   distinct labels than that.
@@ -39,12 +40,14 @@ inferred differently from what is written.
 | one      | result reorders labels                    | permutation   |
 | one      | result equals the operand                 | copy          |
 
-Katal rejects with `UnsupportedPattern`, naming the labels responsible:
+Katal rejects these with `UnsupportedPattern`, naming the labels responsible:
 
 - a label repeated within one operand (a diagonal or trace) or in the result,
 - a result label that appears in no input (broadcasting),
 - with two operands, a label in one input that is neither in the other nor in
-  the result (a reduction fused into a contraction),
-- three or more operands, which would need a contraction path.
+  the result (a reduction fused into a contraction).
+
+Three or more operands are also `UnsupportedPattern`, since they would need
+a contraction path.
 
 There are no element-wise operators such as conjugation.
