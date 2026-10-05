@@ -182,18 +182,6 @@ TEST_CASE("classification picks the kernel", "[equation]") {
 }
 
 TEST_CASE("classification rejections name the offending labels", "[equation]") {
-  SECTION("a free reduction alongside a contraction") {
-    const Equation eq = Equation::parse("ijk,kl->il");
-    REQUIRE_THROWS_AS(eq.classify(), katal::Error);
-    try {
-      eq.classify();
-    } catch (const katal::Error& e) {
-      REQUIRE(e.code() == Errc::UnsupportedPattern);
-      REQUIRE(mentions(e, "\"j\""));
-      REQUIRE(mentions(e, "ijk,kl->il"));
-    }
-  }
-
   SECTION("broadcasting a label that appears in no input") {
     const Equation eq = Equation::parse("ij,jk->ikl");
     try {
@@ -205,28 +193,8 @@ TEST_CASE("classification rejections name the offending labels", "[equation]") {
     }
   }
 
-  SECTION("diagonal extraction") {
-    REQUIRE(code_of("ii->i") == Errc::UnsupportedPattern);
-    REQUIRE(code_of("iij,jk->ik") == Errc::UnsupportedPattern);
-  }
-
   SECTION("writing a diagonal") {
     REQUIRE(code_of("ij,jk->ii") == Errc::UnsupportedPattern);
-  }
-
-  SECTION("dangling labels on both inputs beyond the maximum rank") {
-    const std::string a = distinct_labels(0), b = distinct_labels(1);
-    // Together the dangling labels do not fit in one index. The throwing
-    // overload must still raise a katal::Error, not std::length_error.
-    const Equation eq = Equation::parse(a + "," + b + "->A");
-    try {
-      eq.classify();
-      FAIL("expected a rejection");
-    } catch (const katal::Error& e) {
-      REQUIRE(e.code() == Errc::UnsupportedPattern);
-      // The equation is quoted too, so look for the label list itself.
-      REQUIRE(mentions(e, '"' + a.substr(1) + b + '"'));
-    }
   }
 
   SECTION("more than two operands") {
@@ -250,7 +218,7 @@ TEST_CASE("the error_code overloads agree with the throwing ones",
   REQUIRE_FALSE(ec);
 
   ec.clear();
-  Equation::parse("ijk,kl->il").classify(ec);
+  Equation::parse("ij,jk->ikl").classify(ec);
   REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
 }
 
@@ -302,10 +270,11 @@ TEST_CASE("elementwise classification", "[equation]") {
     REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
   }
 
-  SECTION("a repeated label is still rejected") {
-    std::error_code ec;
-    Equation::parse("ii,ij->ij").classify_elementwise(ec);
-    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+  SECTION("a repeated input label reads the diagonal") {
+    const Classification c =
+        Equation::parse("ii,ij->ij").classify_elementwise();
+    REQUIRE(c.diagonal == katal::util::Index("i"));
+    REQUIRE(c.batch == katal::util::Index("i"));
   }
 
   SECTION("the error_code overload clears on success") {
@@ -347,5 +316,55 @@ TEST_CASE("permutation classification", "[equation]") {
     std::error_code ec;
     Equation::parse("ij,jk->ik").classify_permutation(ec);
     REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+  }
+}
+
+TEST_CASE("diagonals and free reductions", "[equation]") {
+  SECTION("a trace") {
+    const Classification c = Equation::parse("ii->").classify();
+    REQUIRE(c.kind == Lowering::Reduce);
+    REQUIRE(c.reduced == katal::util::Index("i"));
+    REQUIRE(c.diagonal == katal::util::Index("i"));
+  }
+
+  SECTION("the implicit result of a repeated label is a trace too") {
+    const Equation eq = Equation::parse("ii");
+    REQUIRE(eq.result().rank() == 0);
+    REQUIRE(eq.classify().kind == Lowering::Reduce);
+  }
+
+  SECTION("a diagonal") {
+    const Classification c = Equation::parse("ii->i").classify();
+    REQUIRE(c.kind == Lowering::Copy);
+    REQUIRE(c.diagonal == katal::util::Index("i"));
+  }
+
+  SECTION("a diagonal inside a contraction") {
+    const Classification c = Equation::parse("iij,jk->ik").classify();
+    REQUIRE(c.kind == Lowering::Contract);
+    REQUIRE(c.diagonal == katal::util::Index("i"));
+    REQUIRE(c.free_a == katal::util::Index("i"));
+    REQUIRE(c.contracted == katal::util::Index("j"));
+  }
+
+  SECTION("a label in one input alone is summed out of it") {
+    const Classification c = Equation::parse("ijk,kl->il").classify();
+    REQUIRE(c.kind == Lowering::Contract);
+    REQUIRE(c.reduced_a == katal::util::Index("j"));
+    REQUIRE(c.reduced_b.rank() == 0);
+    REQUIRE(c.contracted == katal::util::Index("k"));
+  }
+
+  SECTION("free reductions on both inputs beyond the maximum rank") {
+    // Together the reduced labels do not fit in one index; kept per input,
+    // each does.
+    const std::string a = distinct_labels(0), b = distinct_labels(1);
+    const Classification c = Equation::parse(a + "," + b + "->A").classify();
+    REQUIRE(c.reduced_a == katal::util::Index(a.substr(1)));
+    REQUIRE(c.reduced_b == katal::util::Index(b));
+  }
+
+  SECTION("a repeated result label is still rejected") {
+    REQUIRE(code_of("ij,jk->ii") == Errc::UnsupportedPattern);
   }
 }
