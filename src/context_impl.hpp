@@ -5,12 +5,10 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 
-#include "cuda_status.hpp"
-#include "cutensor_status.hpp"
+#include "backend.hpp"
 #include "log.hpp"
 
 #include <katal/context.hpp>
@@ -19,39 +17,25 @@
 namespace katal {
 
 /// Shared between the context and plan translation units; never visible to a
-/// caller, which is what keeps <cutensor.h> out of the public headers.
+/// caller. It owns the backend and the plan cache, and names no library, which
+/// keeps <cutensor.h> out of the public headers and out of the front end.
 class Context::Impl {
  public:
-  explicit Impl(Config config) : config_(std::move(config)) {
-    KATAL_CHECK(cutensorCreate(&handle_), "");
-    std::unique_ptr<std::remove_pointer_t<cutensorHandle_t>,
-                    decltype(&cutensorDestroy)>
-        guard(handle_, &cutensorDestroy);
-    if (config_.plan_cache_capacity > 0)
-      KATAL_CHECK(
-          cutensorHandleResizePlanCache(
-              handle_, static_cast<uint32_t>(config_.plan_cache_capacity)),
-          "");
-    KATAL_CHECK_CUDA(cudaGetDevice(&device_), "");
-    handle_ = guard.release();
-  }
+  explicit Impl(Config config)
+      : config_(std::move(config)),
+        backend_(backend::make_cutensor_backend(config_)),
+        device_(backend_->device()) {}
 
+  // Cached plans borrow the backend, so they go first.
   ~Impl() {
-    // Destructors are noexcept and swallow errors; there is nothing useful to
-    // do with a failure here.
-    if (handle_ == nullptr) return;
-    // cuTENSOR objects must be destroyed on the device they were made on,
-    // and the caller may have another device current by now.
-    util::ScopedDevice on_device(device_);
     index_.clear();
     plans_.clear();
-    cutensorDestroy(handle_);
   }
 
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
 
-  cutensorHandle_t handle() const noexcept { return handle_; }
+  const backend::Backend& backend() const noexcept { return *backend_; }
   int device() const noexcept { return device_; }
   const Config& config() const noexcept { return config_; }
 
@@ -111,14 +95,7 @@ class Context::Impl {
   }
 
  private:
-  void check_device() const {
-    int current = 0;
-    KATAL_CHECK_CUDA(cudaGetDevice(&current), "");
-    if (current != device_)
-      throw Error(Errc::CudaError, "",
-                  "this context belongs to device " + std::to_string(device_) +
-                      " but device " + std::to_string(current) + " is current");
-  }
+  void check_device() const { backend_->check_device("", "context"); }
 
   using Entry = std::pair<std::string, std::shared_ptr<const Plan>>;
 
@@ -131,9 +108,10 @@ class Context::Impl {
     return it->second->second;
   }
 
-  cutensorHandle_t handle_ = nullptr;
-  int device_ = 0;
+  // Declared in initialization order: the backend reads the config.
   Config config_;
+  std::unique_ptr<backend::Backend> backend_;
+  int device_ = 0;
   mutable std::mutex mutex_;
   /// Most recently used first. Splicing keeps the iterators in `index_` valid.
   mutable std::list<Entry> plans_;

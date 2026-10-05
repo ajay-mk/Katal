@@ -7,10 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "backend.hpp"
 #include "context_impl.hpp"
-#include "cuda_status.hpp"
-#include "cutensor_status.hpp"
-#include "cutensor_types.hpp"
 #include "log.hpp"
 
 #include <katal/plan.hpp>
@@ -97,91 +95,55 @@ void check_extents(
 
 }  // namespace
 
+/// The front end of a plan: everything about an equation that does not depend
+/// on which library runs it. Shapes are checked and lowered to a
+/// backend::Operation here; the backend's Kernel holds the rest.
 class Plan::Impl {
  public:
   Impl(const Context& context, const Equation& equation,
        const ConstTensorRef& a, const ConstTensorRef& b,
-       const ConstTensorRef& d, PlanOptions options)
+       const ConstTensorRef& d, const PlanOptions& options)
       : Impl(context, equation, 2) {
     const Classification classification = equation.classify();
     if (classification.kind != Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "only binary contraction is implemented so far");
 
-    const ModeOrder ma = mode_order(equation.operand(0), a, equation_);
-    const ModeOrder mb = mode_order(equation.operand(1), b, equation_);
-    const ModeOrder md = mode_order(equation.result(), d, equation_);
+    backend::Operation op;
+    op.kind = backend::OpKind::Contraction;
+    op.inputs = {operand(equation.operand(0), a),
+                 operand(equation.operand(1), b)};
+    op.output = operand(equation.result(), d);
     check_extents(equation, {{&equation.operand(0), &a},
                              {&equation.operand(1), &b},
                              {&equation.result(), &d}});
-    const std::vector<int32_t> ia = mode_ids(ma.modes);
-    const std::vector<int32_t> ib = mode_ids(mb.modes);
-    const std::vector<int32_t> id = mode_ids(md.modes);
-
-    describe(&desc_a_, ma, a);
-    describe(&desc_b_, mb, b);
-    describe(&desc_d_, md, d);
+    finish(std::move(op), d, options);
     alignment_ = {a.alignment, b.alignment, d.alignment};
-
-    // C and D share a descriptor: beta scales the output in place.
-    KATAL_CHECK(cutensorCreateContraction(
-                    handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY,
-                    desc_b_, ib.data(), CUTENSOR_OP_IDENTITY, desc_d_,
-                    id.data(), CUTENSOR_OP_IDENTITY, desc_d_, id.data(),
-                    util::to_compute(compute_type(options, d))),
-                equation_);
-    read_scalar_type();
-    select_kernel(options);
   }
 
-  /// The one-operand form. cuTENSOR's permutation entry point takes neither
-  /// beta nor a workspace, so a reduction covers all three unary lowerings
-  /// with one code path: reducing over no modes is a permutation.
-  ///
-  /// A copy therefore runs a reduction kernel rather than cudaMemcpyAsync.
-  /// Add the memcpy path if the copy case ever matters.
+  /// The one-operand form: a permutation, a reduction or a copy.
   Impl(const Context& context, const Equation& equation,
-       const ConstTensorRef& a, const ConstTensorRef& d, PlanOptions options)
+       const ConstTensorRef& a, const ConstTensorRef& d,
+       const PlanOptions& options)
       : Impl(context, equation, 1) {
     if (equation.classify().kind == Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "this equation has two operands; use the two-operand form");
 
-    const ModeOrder ma = mode_order(equation.operand(0), a, equation_);
-    const ModeOrder md = mode_order(equation.result(), d, equation_);
+    backend::Operation op;
+    op.kind = backend::OpKind::Reduction;
+    op.inputs = {operand(equation.operand(0), a)};
+    op.output = operand(equation.result(), d);
     check_extents(equation,
                   {{&equation.operand(0), &a}, {&equation.result(), &d}});
-    const std::vector<int32_t> ia = mode_ids(ma.modes);
-    const std::vector<int32_t> id = mode_ids(md.modes);
-
-    describe(&desc_a_, ma, a);
-    describe(&desc_d_, md, d);
+    finish(std::move(op), d, options);
     alignment_ = {a.alignment, 0, d.alignment};
-
-    KATAL_CHECK(
-        cutensorCreateReduction(
-            handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY, desc_d_,
-            id.data(), CUTENSOR_OP_IDENTITY, desc_d_, id.data(),
-            CUTENSOR_OP_ADD, util::to_compute(compute_type(options, d))),
-        equation_);
-    read_scalar_type();
-    select_kernel(options);
-  }
-
-  ~Impl() {
-    util::ScopedDevice on_device(device_);
-    if (plan_ != nullptr) cutensorDestroyPlan(plan_);
-    if (pref_ != nullptr) cutensorDestroyPlanPreference(pref_);
-    if (op_ != nullptr) cutensorDestroyOperationDescriptor(op_);
-    if (desc_d_ != nullptr) cutensorDestroyTensorDescriptor(desc_d_);
-    if (desc_b_ != nullptr) cutensorDestroyTensorDescriptor(desc_b_);
-    if (desc_a_ != nullptr) cutensorDestroyTensorDescriptor(desc_a_);
   }
 
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
 
-  uint64_t workspace_size() const noexcept { return workspace_size_; }
+  uint64_t workspace_size() const noexcept { return kernel_->workspace_size(); }
   std::string_view equation() const noexcept { return equation_; }
 
   std::size_t n_operands() const noexcept { return n_operands_; }
@@ -189,49 +151,61 @@ class Plan::Impl {
   void contract(Scalar alpha, const void* a, const void* b, Scalar beta,
                 const void* c, void* d, Workspace workspace,
                 StreamRef stream) const {
-    check_device();
+    backend_->check_device(equation_, "plan");
     check_alignment("a", a, alignment_[0]);
     check_alignment("b", b, alignment_[1]);
     check_alignment("c", c, alignment_[2]);
     check_alignment("d", d, alignment_[2]);
     check_workspace(workspace);
-    // Stack objects, so this path still allocates nothing.
-    const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
-    const util::ScalarBytes beta_bytes(beta, scalar_type_);
-
-    KATAL_CHECK(cutensorContract(handle_, plan_, alpha_bytes.data(), a, b,
-                                 beta_bytes.data(), c, d, workspace.ptr,
-                                 workspace.size, stream.get()),
-                equation_);
+    const std::array<const void*, 2> inputs{a, b};
+    kernel_->run(alpha, inputs.data(), beta, c, d, workspace, stream);
   }
 
   void reduce(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
               Workspace workspace, StreamRef stream) const {
-    check_device();
+    backend_->check_device(equation_, "plan");
     check_alignment("a", a, alignment_[0]);
     check_alignment("c", c, alignment_[2]);
     check_alignment("d", d, alignment_[2]);
     check_workspace(workspace);
-    const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
-    const util::ScalarBytes beta_bytes(beta, scalar_type_);
-
-    KATAL_CHECK(
-        cutensorReduce(handle_, plan_, alpha_bytes.data(), a, beta_bytes.data(),
-                       c, d, workspace.ptr, workspace.size, stream.get()),
-        equation_);
+    kernel_->run(alpha, &a, beta, c, d, workspace, stream);
   }
 
  private:
-  /// The handle and every descriptor belong to the device the context was
-  /// built on; handing them to another device's stream is undefined.
-  /// cudaGetDevice is a host-side read, so this costs the hot path little.
-  void check_device() const {
-    int current = 0;
-    KATAL_CHECK_CUDA(cudaGetDevice(&current), equation_);
-    if (current != device_)
-      throw Error(Errc::CudaError, equation_,
-                  "this plan belongs to device " + std::to_string(device_) +
-                      " but device " + std::to_string(current) + " is current");
+  Impl(const Context& context, const Equation& equation, std::size_t n_operands)
+      : backend_(&context.impl().backend()),
+        equation_(equation.text()),
+        n_operands_(n_operands) {
+    backend_->check_device(equation_, "plan");
+  }
+
+  /// Puts a tensor into descriptor order, with labels as mode ids.
+  backend::Operand operand(const util::Index& labels,
+                           const ConstTensorRef& tensor) const {
+    const ModeOrder order = mode_order(labels, tensor, equation_);
+    backend::Operand result;
+    result.modes = mode_ids(order.modes);
+    result.extent = order.extent;
+    result.stride = order.stride;
+    result.type = tensor.type;
+    result.alignment = tensor.alignment;
+    return result;
+  }
+
+  void finish(backend::Operation op, const ConstTensorRef& d,
+              const PlanOptions& options) {
+    op.compute = compute_type(options, d);
+    op.equation = equation_;
+    kernel_ = backend_->plan(op, options);
+  }
+
+  /// Unset follows the output, except that half-precision output accumulates
+  /// in single precision: that is the pairing cuTENSOR supports for both.
+  static Dtype compute_type(const PlanOptions& options,
+                            const ConstTensorRef& d) {
+    if (options.compute) return *options.compute;
+    if (d.type == Dtype::F16 || d.type == Dtype::Bf16) return Dtype::F32;
+    return d.type;
   }
 
   /// The kernel was chosen for the alignment the plan was built with; a less
@@ -247,102 +221,18 @@ class Plan::Impl {
   }
 
   void check_workspace(Workspace workspace) const {
-    if (workspace.size < workspace_size_)
+    if (workspace.size < workspace_size())
       throw Error(Errc::WorkspaceTooSmall, equation_,
                   "the workspace has " + std::to_string(workspace.size) +
                       " bytes but this plan needs " +
-                      std::to_string(workspace_size_));
+                      std::to_string(workspace_size()));
   }
 
-  // Completing the delegated constructor makes ~Impl run if backend setup
-  // in either public constructor throws after acquiring a resource.
-  Impl(const Context& context, const Equation& equation, std::size_t n_operands)
-      : handle_(context.impl().handle()),
-        device_(context.device()),
-        equation_(equation.text()),
-        n_operands_(n_operands) {
-    check_device();
-  }
-
-  /// Unset follows the output, except that half-precision output accumulates
-  /// in single precision: that is the pairing cuTENSOR supports for both.
-  static Dtype compute_type(const PlanOptions& options,
-                            const ConstTensorRef& d) {
-    if (options.compute) return *options.compute;
-    if (d.type == Dtype::F16 || d.type == Dtype::Bf16) return Dtype::F32;
-    return d.type;
-  }
-
-  /// alpha and beta are passed in the operation's scalar type, which follows
-  /// the compute type rather than the storage, so ask cuTENSOR for it. Checked
-  /// here so that an inexpressible one fails planning, not every execute.
-  void read_scalar_type() {
-    cutensorDataType_t type{};
-    KATAL_CHECK(cutensorOperationDescriptorGetAttribute(
-                    handle_, op_, CUTENSOR_OPERATION_DESCRIPTOR_SCALAR_TYPE,
-                    &type, sizeof(type)),
-                equation_);
-    scalar_type_ = util::from_cutensor(type);
-    const util::ScalarBytes probe(1.0, scalar_type_);
-  }
-
-  /// Plan preference, workspace estimate and kernel selection, shared by both
-  /// arities.
-  void select_kernel(const PlanOptions& options) {
-    KATAL_CHECK(
-        cutensorCreatePlanPreference(
-            handle_, &pref_, util::to_cutensor(options.algo),
-            options.jit ? CUTENSOR_JIT_MODE_DEFAULT : CUTENSOR_JIT_MODE_NONE),
-        equation_);
-
-    if (options.kernel_rank) {
-      const int32_t rank = *options.kernel_rank;
-      KATAL_CHECK(cutensorPlanPreferenceSetAttribute(
-                      handle_, pref_, CUTENSOR_PLAN_PREFERENCE_KERNEL_RANK,
-                      &rank, sizeof(rank)),
-                  equation_);
-    }
-
-    uint64_t estimate = 0;
-    KATAL_CHECK(cutensorEstimateWorkspaceSize(
-                    handle_, op_, pref_, util::to_cutensor(options.workspace),
-                    &estimate),
-                equation_);
-    const uint64_t limit =
-        options.workspace_limit != 0 ? options.workspace_limit : estimate;
-    KATAL_CHECK(cutensorCreatePlan(handle_, &plan_, op_, pref_, limit),
-                equation_);
-
-    // The estimate above is what planning was allowed to assume. Ask the plan
-    // what it actually needs, so a caller does not over-allocate.
-    KATAL_CHECK(cutensorPlanGetAttribute(
-                    handle_, plan_, CUTENSOR_PLAN_REQUIRED_WORKSPACE,
-                    &workspace_size_, sizeof(workspace_size_)),
-                equation_);
-  }
-
-  void describe(cutensorTensorDescriptor_t* desc, const ModeOrder& modes,
-                const ConstTensorRef& tensor) {
-    KATAL_CHECK(cutensorCreateTensorDescriptor(
-                    handle_, desc, static_cast<uint32_t>(modes.modes.rank()),
-                    modes.extent.data(), modes.stride.data(),
-                    util::to_cutensor(tensor.type), tensor.alignment),
-                equation_);
-  }
-
-  cutensorHandle_t handle_ = nullptr;
-  int device_ = 0;
-  cutensorTensorDescriptor_t desc_a_ = nullptr;
-  cutensorTensorDescriptor_t desc_b_ = nullptr;
-  cutensorTensorDescriptor_t desc_d_ = nullptr;
-  cutensorOperationDescriptor_t op_ = nullptr;
-  cutensorPlanPreference_t pref_ = nullptr;
-  cutensorPlan_t plan_ = nullptr;
-  uint64_t workspace_size_ = 0;
+  const backend::Backend* backend_ = nullptr;
+  std::unique_ptr<backend::Kernel> kernel_;
   /// Planned alignment of a, b and d, which c shares; b is unused by reduce.
   std::array<std::uint32_t, 3> alignment_{};
   std::string equation_;
-  Dtype scalar_type_ = Dtype::F64;
   std::size_t n_operands_ = 2;
 };
 
@@ -447,24 +337,6 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
   return context.impl().cached(plan_key(equation, resolved, {&a, &d}), [&] {
     return make_plan(context, Equation::parse(equation), a, d, resolved);
   });
-}
-
-Workspace CudaAsyncAllocator::allocate(uint64_t bytes, StreamRef stream) const {
-  Workspace workspace;
-  const cudaError_t status =
-      cudaMallocAsync(&workspace.ptr, bytes, stream.get());
-  if (status == cudaErrorMemoryAllocation) {
-    (void)cudaGetLastError();  // reported here, so not left for the caller
-    throw std::bad_alloc();
-  }
-  KATAL_CHECK_CUDA(status, "");
-  workspace.size = bytes;
-  return workspace;
-}
-
-void CudaAsyncAllocator::deallocate(Workspace workspace,
-                                    StreamRef stream) const noexcept {
-  util::check_release(cudaFreeAsync(workspace.ptr, stream.get()));
 }
 
 }  // namespace katal
