@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "cuda_status.hpp"
 #include "cutensor_status.hpp"
 #include "log.hpp"
 
@@ -39,6 +40,9 @@ class Context::Impl {
     // Destructors are noexcept and swallow errors; there is nothing useful to
     // do with a failure here.
     if (handle_ == nullptr) return;
+    // cuTENSOR objects must be destroyed on the device they were made on,
+    // and the caller may have another device current by now.
+    util::ScopedDevice on_device(device_);
     index_.clear();
     plans_.clear();
     cutensorDestroy(handle_);

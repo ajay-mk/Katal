@@ -30,7 +30,9 @@ no longer take effect; call `finalize()` first to change it.
 
 A context serves the CUDA device that was current when it was built. Planning
 or executing with a different device current throws `Errc::CudaError`, so a
-program that drives several devices builds one context per device.
+program that drives several devices builds one context per device. Contexts
+and plans switch to their own device when destroyed, so they can go out of
+scope with any device current.
 
 ## Managed tensor storage
 

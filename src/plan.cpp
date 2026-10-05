@@ -164,6 +164,7 @@ class Plan::Impl {
   }
 
   ~Impl() {
+    util::ScopedDevice on_device(device_);
     if (plan_ != nullptr) cutensorDestroyPlan(plan_);
     if (pref_ != nullptr) cutensorDestroyPlanPreference(pref_);
     if (op_ != nullptr) cutensorDestroyOperationDescriptor(op_);
