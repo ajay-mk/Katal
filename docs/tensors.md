@@ -25,6 +25,14 @@ not owned; keep it alive through allocation use and release. Construct a Runtime
 before using the default context. It rejects an already initialized context or
 another Runtime, and `finalize()` is rejected while a Runtime owns the context.
 With explicit initialization, finish all Plans and GPU work before `finalize()`.
+`initialize()` throws once the default context exists, since its `Config` could
+no longer take effect; call `finalize()` first to change it.
+
+A context serves the CUDA device that was current when it was built. Planning
+or executing with a different device current throws `Errc::CudaError`, so a
+program that drives several devices builds one context per device. Contexts
+and plans switch to their own device when destroyed, so they can go out of
+scope with any device current.
 
 ## Managed tensor storage
 
@@ -47,12 +55,11 @@ Managed allocations use `cudaMallocManaged` / `cudaFree`; they are not pooled.
 Pooled device allocations use `cudaMallocAsync` / `cudaFreeAsync` on their
 allocator's stream, without a host-side wait during release. Allocation
 exhaustion throws `std::bad_alloc`, as does a tensor too large to address;
-other CUDA allocation errors throw `katal::Error`. Every shape, rank, dtype,
-planning and execution failure is a `katal::Error`, including an extent that
-is not positive (`Errc::ExtentMismatch`) and a rank beyond `katal::max_rank`
-(`Errc::RankMismatch`). Misusing the default-context lifecycle, such as
-creating a `Runtime` while the default context exists, throws
-`std::logic_error`.
+other CUDA allocation errors throw `katal::Error`. Every other failure is a
+`katal::Error`, including an extent that is not positive
+(`Errc::ExtentMismatch`), a rank beyond `katal::max_rank`
+(`Errc::RankMismatch`), and misuse of the default-context lifecycle, such as
+creating a `Runtime` while the default context exists (`Errc::InvalidState`).
 
 See the [pooled and managed Tensor example](examples.md#pooled-and-managed-tensor-storage)
 for a complete matrix product using either allocator.

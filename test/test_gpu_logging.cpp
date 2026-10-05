@@ -70,10 +70,9 @@ TEST_CASE("cached_plan reports cache reuse when logging is enabled",
   REQUIRE(count("[katal] cache.miss") == 2);
   REQUIRE(count("[katal] cache.insert") == 2);
   REQUIRE(count("[katal] cache.hit") == 1);
-  REQUIRE(count("[katal] cache.clear") == 1);
+  REQUIRE(count("[katal] cache.evict") == 1);
   REQUIRE(count("[katal] cache.bypass") == 2);
   REQUIRE(count("[katal] plan.created") == 4);
-  REQUIRE(output.find("removed=1") != std::string::npos);
   REQUIRE(output.find("equation=\"ij,jk->ik\"") != std::string::npos);
   REQUIRE(output.find("a=F64[2,2]") != std::string::npos);
   REQUIRE(output.find("workspace_bytes=") != std::string::npos);

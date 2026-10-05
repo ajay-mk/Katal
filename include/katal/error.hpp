@@ -35,6 +35,10 @@ enum class Errc {
   CutensorError,
   /// A CUDA runtime call failed.
   CudaError,
+  /// The process-wide context was misused: a second `initialize`, a `Runtime`
+  /// while the default context exists, or `finalize` while a `Runtime` owns
+  /// it.
+  InvalidState,
 };
 
 inline const std::error_category& error_category() noexcept {
@@ -60,6 +64,8 @@ inline const std::error_category& error_category() noexcept {
           return "cuTENSOR error";
         case Errc::CudaError:
           return "CUDA error";
+        case Errc::InvalidState:
+          return "invalid library state";
       }
       return "unrecognized Katal error";
     }

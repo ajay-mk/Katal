@@ -1,9 +1,10 @@
 #include <mutex>
-#include <stdexcept>
+#include <utility>
 
 #include "context_impl.hpp"
 
 #include <katal/context.hpp>
+#include <katal/error.hpp>
 
 namespace katal {
 
@@ -12,7 +13,7 @@ Context::Context(Context&&) noexcept = default;
 Context& Context::operator=(Context&&) noexcept = default;
 Context::~Context() = default;
 
-int Context::device() const noexcept { return impl_->device(); }
+int Context::device() const noexcept { return impl().device(); }
 
 namespace {
 
@@ -32,14 +33,18 @@ bool g_runtime_active = false;
 
 void initialize(Config config) {
   const std::lock_guard<std::mutex> lock(process_mutex());
+  if (g_context != nullptr)
+    throw Error(Errc::InvalidState, "",
+                "the default context already exists, so this Config cannot "
+                "take effect; call finalize() first");
   g_config = config;
-  if (g_context == nullptr) g_context = new Context(config);
+  g_context = new Context(std::move(config));
 }
 
 void finalize() {
   const std::lock_guard<std::mutex> lock(process_mutex());
   if (g_runtime_active)
-    throw std::logic_error("katal: Runtime owns the default context");
+    throw Error(Errc::InvalidState, "", "Runtime owns the default context");
   delete g_context;
   g_context = nullptr;
 }
@@ -47,7 +52,7 @@ void finalize() {
 Runtime::Runtime(Config config) {
   const std::lock_guard<std::mutex> lock(process_mutex());
   if (g_context != nullptr)
-    throw std::logic_error("katal: the default context already exists");
+    throw Error(Errc::InvalidState, "", "the default context already exists");
   g_config = config;
   g_context = new Context(std::move(config));
   g_runtime_active = true;

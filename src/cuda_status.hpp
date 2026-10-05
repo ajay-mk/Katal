@@ -45,6 +45,29 @@ inline void check_release(cudaError_t status) noexcept {
   if (status != cudaSuccess && !context_lost(status)) std::terminate();
 }
 
+/// Makes `device` current for its lifetime and restores the previous device
+/// after, for cleanup that cuTENSOR requires on the device its handle was
+/// created on. Failures are ignored: a destructor cannot report them, and a
+/// lost context fails the cleanup anyway.
+class ScopedDevice {
+ public:
+  explicit ScopedDevice(int device) noexcept {
+    if (cudaGetDevice(&previous_) != cudaSuccess || previous_ == device) {
+      previous_ = -1;
+      return;
+    }
+    if (cudaSetDevice(device) != cudaSuccess) previous_ = -1;
+  }
+  ~ScopedDevice() {
+    if (previous_ >= 0) cudaSetDevice(previous_);
+  }
+  ScopedDevice(const ScopedDevice&) = delete;
+  ScopedDevice& operator=(const ScopedDevice&) = delete;
+
+ private:
+  int previous_ = -1;
+};
+
 }  // namespace katal::util
 
 #endif  // KATAL_SRC_CUDA_STATUS_HPP_
