@@ -19,7 +19,7 @@
 #endif
 
 // The header and the CMake package must agree on whether there is a backend.
-#ifdef CONSUMER_HAS_BACKEND
+#ifdef CONSUMER_HAS_CUTENSOR
 static_assert(KATAL_HAVE_CUTENSOR == 1);
 #else
 static_assert(KATAL_HAVE_CUTENSOR == 0);
@@ -43,7 +43,7 @@ int main() {
   if (owned.bytes() != 6 * sizeof(double)) return 4;
   if (owned.ref().data != owned.data()) return 5;
 
-#ifdef CONSUMER_HAS_BACKEND
+#ifdef CONSUMER_HAS_CUTENSOR
   // A real call into the compiled library, so the link is exercised. It needs
   // no GPU: nothing has been initialised yet.
   if (katal::initialized()) return 6;

@@ -34,16 +34,6 @@ paths, or to build the host-only layers on a machine without them. A downstream 
 Katal's own targets always build with `-Wall -Wextra -Wpedantic` (`/W4` on
 MSVC). These flags are private and never reach a consumer of `Katal::katal`.
 
-### Host-only installs
-
-Without CUDA and cuTENSOR, Katal installs as headers only. The equation,
-index and tensor-metadata layers work. `Context`, `Plan`, `einsum` and the
-device allocators are still declared but have no definitions, so code using
-them fails to link. Check for the backend before using it:
-
-- in CMake, `Katal_HAS_CUTENSOR` is set after `find_package(Katal)`;
-- in C++, `KATAL_HAVE_CUTENSOR` from `<katal/config.hpp>` is `1` or `0`.
-
 With a GPU backend configured, start with the
 [pooled and managed Tensor example](examples.md#pooled-and-managed-tensor-storage).
 
