@@ -8,9 +8,9 @@
 namespace katal::util {
 
 /// True when `status` means the CUDA context is already unusable: a sticky
-/// device fault, which every later call in the process reports again, or the
-/// runtime shutting down at exit. Memory cannot be freed then, and need not
-/// be, since it goes with the context.
+/// or contained device fault, which every later call in the process reports
+/// again, or the runtime shutting down at exit. Memory cannot be freed then,
+/// and need not be, since it goes with the context.
 inline bool context_lost(cudaError_t status) noexcept {
   switch (status) {
     case cudaErrorIllegalAddress:
@@ -24,6 +24,9 @@ inline bool context_lost(cudaError_t status) noexcept {
     case cudaErrorAssert:
     case cudaErrorECCUncorrectable:
     case cudaErrorExternalDevice:
+#if CUDART_VERSION >= 12040
+    case cudaErrorContained:
+#endif
 #if CUDART_VERSION >= 12080
     case cudaErrorTensorMemoryLeak:
 #endif
