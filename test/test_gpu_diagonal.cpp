@@ -1,4 +1,5 @@
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -61,24 +62,34 @@ std::size_t elements(std::span<const std::int64_t> extent) {
 
 /// Runs a two-operand einsum on the device and on the host reference, and
 /// compares them exactly.
+///
+/// With `abs_a`, a is read through UnaryOp::Abs, which the reference gets by
+/// taking magnitudes up front; a starts negative so the order matters.
 void check_binary(std::string_view equation, std::span<const std::int64_t> ea,
                   std::span<const std::int64_t> eb,
-                  std::span<const std::int64_t> ed) {
-  std::vector<double> a = ramp(elements(ea), 1.0);
+                  std::span<const std::int64_t> ed,
+                  katal::Layout layout = katal::Layout::RowMajor,
+                  bool abs_a = false) {
+  std::vector<double> a = ramp(elements(ea), abs_a ? -3.0 : 1.0);
   std::vector<double> b = ramp(elements(eb), -2.0);
   std::vector<double> want(elements(ed), 0.0);
   const DeviceBuffer<double> da(a), db(b), dd(want);
 
-  katal::einsum(equation, 1.0, katal::make_ref(da.get(), katal::Dtype::F64, ea),
-                katal::make_ref(db.get(), katal::Dtype::F64, eb), 0.0,
-                katal::make_ref(dd.get(), katal::Dtype::F64, ed));
+  katal::ConstTensorRef ra =
+      katal::make_ref(da.get(), katal::Dtype::F64, ea, layout);
+  if (abs_a) ra = katal::apply(katal::UnaryOp::Abs, ra);
+  katal::einsum(equation, 1.0, ra,
+                katal::make_ref(db.get(), katal::Dtype::F64, eb, layout), 0.0,
+                katal::make_ref(dd.get(), katal::Dtype::F64, ed, layout));
 
+  if (abs_a)
+    for (double& x : a) x = std::abs(x);
   const std::array<katal::TensorRef, 2> in{
-      katal::make_ref(a.data(), katal::Dtype::F64, ea),
-      katal::make_ref(b.data(), katal::Dtype::F64, eb)};
+      katal::make_ref(a.data(), katal::Dtype::F64, ea, layout),
+      katal::make_ref(b.data(), katal::Dtype::F64, eb, layout)};
   katal::test::reference_einsum<double>(
       katal::Equation::parse(equation), 1.0, in, 0.0,
-      katal::make_ref(want.data(), katal::Dtype::F64, ed));
+      katal::make_ref(want.data(), katal::Dtype::F64, ed, layout));
   REQUIRE(dd.to_host() == want);
 }
 
@@ -127,8 +138,33 @@ TEST_CASE("a diagonal inside a contraction", "[diagonal][gpu]") {
   check_binary("iij,jk->ik", ea, eb, ed);
 }
 
+TEST_CASE("a diagonal in column-major order", "[diagonal][gpu]") {
+  if (!have_gpu()) SKIP("no CUDA device");
+  const std::array<std::int64_t, 3> ea{3, 3, 4};
+  const std::array<std::int64_t, 2> eb{4, 5}, ed{3, 5};
+  check_binary("iij,jk->ik", ea, eb, ed, katal::Layout::ColumnMajor);
+}
+
 TEST_CASE("a free reduction fused into a contraction", "[diagonal][gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
+
+  SECTION("summing an input down to a scalar") {
+    const std::array<std::int64_t, 2> ea{3, 4};
+    const std::array<std::int64_t, 1> eb{5}, ed{5};
+    check_binary("ij,k->k", ea, eb, ed);
+  }
+
+  SECTION("in column-major order") {
+    const std::array<std::int64_t, 3> ea{3, 4, 5};
+    const std::array<std::int64_t, 2> eb{5, 2}, ed{3, 2};
+    check_binary("ijk,kl->il", ea, eb, ed, katal::Layout::ColumnMajor);
+  }
+
+  SECTION("with an operator applied before the sum") {
+    const std::array<std::int64_t, 3> ea{3, 4, 5};
+    const std::array<std::int64_t, 2> eb{5, 2}, ed{3, 2};
+    check_binary("ijk,kl->il", ea, eb, ed, katal::Layout::RowMajor, true);
+  }
 
   SECTION("on one input") {
     const std::array<std::int64_t, 3> ea{3, 4, 5};

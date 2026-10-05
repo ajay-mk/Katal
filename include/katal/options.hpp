@@ -48,7 +48,8 @@ struct PlanOptions {
   /// supported. TF32 is not exposed by this interface.
   std::optional<Dtype> compute;
 
-  /// Caps the scratch a plan may use. 0 takes whatever `workspace` suggests.
+  /// Caps the scratch a plan may use, including any input it sums ahead of a
+  /// contraction. 0 takes whatever `workspace` suggests.
   uint64_t workspace_limit = 0;
 
   Algo algo = Algo::Default;

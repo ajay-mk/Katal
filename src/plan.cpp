@@ -211,9 +211,11 @@ class Plan::Impl {
                              {&equation.result(), &d}});
     // A label in one input alone is summed out of it first, into scratch,
     // since a contraction kernel only sums labels both inputs share.
-    prereduce(0, op.inputs[0], classification.reduced_a, options);
-    prereduce(1, op.inputs[1], classification.reduced_b, options);
-    finish(std::move(op), d, options);
+    prereduce(0, op.inputs[0], classification.reduced_a);
+    prereduce(1, op.inputs[1], classification.reduced_b);
+    const PlanOptions kernel_options = scratch_budget(options);
+    plan_prereductions(kernel_options);
+    finish(std::move(op), d, kernel_options);
     alignment_ = {a.alignment, b.alignment, d.alignment};
   }
 
@@ -456,11 +458,12 @@ class Plan::Impl {
     workspace_size_ = scratch_offset_ + kernel_scratch;
   }
 
-  /// Plans summing `labels` out of `input` into a dense scratch tensor, and
-  /// makes `input` that tensor. The operator `input` was read through goes
-  /// with it, since it applies before the sum.
+  /// Lays out summing `labels` out of `input` into a dense scratch tensor,
+  /// and makes `input` that tensor. The operator `input` was read through
+  /// goes with it, since it applies before the sum. plan_prereductions picks
+  /// the kernel once every buffer's place in the workspace is known.
   void prereduce(std::size_t k, backend::Operand& input,
-                 const util::Index& labels, const PlanOptions& options) {
+                 const util::Index& labels) {
     if (labels.rank() == 0) return;
     const std::vector<int32_t> drop = mode_ids(labels);
 
@@ -481,22 +484,48 @@ class Plan::Impl {
       throw Error(Errc::ExtentMismatch, equation_,
                   "a reduced input is too large to address");
 
-    backend::Operation op;
+    backend::Operation& op = pre_[k].operation;
     op.kind = backend::OpKind::Reduction;
     op.inputs = {input};
     op.output = reduced;
-    op.compute = compute_type(options, reduced.type);
+    // The storage type's own default, not options.compute: that names the
+    // contraction's accumulation, and a reduction supports fewer pairings
+    // (an F64 tensor summed in F32 is a contraction-only combination).
+    op.compute = compute_type({}, reduced.type);
     op.equation = equation_;
-    // Algorithm and kernel choices name contraction kernels; leave them to
-    // the contraction.
-    PlanOptions reduce_options;
-    reduce_options.compute = options.compute;
-    reduce_options.workspace = options.workspace;
-    reduce_options.jit = options.jit;
-    pre_[k].kernel = backend_->plan(op, reduce_options);
     pre_[k].offset = scratch_offset_;
     scratch_offset_ += round_up(static_cast<std::uint64_t>(elements * size));
     input = reduced;
+  }
+
+  /// `options` with workspace_limit lowered by the reduced inputs, which
+  /// share the workspace with the kernels' own scratch. Throws if the
+  /// reduced inputs alone exceed it.
+  PlanOptions scratch_budget(const PlanOptions& options) const {
+    PlanOptions budget = options;
+    if (options.workspace_limit == 0 || scratch_offset_ == 0) return budget;
+    if (scratch_offset_ > options.workspace_limit)
+      throw Error(Errc::WorkspaceTooSmall, equation_,
+                  "the reduced inputs need " + std::to_string(scratch_offset_) +
+                      " bytes of workspace but workspace_limit is " +
+                      std::to_string(options.workspace_limit));
+    // A limit of zero means none, so an exhausted budget asks for one byte,
+    // which only a kernel needing no scratch fits.
+    budget.workspace_limit =
+        std::max<std::uint64_t>(options.workspace_limit - scratch_offset_, 1);
+    return budget;
+  }
+
+  void plan_prereductions(const PlanOptions& options) {
+    // Algorithm and kernel choices name contraction kernels; leave them to
+    // the contraction.
+    PlanOptions reduce_options;
+    reduce_options.workspace_limit = options.workspace_limit;
+    reduce_options.workspace = options.workspace;
+    reduce_options.jit = options.jit;
+    for (Prereduction& pre : pre_)
+      if (!pre.operation.inputs.empty())
+        pre.kernel = backend_->plan(pre.operation, reduce_options);
   }
 
   /// Unset follows the output, except that half-precision output accumulates
@@ -547,6 +576,8 @@ class Plan::Impl {
 
   /// One input summed into scratch before the contraction runs.
   struct Prereduction {
+    /// Empty inputs when the operand needs no prereduction.
+    backend::Operation operation;
     std::unique_ptr<backend::Kernel> kernel;
     /// Where the reduced input sits in the workspace.
     std::uint64_t offset = 0;

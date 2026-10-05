@@ -34,7 +34,10 @@ struct Run {
 
 /// What the backend saw, shared with the test after the context owns it.
 struct Record {
+  /// The most recent of `operations`.
   std::optional<Operation> operation;
+  std::vector<Operation> operations;
+  std::vector<katal::PlanOptions> options;
   std::uint64_t workspace = 0;
   std::vector<Run> runs;
 };
@@ -71,8 +74,11 @@ class RecordingBackend : public katal::backend::Backend {
   void check_device(std::string_view, std::string_view) const override {}
 
   std::unique_ptr<katal::backend::Kernel> plan(
-      const Operation& operation, const katal::PlanOptions&) const override {
+      const Operation& operation,
+      const katal::PlanOptions& options) const override {
     record_->operation = operation;
+    record_->operations.push_back(operation);
+    record_->options.push_back(options);
     return std::make_unique<RecordingKernel>(record_);
   }
 
@@ -387,5 +393,75 @@ TEST_CASE("a permutation refuses an input overlapping its output",
             (void)katal::make_permutation_plan(
                 context, katal::Equation::parse("ij->ji"), a, d);
           }) == katal::Errc::ExtentMismatch);
+  }
+}
+
+TEST_CASE("a label in one input is summed out of it first", "[backend]") {
+  auto record = std::make_shared<Record>();
+  record->workspace = 512;
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  // j is in a alone. Summed out, a is k by i: 8 doubles, padded to 256.
+  const std::array<std::int64_t, 3> ea{2, 3, 4};
+  const std::array<std::int64_t, 2> eb{4, 5}, ed{2, 5};
+  const auto f64 = katal::Dtype::F64;
+  const auto plan = [&](katal::PlanOptions options) {
+    return katal::make_plan(context, katal::Equation::parse("ijk,kl->il"),
+                            katal::make_ref(nullptr, f64, ea),
+                            katal::make_ref(nullptr, f64, eb),
+                            katal::make_ref(nullptr, f64, ed), options);
+  };
+
+  SECTION("a reduction into scratch, then the contraction") {
+    katal::PlanOptions options;
+    options.compute = katal::Dtype::F32;
+    const auto p = plan(options);
+    REQUIRE(record->operations.size() == 2);
+    const Operation& reduce = record->operations[0];
+    CHECK(reduce.kind == OpKind::Reduction);
+    CHECK(reduce.output.modes == ids("ki"));
+    CHECK(reduce.output.alignment == 256);
+    // The contraction's compute type is not the reduction's.
+    CHECK(reduce.compute == f64);
+    CHECK_FALSE(record->options[0].compute);
+    const Operation& contract = record->operations[1];
+    CHECK(contract.kind == OpKind::Contraction);
+    CHECK(contract.inputs[0].modes == ids("ki"));
+    CHECK(contract.compute == katal::Dtype::F32);
+    CHECK(p.workspace_size() == 256 + 512);
+  }
+
+  SECTION("workspace_limit counts the summed input") {
+    katal::PlanOptions options;
+    options.workspace_limit = 1000;
+    plan(options);
+    REQUIRE(record->options.size() == 2);
+    CHECK(record->options[0].workspace_limit == 1000 - 256);
+    CHECK(record->options[1].workspace_limit == 1000 - 256);
+  }
+
+  SECTION("a limit the summed input alone exceeds") {
+    katal::PlanOptions options;
+    options.workspace_limit = 100;
+    try {
+      plan(options);
+      FAIL("expected a rejection");
+    } catch (const katal::Error& e) {
+      CHECK(e.code() == katal::Errc::WorkspaceTooSmall);
+    }
+  }
+
+  SECTION("execute sums into the workspace, then contracts from it") {
+    const auto p = plan({});
+    const katal::Workspace workspace{scratch.data(), scratch.size()};
+    p.execute(1.0, buffer_a.data(), buffer_b.data(), 0.0, buffer_d.data(),
+              buffer_d.data(), workspace);
+    REQUIRE(record->runs.size() == 2);
+    CHECK(record->runs[0].inputs == std::vector<const void*>{buffer_a.data()});
+    CHECK(record->runs[0].d == scratch.data());
+    CHECK(record->runs[1].inputs ==
+          std::vector<const void*>{scratch.data(), buffer_b.data()});
+    CHECK(record->runs[1].workspace.ptr == scratch.data() + 256);
+    CHECK(record->runs[1].workspace.size == scratch.size() - 256);
   }
 }
