@@ -147,7 +147,7 @@ Plan make_plan(const Context& context, const Equation& equation,
                PlanOptions options = {});
 
 /// Looks up a plan in the context's cache, building it on a miss. Returns a
-/// shared plan so the caller keeps it alive even if the cache is cleared, and
+/// shared plan so the caller keeps it alive even if the cache evicts it, and
 /// so a disabled cache costs the same call.
 std::shared_ptr<const Plan> cached_plan(
     const Context& context, std::string_view equation, const TensorRef& a,

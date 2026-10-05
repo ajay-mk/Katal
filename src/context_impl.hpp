@@ -61,6 +61,9 @@ class Context::Impl {
   /// shared_ptrs keep any plan in use alive.
   template <class Make>
   std::shared_ptr<const Plan> cached(const std::string& key, Make make) const {
+    // A hit skips planning, which is where a plan checks its device, so check
+    // here too: a plan from this cache is no use on another device.
+    check_device();
     if (config_.plan_cache_entries == 0) {
       KATAL_LOG("cache.bypass device=" << device_ << " key="
                                        << std::hash<std::string>{}(key));
@@ -99,6 +102,15 @@ class Context::Impl {
   }
 
  private:
+  void check_device() const {
+    int current = 0;
+    KATAL_CHECK_CUDA(cudaGetDevice(&current), "");
+    if (current != device_)
+      throw Error(Errc::CudaError, "",
+                  "this context belongs to device " + std::to_string(device_) +
+                      " but device " + std::to_string(current) + " is current");
+  }
+
   using Entry = std::pair<std::string, std::shared_ptr<const Plan>>;
 
   /// The cached plan for `key`, moved to the front as the most recently used,

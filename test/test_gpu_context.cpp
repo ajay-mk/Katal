@@ -93,12 +93,17 @@ TEST_CASE("initialize after the default context exists throws", "[gpu]") {
 
 TEST_CASE("a plan rejects a device other than its context's", "[gpu]") {
   if (device_count() < 2) SKIP("needs two CUDA devices");
+  // Put device 0 back however this test ends, so later cases are unaffected.
+  struct RestoreDevice {
+    ~RestoreDevice() { cudaSetDevice(0); }
+  } restore;
   REQUIRE(cudaSetDevice(0) == cudaSuccess);
   const katal::Context context;
   const std::array<std::int64_t, 2> extent{2, 2};
   const auto t = katal::make_ref(nullptr, katal::Dtype::F64, extent);
   const auto equation = katal::Equation::parse("ij,jk->ik");
   const katal::Plan plan = katal::make_plan(context, equation, t, t, t);
+  katal::cached_plan(context, "ij,jk->ik", t, t, t);
 
   REQUIRE(cudaSetDevice(1) == cudaSuccess);
   const auto rejects = [](auto call) {
@@ -113,5 +118,6 @@ TEST_CASE("a plan rejects a device other than its context's", "[gpu]") {
   rejects(
       [&] { plan.execute(1.0, nullptr, nullptr, 0.0, nullptr, nullptr, {}); });
   rejects([&] { katal::make_plan(context, equation, t, t, t); });
-  REQUIRE(cudaSetDevice(0) == cudaSuccess);
+  // Already cached, so this is a hit that never reaches planning.
+  rejects([&] { katal::cached_plan(context, "ij,jk->ik", t, t, t); });
 }
