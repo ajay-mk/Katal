@@ -100,6 +100,9 @@ class Plan {
   /// built from; anything else is undefined rather than diagnosed. `c` and `d`
   /// may be the same pointer, which is how to accumulate.
   ///
+  /// Throws `Errc::WorkspaceTooSmall` if `workspace` is smaller than
+  /// `workspace_size()`, before any work is queued.
+  ///
   /// Const and allocation-free, so one plan can be shared across streams and
   /// run on a hot path.
   void execute(Scalar alpha, const void* a, const void* b, Scalar beta,
