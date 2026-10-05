@@ -24,7 +24,8 @@ enum class Errc {
   /// free reduction beside a contraction, a broadcast, a diagonal, more
   /// operands than the current lowering handles, or a cuTENSOR operation
   /// reported as not supported. Also a pointer handed to `Plan::execute` that
-  /// is less aligned than the plan was built for.
+  /// is less aligned than the plan was built for, an elementwise input passed
+  /// as the output, or an execute overload that does not match the plan.
   UnsupportedPattern,
   /// An operand or scalar representation is unsupported. Scalar narrowing and
   /// discarding an imaginary part for real computation do not raise this error.

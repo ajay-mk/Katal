@@ -46,11 +46,39 @@ operation, preserving `alpha * input + beta * output` for copies and permutation
 Katal rejects these with `UnsupportedPattern`, naming the labels responsible:
 
 - a label repeated within one operand (a diagonal or trace) or in the result,
-- a result label that appears in no input (broadcasting),
+- in einsum, a result label that appears in no input (broadcasting; see
+  [Elementwise operations](#elementwise-operations)),
 - with two operands, a label in one input that is neither in the other nor in
   the result (a reduction fused into a contraction).
 
 Three or more operands are also `UnsupportedPattern`, since they would need
 a contraction path.
 
-There are no element-wise operators such as conjugation.
+Unary operators such as conjugation are not available yet.
+
+## Elementwise operations
+
+`katal::elementwise` pairs elements by label instead of summing over shared
+ones, and computes `d = op(alpha * a, beta * b) + gamma * d` with `op` one of
+`BinaryOp::Add`, `Multiply`, `Max` or `Min`:
+
+```cpp
+// d[i][j][a][b] = t[j][i][a][b] - t[i][j][a][b]
+katal::add("jiab,ijab->ijab", 1.0, t, -1.0, t, d);
+
+// Broadcasting: add the vector v to every row of m, then accumulate.
+katal::elementwise("ij,j->ij", katal::BinaryOp::Add, 1.0, m, 1.0, v, 1.0, d);
+```
+
+`add`, `multiply`, `max` and `min` are the same call with `gamma = 0`, so
+they overwrite `d` without reading it.
+
+The equation takes exactly two inputs. A label an input lacks is broadcast
+along it, and every input label must appear in the result; an equation that
+would sum over a label is `UnsupportedPattern`, since that is einsum's job.
+Neither input may be `d` itself.
+
+To hoist the planning out of a loop, build the plan once with
+`make_plan(context, equation, op, a, b, d)` and call the elementwise
+`Plan::execute(alpha, a, beta, b, gamma, c, d, workspace)`. `c` shares `d`'s
+layout and may be the same pointer.

@@ -251,3 +251,56 @@ TEST_CASE("the error_code overloads agree with the throwing ones",
   Equation::parse("ijk,kl->il").classify(ec);
   REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
 }
+
+TEST_CASE("elementwise classification", "[equation]") {
+  SECTION("matching labels in any order") {
+    const Classification c =
+        Equation::parse("jiab,ijab->ijab").classify_elementwise();
+    REQUIRE(c.kind == Lowering::Elementwise);
+    REQUIRE(c.batch == katal::util::Index("jiab"));
+    REQUIRE(c.broadcast.rank() == 0);
+  }
+
+  SECTION("an input lacking a result label is broadcast along it") {
+    const Classification c =
+        Equation::parse("ijab,ab->ijab").classify_elementwise();
+    REQUIRE(c.batch == katal::util::Index("ab"));
+    REQUIRE(c.broadcast == katal::util::Index("ij"));
+  }
+
+  SECTION("a result label in neither input is broadcast from both") {
+    const Classification c = Equation::parse("i,j->ijk").classify_elementwise();
+    REQUIRE(c.batch.rank() == 0);
+    REQUIRE(c.broadcast == katal::util::Index("ijk"));
+  }
+
+  SECTION("an equation einsum would contract is not elementwise") {
+    try {
+      Equation::parse("ij,jk->ik").classify_elementwise();
+      FAIL("expected a rejection");
+    } catch (const katal::Error& e) {
+      REQUIRE(e.code() == Errc::UnsupportedPattern);
+      REQUIRE(mentions(e, "\"jj\""));
+    }
+  }
+
+  SECTION("one or three inputs") {
+    std::error_code ec;
+    Equation::parse("ij->ji").classify_elementwise(ec);
+    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+    Equation::parse("ij,ij,ij->ij").classify_elementwise(ec);
+    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+  }
+
+  SECTION("a repeated label is still rejected") {
+    std::error_code ec;
+    Equation::parse("ii,ij->ij").classify_elementwise(ec);
+    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+  }
+
+  SECTION("the error_code overload clears on success") {
+    std::error_code ec = katal::make_error_code(Errc::ParseError);
+    Equation::parse("ij,j->ij").classify_elementwise(ec);
+    REQUIRE_FALSE(ec);
+  }
+}

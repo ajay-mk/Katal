@@ -9,6 +9,7 @@
 #include <syncstream>
 
 #include <katal/options.hpp>
+#include <katal/plan.hpp>
 
 namespace katal::util {
 
@@ -62,6 +63,20 @@ inline std::string log_tensor(const ConstTensorRef& tensor) {
          << (tensor.layout == Layout::ColumnMajor ? "column" : "row")
          << " alignment=" << tensor.alignment;
   return output.str();
+}
+
+inline const char* log_binary(BinaryOp op) {
+  switch (op) {
+    case BinaryOp::Add:
+      return "add";
+    case BinaryOp::Multiply:
+      return "multiply";
+    case BinaryOp::Max:
+      return "max";
+    case BinaryOp::Min:
+      return "min";
+  }
+  return "?";
 }
 
 inline std::string log_options(const PlanOptions& options) {
