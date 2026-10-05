@@ -41,6 +41,7 @@ jobs:
           cmake -S . -B build -GNinja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DKATAL_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build build
@@ -103,6 +104,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCUDAToolkit_ROOT=${{ env.CUDA_ROOT }}
+          -DKATAL_WARNINGS_AS_ERRORS=ON
+          -DKATAL_BUILD_BENCHMARKS=ON
 
       # Guards against the whole point of this job being lost silently: if
       # cuTENSOR were not found, CMake falls back to an INTERFACE library and
@@ -119,8 +122,12 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      - name: Confirm an archive was actually produced
-        run: test -f build/libkatal.a
+      - name: Confirm the archive and benchmarks were actually produced
+        run: |
+          test -f build/libkatal.a
+          for benchmark in grid overhead shapes; do
+            test -x "build/bench/${benchmark}"
+          done
 
       # The gpu-labelled cases need a device; they are run locally.
       - name: Test
@@ -131,3 +138,32 @@ jobs:
 
       - name: ccache statistics
         run: ccache --show-stats
+
+  # The host layers under AddressSanitizer and UndefinedBehaviorSanitizer.
+  # They are constexpr-heavy index arithmetic, which is where an off-by-one
+  # would hide. There is no CUDA here, so src/ is not built or sanitized.
+  # No ccache: sanitized objects are not worth caching.
+  host-sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build catch2
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -GNinja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DKATAL_WARNINGS_AS_ERRORS=ON
+          "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined
+          -fno-omit-frame-pointer -fno-sanitize-recover=all"
+          -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

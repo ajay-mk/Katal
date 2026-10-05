@@ -31,7 +31,7 @@ inline cutensorDataType_t to_cutensor(Dtype type) {
 /// The cuTENSOR compute descriptor for an accumulation type. cuTENSOR has no
 /// complex compute descriptors: a complex contraction accumulates in the real
 /// descriptor of the matching precision.
-inline const cutensorComputeDescriptor_t to_compute(Dtype type) {
+inline cutensorComputeDescriptor_t to_compute(Dtype type) {
   switch (type) {
     case Dtype::F32:
     case Dtype::C32:

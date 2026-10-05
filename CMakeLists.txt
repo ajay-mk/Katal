@@ -28,10 +28,8 @@ set(KATAL_MAX_RANK
       STRING
       "Largest tensor rank Katal can describe; the inline capacity of an index")
 
-configure_file(cmake/config.hpp.in
-               "${PROJECT_BINARY_DIR}/include/katal/config.hpp" @ONLY)
-
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(KatalWarnings)
 find_package(CUDAToolkit QUIET)
 find_package(cuTENSOR QUIET)
 
@@ -45,12 +43,17 @@ if(cuTENSOR_FOUND AND CUDAToolkit_FOUND)
   target_compile_definitions(
     katal PRIVATE KATAL_ENABLE_LOGGING=$<BOOL:${KATAL_ENABLE_LOGGING}>)
   target_link_libraries(katal PRIVATE Katal::cutensor CUDA::cudart)
+  katal_target_warnings(katal)
 else()
   set(KATAL_HAVE_CUTENSOR OFF)
   set(katal_scope INTERFACE)
   add_library(katal INTERFACE)
   message(STATUS "Katal: cuTENSOR not found, building the header-only layers")
 endif()
+
+# After the backend is known, so the header can say whether it was built.
+configure_file(cmake/config.hpp.in
+               "${PROJECT_BINARY_DIR}/include/katal/config.hpp" @ONLY)
 
 add_library(Katal::katal ALIAS katal)
 target_include_directories(

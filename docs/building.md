@@ -28,6 +28,11 @@ paths, or to build the host-only layers on a machine without them. A downstream 
 | `KATAL_BUILD_BENCHMARKS` | `OFF` | build the GPU timing drivers in `bench/` |
 | `KATAL_ENABLE_LOGGING` | `OFF` | compile cache and planning diagnostics into the GPU backend |
 | `KATAL_MAX_RANK` | `12` | largest describable tensor rank |
+| `KATAL_WARNINGS_AS_ERRORS` | `OFF` | treat compiler warnings in Katal's own targets as errors; CI turns it on |
+| `KATAL_CUTENSOR_ROOT` | empty | cuTENSOR install root; `$CUTENSOR_ROOT` and an NVHPC tree under `$NVHPC` are also searched |
+
+Katal's own targets always build with `-Wall -Wextra -Wpedantic` (`/W4` on
+MSVC). These flags are private and never reach a consumer of `Katal::katal`.
 
 With a GPU backend configured, start with the
 [pooled and managed Tensor example](examples.md#pooled-and-managed-tensor-storage).

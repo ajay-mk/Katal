@@ -10,5 +10,5 @@ add_executable(consumer main.cpp)
 target_link_libraries(consumer PRIVATE Katal::katal)
 
 if(Katal_HAS_CUTENSOR)
-  target_compile_definitions(consumer PRIVATE CONSUMER_HAS_BACKEND)
+  target_compile_definitions(consumer PRIVATE CONSUMER_HAS_CUTENSOR)
 endif()
