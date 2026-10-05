@@ -3,6 +3,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -104,6 +105,68 @@ void check_extents(
     }
 }
 
+/// The bytes a tensor addresses, as offsets from its data pointer: `low` is
+/// its lowest addressed byte and `high` one past its highest. A negative
+/// stride reaches below the pointer.
+struct ByteSpan {
+  std::int64_t low = 0;
+  std::int64_t high = 0;
+};
+
+std::int64_t element_bytes(Dtype type) {
+  switch (type) {
+    case Dtype::F16:
+    case Dtype::Bf16:
+      return 2;
+    case Dtype::F32:
+      return 4;
+    case Dtype::F64:
+    case Dtype::C32:
+      return 8;
+    case Dtype::C64:
+      return 16;
+  }
+  return 16;
+}
+
+/// Extents are positive by now; see check_extents. A view whose reach does
+/// not fit std::int64_t cannot be compared, so it is refused.
+ByteSpan byte_span(const backend::Operand& t, std::string_view equation) {
+  constexpr std::int64_t most = std::numeric_limits<std::int64_t>::max();
+  const auto overflow = [&] {
+    return Error(Errc::ExtentMismatch, equation,
+                 "a tensor's byte span overflows std::int64_t");
+  };
+  const std::int64_t bytes = element_bytes(t.type);
+  ByteSpan span{0, bytes};
+  for (std::size_t i = 0; i < t.extent.size(); ++i) {
+    const std::int64_t steps = t.extent[i] - 1;
+    if (steps == 0) continue;
+    // |steps * stride * bytes| <= most, checked without overflowing.
+    const std::int64_t limit = most / bytes / steps;
+    if (t.stride[i] > limit || t.stride[i] < -limit) throw overflow();
+    const std::int64_t reach = steps * t.stride[i] * bytes;
+    if (reach < 0) {
+      if (span.low < -most - reach) throw overflow();
+      span.low += reach;
+    } else {
+      if (span.high > most - reach) throw overflow();
+      span.high += reach;
+    }
+  }
+  return span;
+}
+
+/// Whether two planned tensors at these pointers share any byte. Compared as
+/// integers, since the pointers may come from different allocations.
+bool overlaps(const void* x, ByteSpan xs, const void* y, ByteSpan ys) {
+  const auto at = [](const void* p, std::int64_t offset) {
+    return static_cast<std::intmax_t>(reinterpret_cast<std::uintptr_t>(p)) +
+           offset;
+  };
+  return at(x, xs.low) < at(y, ys.high) && at(y, ys.low) < at(x, xs.high);
+}
+
 }  // namespace
 
 /// The front end of a plan: everything about an equation that does not depend
@@ -199,6 +262,8 @@ class Plan::Impl {
     op.output = operand(equation.result(), d);
     check_extents(equation,
                   {{&equation.operand(0), &a}, {&equation.result(), &d}});
+    span_a_ = byte_span(op.inputs[0], equation_);
+    span_d_ = byte_span(op.output, equation_);
     PlanOptions widened = options;
     if (!widened.compute) widened.compute = conversion_compute(a.type, d.type);
     finish(std::move(op), d, widened);
@@ -246,9 +311,11 @@ class Plan::Impl {
                   "a permutation plan writes d = alpha * a and cannot add "
                   "beta * c; use einsum for that");
     backend_->check_device(equation_, "plan");
-    if (a == d)
+    // cuTENSOR requires the elements read from a not to overlap those written
+    // to d, so a pointer into the same buffer is refused, not only d itself.
+    if (overlaps(a, span_a_, d, span_d_))
       throw Error(Errc::UnsupportedPattern, equation_,
-                  "pointer a is also the output; a permutation runs out of "
+                  "pointer a overlaps the output; a permutation runs out of "
                   "place");
     check_alignment("a", a, alignment_[0]);
     check_alignment("d", d, alignment_[2]);
@@ -385,6 +452,9 @@ class Plan::Impl {
   BinaryOp binary_ = BinaryOp::Add;
   /// The accumulation type, whose precision alpha and beta are narrowed to.
   Dtype compute_ = Dtype::F64;
+  /// The bytes a and d address; set only for a permutation.
+  ByteSpan span_a_;
+  ByteSpan span_d_;
 };
 
 namespace {

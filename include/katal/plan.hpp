@@ -127,7 +127,8 @@ class Plan {
   /// The one-operand form, for a permutation, a reduction or a copy. Throws
   /// if this plan was built from two operands. A plan from
   /// `make_permutation_plan` computes `d = alpha * a`, ignores `c`, and
-  /// throws `Errc::UnsupportedPattern` if beta is not zero.
+  /// throws `Errc::UnsupportedPattern` if beta is not zero or if the bytes
+  /// `a` addresses overlap those `d` does.
   void execute(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
                Workspace workspace, StreamRef stream = {}) const;
 
@@ -291,7 +292,7 @@ void reduce(std::string_view equation, BinaryOp op, Scalar alpha,
 }
 
 /// `d = alpha * a`, permuted, broadcast and converted to d's type, through a
-/// dedicated permutation kernel. `a` must not be `d`, which throws. To
+/// dedicated permutation kernel. `a` must not overlap `d`, which throws. To
 /// accumulate into d,
 /// use the one-operand einsum.
 template <WorkspaceAllocator A = CudaAsyncAllocator>

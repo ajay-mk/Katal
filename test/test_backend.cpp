@@ -338,3 +338,54 @@ TEST_CASE("a converting permutation accumulates in the wider type",
   options.compute = Dtype::F32;
   CHECK(compute(Dtype::F64, Dtype::F32, options) == Dtype::F32);
 }
+
+TEST_CASE("a permutation refuses an input overlapping its output",
+          "[backend]") {
+  auto record = std::make_shared<Record>();
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const std::array<std::int64_t, 2> e{2, 2};
+  const auto f64 = katal::Dtype::F64;
+  auto d = katal::make_ref(nullptr, f64, e);
+  d.alignment = 8;
+  const katal::Workspace none{};
+  double* const out = buffer_d.data();
+  const auto code = [&](const katal::Plan& plan, const double* a) {
+    return katal::test::thrown_code(
+        [&] { plan.execute(1.0, a, 0.0, out, out, none); });
+  };
+
+  SECTION("dense strides") {
+    auto a = katal::make_ref(nullptr, f64, e);
+    a.alignment = 8;
+    const auto plan = katal::make_permutation_plan(
+        context, katal::Equation::parse("ij->ji"), a, d);
+    CHECK(code(plan, out) == katal::Errc::UnsupportedPattern);
+    CHECK(code(plan, out + 3) == katal::Errc::UnsupportedPattern);
+    CHECK(code(plan, buffer_a.data()) == std::nullopt);
+    CHECK(code(plan, out + 4) == std::nullopt);
+    REQUIRE(record->runs.size() == 2);
+    CHECK(record->runs[1].inputs[0] == out + 4);
+  }
+
+  SECTION("negative strides reach below the pointer") {
+    const std::array<std::int64_t, 2> backwards{-2, -1};
+    const katal::ConstTensorRef a{
+        nullptr, f64, e, backwards, katal::Layout::RowMajor, 8};
+    const auto plan = katal::make_permutation_plan(
+        context, katal::Equation::parse("ij->ji"), a, d);
+    CHECK(code(plan, out + 6) == katal::Errc::UnsupportedPattern);
+    CHECK(code(plan, out + 7) == std::nullopt);
+    REQUIRE(record->runs.size() == 1);
+  }
+
+  SECTION("a span too large to compare is refused when planning") {
+    const std::array<std::int64_t, 2> huge{std::int64_t{1} << 61, 1};
+    const katal::ConstTensorRef a{
+        nullptr, f64, e, huge, katal::Layout::RowMajor, 8};
+    CHECK(katal::test::thrown_code([&] {
+            (void)katal::make_permutation_plan(
+                context, katal::Equation::parse("ij->ji"), a, d);
+          }) == katal::Errc::ExtentMismatch);
+  }
+}

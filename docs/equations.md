@@ -96,7 +96,7 @@ can also broadcast `a` along result labels it lacks, as in `"j->ij"`, and
 write a different type than it reads, such as F32 from F16 or F64. Unless
 `PlanOptions::compute` says otherwise, a conversion accumulates in the wider
 of the two types, which is what cuTENSOR requires. It has no beta,
-and `a` must not be `d`. The hoisted form is `make_permutation_plan`, run
+and `a` must not overlap `d`. The hoisted form is `make_permutation_plan`, run
 with the one-operand `Plan::execute` and a beta of zero.
 
 ## Elementwise operations
