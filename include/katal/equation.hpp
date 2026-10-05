@@ -1,6 +1,7 @@
 #ifndef KATAL_EQUATION_HPP_
 #define KATAL_EQUATION_HPP_
 
+#include <array>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -51,8 +52,9 @@ class Equation {
     return operands_[i];
   }
 
-  /// Labels of the result: as written after `->`, or the symmetric difference
-  /// of the operands when the equation omitted it.
+  /// Labels of the result: as written after `->`. When the equation omits it,
+  /// the labels that appear exactly once across the operands, sorted by byte
+  /// value as NumPy does, so `"kj,ji"` gives `"ik"` and `"ba"` a transpose.
   const util::Index& result() const noexcept { return result_; }
 
   /// The equation exactly as given, which is what error messages quote.
@@ -68,6 +70,7 @@ class Equation {
 
  private:
   util::Index make_index(std::string_view piece) const;
+  util::Index implicit_result() const;
   Classification classify_unary() const;
   Classification classify_binary() const;
 
@@ -138,10 +141,28 @@ inline Equation Equation::parse(std::string_view text) {
     eq.result_ = eq.make_index(rhs);
     reject_structural(eq.result_);
   } else {
-    // Every shared label is contracted away.
-    for (const util::Index& o : eq.operands_) eq.result_ = eq.result_ ^ o;
+    eq.result_ = eq.implicit_result();
   }
   return eq;
+}
+
+inline util::Index Equation::implicit_result() const {
+  // Indexed by byte, so walking it in order is the sort.
+  std::array<std::size_t, 256> count{};
+  for (const util::Index& o : operands_)
+    for (const util::Label l : o) ++count[static_cast<unsigned char>(l)];
+
+  util::Index r;
+  for (std::size_t b = 0; b < count.size(); ++b) {
+    if (count[b] != 1) continue;
+    if (r.rank() == max_rank)
+      throw Error(Errc::RankMismatch, text_,
+                  "the implicit result has more than " +
+                      std::to_string(max_rank) +
+                      " labels; write the result after '->'");
+    r.push_back(static_cast<util::Label>(b));
+  }
+  return r;
 }
 
 inline Equation Equation::parse(std::string_view text,
@@ -163,9 +184,13 @@ inline Equation Equation::parse(std::string_view text,
 inline Classification Equation::classify_binary() const {
   const util::Index &a = operands_[0], &b = operands_[1], &d = result_;
 
-  if (const util::Index dangling = (a ^ b) - d; dangling.rank() > 0)
+  // Checked per input: the two together can carry more labels than one index
+  // holds.
+  const util::Index dangling_a = (a - b) - d, dangling_b = (b - a) - d;
+  if (dangling_a.rank() > 0 || dangling_b.rank() > 0)
     throw Error(Errc::UnsupportedPattern, text_,
-                "label(s) " + quoted(dangling) +
+                "label(s) \"" + std::string(dangling_a) +
+                    std::string(dangling_b) + "\"" +
                     " appear in one input only and not in the result; a free "
                     "reduction cannot be fused into a contraction");
 

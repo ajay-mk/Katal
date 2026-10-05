@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <string>
 #include <system_error>
 
@@ -26,6 +27,16 @@ Errc code_of(std::string_view text) {
   return static_cast<Errc>(ec.value());
 }
 
+// max_rank labels, none shared with another block. Bytes from 'A' upward
+// avoid the separators and whitespace, and above 127 are still labels.
+std::string distinct_labels(std::size_t block) {
+  static_assert('A' + 2 * katal::max_rank <= 256, "labels must fit in a byte");
+  std::string labels;
+  for (std::size_t i = 0; i < katal::max_rank; ++i)
+    labels += static_cast<char>('A' + block * katal::max_rank + i);
+  return labels;
+}
+
 }  // namespace
 
 TEST_CASE("equation parsing", "[equation]") {
@@ -49,9 +60,20 @@ TEST_CASE("equation parsing", "[equation]") {
     REQUIRE(eq.result().rank() == 0);
   }
 
-  SECTION("omitting -> contracts every shared label") {
+  SECTION("omitting -> keeps the labels that appear once, sorted as NumPy") {
     REQUIRE(Equation::parse("ij,jk").result() == katal::util::Index("ik"));
     REQUIRE(Equation::parse("ij,kl").result() == katal::util::Index("ijkl"));
+    REQUIRE(Equation::parse("kj,ji").result() == katal::util::Index("ik"));
+    REQUIRE(Equation::parse("lk,ij").result() == katal::util::Index("ijkl"));
+    // By byte value, so upper case sorts first.
+    REQUIRE(Equation::parse("ba,AB").result() == katal::util::Index("ABab"));
+  }
+
+  SECTION("an implicit unary result is sorted, so it can transpose") {
+    const Equation eq = Equation::parse("ba");
+    REQUIRE(eq.result() == katal::util::Index("ab"));
+    REQUIRE(eq.classify().kind == Lowering::Permute);
+    REQUIRE(Equation::parse("ab").classify().kind == Lowering::Copy);
   }
 
   SECTION("whitespace spelling is the same equation") {
@@ -59,6 +81,14 @@ TEST_CASE("equation parsing", "[equation]") {
     REQUIRE(spaced.n_operands() == 2);
     REQUIRE(spaced.operand(1) == katal::util::Index("jk"));
     REQUIRE(spaced.result() == katal::util::Index("ik"));
+  }
+
+  SECTION("every ASCII whitespace character is skipped") {
+    const Equation eq = Equation::parse("ij,\n\tjk\r\n->\v\fik\n");
+    REQUIRE(eq.operand(0) == katal::util::Index("ij"));
+    REQUIRE(eq.operand(1) == katal::util::Index("jk"));
+    REQUIRE(eq.result() == katal::util::Index("ik"));
+    REQUIRE(code_of("ij,\njk->ik") == Errc{});
   }
 }
 
@@ -77,6 +107,20 @@ TEST_CASE("equation parse rejections", "[equation]") {
   SECTION("rank beyond the configured maximum") {
     const std::string wide(katal::max_rank + 1, 'a');
     REQUIRE(code_of(wide + "->") == Errc::RankMismatch);
+  }
+
+  SECTION("an implicit result beyond the maximum rank is a RankMismatch") {
+    // Two operands at the maximum rank with no label in common.
+    const std::string a = distinct_labels(0), b = distinct_labels(1);
+    const std::string text = a + "," + b;
+    try {
+      Equation::parse(text);
+      FAIL("expected a rejection");
+    } catch (const katal::Error& e) {
+      REQUIRE(e.code() == Errc::RankMismatch);
+      REQUIRE(e.equation() == text);
+    }
+    REQUIRE(code_of(text) == Errc::RankMismatch);
   }
 }
 
@@ -165,6 +209,21 @@ TEST_CASE("classification rejections name the offending labels", "[equation]") {
 
   SECTION("writing a diagonal") {
     REQUIRE(code_of("ij,jk->ii") == Errc::UnsupportedPattern);
+  }
+
+  SECTION("dangling labels on both inputs beyond the maximum rank") {
+    const std::string a = distinct_labels(0), b = distinct_labels(1);
+    // Together the dangling labels do not fit in one index. The throwing
+    // overload must still raise a katal::Error, not std::length_error.
+    const Equation eq = Equation::parse(a + "," + b + "->A");
+    try {
+      eq.classify();
+      FAIL("expected a rejection");
+    } catch (const katal::Error& e) {
+      REQUIRE(e.code() == Errc::UnsupportedPattern);
+      // The equation is quoted too, so look for the label list itself.
+      REQUIRE(mentions(e, '"' + a.substr(1) + b + '"'));
+    }
   }
 
   SECTION("more than two operands") {
