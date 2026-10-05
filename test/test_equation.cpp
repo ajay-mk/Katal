@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <string>
 #include <system_error>
 
@@ -24,6 +25,16 @@ Errc code_of(std::string_view text) {
   if (ec) return static_cast<Errc>(ec.value());
   eq.classify(ec);
   return static_cast<Errc>(ec.value());
+}
+
+// max_rank labels, none shared with another block. Bytes from 'A' upward
+// avoid the separators and whitespace, and above 127 are still labels.
+std::string distinct_labels(std::size_t block) {
+  static_assert('A' + 2 * katal::max_rank <= 256, "labels must fit in a byte");
+  std::string labels;
+  for (std::size_t i = 0; i < katal::max_rank; ++i)
+    labels += static_cast<char>('A' + block * katal::max_rank + i);
+  return labels;
 }
 
 }  // namespace
@@ -100,11 +111,7 @@ TEST_CASE("equation parse rejections", "[equation]") {
 
   SECTION("an implicit result beyond the maximum rank is a RankMismatch") {
     // Two operands at the maximum rank with no label in common.
-    std::string a, b;
-    for (std::size_t i = 0; i < katal::max_rank; ++i) {
-      a += static_cast<char>('A' + i);
-      b += static_cast<char>('a' + i);
-    }
+    const std::string a = distinct_labels(0), b = distinct_labels(1);
     const std::string text = a + "," + b;
     try {
       Equation::parse(text);
@@ -205,11 +212,7 @@ TEST_CASE("classification rejections name the offending labels", "[equation]") {
   }
 
   SECTION("dangling labels on both inputs beyond the maximum rank") {
-    std::string a, b;
-    for (std::size_t i = 0; i < katal::max_rank; ++i) {
-      a += static_cast<char>('A' + i);
-      b += static_cast<char>('a' + i);
-    }
+    const std::string a = distinct_labels(0), b = distinct_labels(1);
     // Together the dangling labels do not fit in one index. The throwing
     // overload must still raise a katal::Error, not std::length_error.
     const Equation eq = Equation::parse(a + "," + b + "->A");
@@ -218,7 +221,8 @@ TEST_CASE("classification rejections name the offending labels", "[equation]") {
       FAIL("expected a rejection");
     } catch (const katal::Error& e) {
       REQUIRE(e.code() == Errc::UnsupportedPattern);
-      REQUIRE(mentions(e, b));
+      // The equation is quoted too, so look for the label list itself.
+      REQUIRE(mentions(e, '"' + a.substr(1) + b + '"'));
     }
   }
 
