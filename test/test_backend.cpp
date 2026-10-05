@@ -296,4 +296,17 @@ TEST_CASE("an elementwise plan passes c apart from d", "[backend]") {
     }
     CHECK(record->runs.empty());
   }
+
+  SECTION("a scale that narrows to zero counts as zero") {
+    const auto f32 = katal::Dtype::F32;
+    const auto p = katal::make_plan(
+        context, katal::Equation::parse("i,j->ij"), katal::BinaryOp::Max,
+        katal::make_ref(nullptr, f32, ea), katal::make_ref(nullptr, f32, eb),
+        katal::make_ref(nullptr, f32, ed));
+    REQUIRE(record->operation->compute == f32);
+    CHECK_THROWS_AS(p.execute(1.0, buffer_a.data(), 1e-50, buffer_b.data(), 0.0,
+                              buffer_d.data(), buffer_d.data(), none),
+                    katal::Error);
+    CHECK(record->runs.empty());
+  }
 }

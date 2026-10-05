@@ -1,5 +1,6 @@
 #include <array>
 #include <cassert>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -214,8 +215,15 @@ class Plan::Impl {
                       "overlap d");
     // cuTENSOR skips an input whose scale is zero instead of combining a zero
     // tensor. A sum is the same either way; the other operators are not, so
-    // refuse rather than return max(alpha * a) for max(alpha * a, 0).
-    const auto is_zero = [](Scalar s) { return s.value() == 0.0; };
+    // refuse rather than return max(alpha * a) for max(alpha * a, 0). Tested
+    // after narrowing to the compute precision, where 1e-50 is already zero.
+    const bool narrow = compute_ != Dtype::F64 && compute_ != Dtype::C64;
+    const auto is_zero = [narrow](Scalar s) {
+      const std::complex<double> v = s.value();
+      if (!narrow) return v == 0.0;
+      return static_cast<float>(v.real()) == 0.0F &&
+             static_cast<float>(v.imag()) == 0.0F;
+    };
     if (binary_ != BinaryOp::Add && (is_zero(alpha) || is_zero(beta)))
       throw Error(Errc::UnsupportedPattern, equation_,
                   std::string(is_zero(alpha) ? "alpha" : "beta") +
@@ -255,6 +263,7 @@ class Plan::Impl {
   void finish(backend::Operation op, const ConstTensorRef& d,
               const PlanOptions& options) {
     op.compute = compute_type(options, d);
+    compute_ = op.compute;
     op.equation = equation_;
     kernel_ = backend_->plan(op, options);
   }
@@ -297,6 +306,8 @@ class Plan::Impl {
   Form form_ = Form::Contraction;
   /// The elementwise operator; unused by the other forms.
   BinaryOp binary_ = BinaryOp::Add;
+  /// The accumulation type, whose precision alpha and beta are narrowed to.
+  Dtype compute_ = Dtype::F64;
 };
 
 namespace {
