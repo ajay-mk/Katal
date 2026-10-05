@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -464,4 +465,50 @@ TEST_CASE("a label in one input is summed out of it first", "[backend]") {
     CHECK(record->runs[1].workspace.ptr == scratch.data() + 256);
     CHECK(record->runs[1].workspace.size == scratch.size() - 256);
   }
+}
+
+TEST_CASE("index arithmetic that overflows is refused", "[backend]") {
+  auto record = std::make_shared<Record>();
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const auto f64 = katal::Dtype::F64;
+  constexpr std::int64_t max = std::numeric_limits<std::int64_t>::max();
+
+  SECTION("the strides of a repeated label") {
+    const std::array<std::int64_t, 2> ea{1, 1}, sa{max, 1};
+    const std::array<std::int64_t, 1> ed{1};
+    const katal::ConstTensorRef a{nullptr, f64, ea, sa};
+    CHECK(katal::test::thrown_code([&] {
+            katal::make_plan(context, katal::Equation::parse("ii->i"), a,
+                             katal::make_ref(nullptr, f64, ed));
+          }) == katal::Errc::ExtentMismatch);
+  }
+
+  SECTION("the elements of a summed input") {
+    // j is summed out of a, leaving 2^32 by 2^32 elements; zero strides make
+    // a itself addressable.
+    constexpr std::int64_t big = std::int64_t{1} << 32;
+    const std::array<std::int64_t, 3> ea{big, 1, big}, sa{0, 0, 0};
+    const std::array<std::int64_t, 2> eb{big, 1}, ed{big, 1};
+    const katal::ConstTensorRef a{nullptr, f64, ea, sa};
+    CHECK(katal::test::thrown_code([&] {
+            katal::make_plan(context, katal::Equation::parse("ijk,kl->il"), a,
+                             katal::make_ref(nullptr, f64, eb),
+                             katal::make_ref(nullptr, f64, ed));
+          }) == katal::Errc::ExtentMismatch);
+  }
+
+  SECTION("the workspace of two summed inputs") {
+    // i and k are summed out, leaving j in each: 5 * 2^60 bytes apiece, which
+    // fits std::int64_t alone but not twice.
+    constexpr std::int64_t j = std::int64_t{5} << 57;
+    const std::array<std::int64_t, 2> e{2, j}, s{0, 0};
+    const std::array<std::int64_t, 1> ed{j};
+    const katal::ConstTensorRef a{nullptr, f64, e, s};
+    CHECK(katal::test::thrown_code([&] {
+            katal::make_plan(context, katal::Equation::parse("ij,kj->j"), a, a,
+                             katal::make_ref(nullptr, f64, ed));
+          }) == katal::Errc::ExtentMismatch);
+  }
+  CHECK_FALSE(record->operation);
 }

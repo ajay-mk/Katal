@@ -433,7 +433,11 @@ class Plan::Impl {
                         std::to_string(result.extent[q]) + " and " +
                         std::to_string(order.extent[p]) +
                         "; a diagonal needs them equal");
-      result.stride[q] += order.stride[p];
+      if (__builtin_add_overflow(result.stride[q], order.stride[p],
+                                 &result.stride[q]))
+        throw Error(Errc::ExtentMismatch, equation_,
+                    "label \"" + std::string(1, order.modes[p]) +
+                        "\" is repeated with strides whose sum overflows");
     }
     result.type = tensor.type;
     result.alignment = tensor.alignment;
@@ -477,10 +481,16 @@ class Plan::Impl {
       }
     reduced.stride =
         dense_strides(reduced.extent, Layout::ColumnMajor, equation_);
+    constexpr std::int64_t max = std::numeric_limits<std::int64_t>::max();
     std::int64_t elements = 1;
-    for (const std::int64_t e : reduced.extent) elements *= e;
+    for (const std::int64_t e : reduced.extent) {
+      if (e > 0 && elements > max / e)
+        throw Error(Errc::ExtentMismatch, equation_,
+                    "a reduced input is too large to address");
+      elements *= e;
+    }
     const std::int64_t size = element_bytes(reduced.type);
-    if (elements > std::numeric_limits<std::int64_t>::max() / size)
+    if (elements > max / size)
       throw Error(Errc::ExtentMismatch, equation_,
                   "a reduced input is too large to address");
 
@@ -493,8 +503,16 @@ class Plan::Impl {
     // (an F64 tensor summed in F32 is a contraction-only combination).
     op.compute = compute_type({}, reduced.type);
     op.equation = equation_;
+    // Each buffer fits std::int64_t; keep their sum there too, so offsets
+    // and workspace_size() cannot wrap.
+    const std::uint64_t bytes =
+        round_up(static_cast<std::uint64_t>(elements * size));
+    constexpr auto most = static_cast<std::uint64_t>(max);
+    if (bytes > most || scratch_offset_ > most - bytes)
+      throw Error(Errc::ExtentMismatch, equation_,
+                  "the reduced inputs are too large to address");
     pre_[k].offset = scratch_offset_;
-    scratch_offset_ += round_up(static_cast<std::uint64_t>(elements * size));
+    scratch_offset_ += bytes;
     input = reduced;
   }
 
