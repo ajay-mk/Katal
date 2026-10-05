@@ -58,6 +58,11 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   std::string key(equation);
   key.push_back('\0');
   append(key, &op, sizeof(op));
+  // Only the two-operand einsum contracts; every other form ignores the
+  // precision, so it must not split the cache. A tensor-core mode replaces
+  // the compute type, which then must not split it either.
+  if (op != -1 || tensors.size() != 3) options.precision = Precision::Native;
+  if (options.precision != Precision::Native) options.compute.reset();
   const int32_t compute =
       options.compute ? static_cast<int32_t>(*options.compute) : -1;
   append(key, &compute, sizeof(compute));
