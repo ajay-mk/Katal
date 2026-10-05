@@ -1,10 +1,11 @@
 #include <array>
 #include <cstddef>
-#include <exception>
+#include <new>
 #include <utility>
 #include <vector>
 
 #include "context_impl.hpp"
+#include "cuda_status.hpp"
 #include "cutensor_status.hpp"
 #include "cutensor_types.hpp"
 #include "log.hpp"
@@ -103,9 +104,9 @@ class Plan::Impl {
       throw Error(Errc::UnsupportedPattern, equation_,
                   "only binary contraction is implemented so far");
 
-    const ModeOrder ma = mode_order(equation.operand(0), a);
-    const ModeOrder mb = mode_order(equation.operand(1), b);
-    const ModeOrder md = mode_order(equation.result(), d);
+    const ModeOrder ma = mode_order(equation.operand(0), a, equation_);
+    const ModeOrder mb = mode_order(equation.operand(1), b, equation_);
+    const ModeOrder md = mode_order(equation.result(), d, equation_);
     check_extents(equation, {{&equation.operand(0), &a},
                              {&equation.operand(1), &b},
                              {&equation.result(), &d}});
@@ -141,8 +142,8 @@ class Plan::Impl {
       throw Error(Errc::UnsupportedPattern, equation_,
                   "this equation has two operands; use the two-operand form");
 
-    const ModeOrder ma = mode_order(equation.operand(0), a);
-    const ModeOrder md = mode_order(equation.result(), d);
+    const ModeOrder ma = mode_order(equation.operand(0), a, equation_);
+    const ModeOrder md = mode_order(equation.result(), d, equation_);
     check_extents(equation,
                   {{&equation.operand(0), &a}, {&equation.result(), &d}});
     const std::vector<int32_t> ia = mode_ids(ma.modes);
@@ -393,15 +394,20 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
 
 Workspace CudaAsyncAllocator::allocate(uint64_t bytes, StreamRef stream) const {
   Workspace workspace;
-  KATAL_CHECK_CUDA(cudaMallocAsync(&workspace.ptr, bytes, stream.get()), "");
+  const cudaError_t status =
+      cudaMallocAsync(&workspace.ptr, bytes, stream.get());
+  if (status == cudaErrorMemoryAllocation) {
+    (void)cudaGetLastError();  // reported here, so not left for the caller
+    throw std::bad_alloc();
+  }
+  KATAL_CHECK_CUDA(status, "");
   workspace.size = bytes;
   return workspace;
 }
 
 void CudaAsyncAllocator::deallocate(Workspace workspace,
                                     StreamRef stream) const noexcept {
-  if (cudaFreeAsync(workspace.ptr, stream.get()) != cudaSuccess)
-    std::terminate();
+  util::check_release(cudaFreeAsync(workspace.ptr, stream.get()));
 }
 
 }  // namespace katal

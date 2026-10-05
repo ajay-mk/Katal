@@ -1,5 +1,3 @@
-#include <stdexcept>
-
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/util/static_vector.hpp>
@@ -31,7 +29,7 @@ TEST_CASE("static_vector", "[static_vector]") {
 
   SECTION("throws instead of growing") {
     vec v{1, 2, 3, 4};
-    REQUIRE_THROWS_AS(v.push_back(5), std::length_error);
+    REQUIRE_THROWS_AS(v.push_back(5), katal::Error);
   }
 }
 
