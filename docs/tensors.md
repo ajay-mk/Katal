@@ -5,7 +5,8 @@
 Katal is tested with four storage types: `F32`, `F64`, `C32` and `C64`.
 `F16` and `Bf16` are also accepted and passed to cuTENSOR as they are, as
 are the tensor-core compute modes in `PlanOptions::precision` (TF32 and the
-like), but none of those are tested; whether a combination runs is up to
+like, which apply to contractions only and are ignored by every other
+operation), but none of those are tested; whether a combination runs is up to
 cuTENSOR and the GPU, and one it refuses is `UnsupportedPattern` at plan
 time. Inputs of different types may meet where cuTENSOR allows it, such as a
 C64 tensor contracted with an F64 one into C64.

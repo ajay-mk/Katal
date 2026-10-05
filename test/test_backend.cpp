@@ -512,3 +512,45 @@ TEST_CASE("index arithmetic that overflows is refused", "[backend]") {
   }
   CHECK_FALSE(record->operation);
 }
+
+TEST_CASE("a precision mode reaches contractions only", "[backend]") {
+  auto record = std::make_shared<Record>();
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  using katal::Dtype;
+  using katal::Precision;
+  katal::PlanOptions options;
+  options.precision = Precision::Tf32;
+  const std::array<std::int64_t, 2> e{2, 2};
+  const std::array<std::int64_t, 3> e3{2, 2, 2};
+  const auto ref = [](std::span<const std::int64_t> extent) {
+    return katal::make_ref(nullptr, Dtype::F32, extent);
+  };
+  const auto parse = [](const char* text) {
+    return katal::Equation::parse(text);
+  };
+
+  katal::make_plan(context, parse("ij,jk->ik"), ref(e), ref(e), ref(e),
+                   options);
+  REQUIRE(record->operation);
+  CHECK(record->operation->precision == Precision::Tf32);
+
+  katal::make_plan(context, parse("ij->ji"), ref(e), ref(e), options);
+  CHECK(record->operation->precision == Precision::Native);
+
+  katal::make_plan(context, parse("ij,ij->ij"), katal::BinaryOp::Add, ref(e),
+                   ref(e), ref(e), options);
+  CHECK(record->operation->precision == Precision::Native);
+
+  katal::make_permutation_plan(context, parse("ij->ji"), ref(e), ref(e),
+                               options);
+  CHECK(record->operation->precision == Precision::Native);
+
+  // A label summed out of one input first: the reduction stays Native.
+  record->operations.clear();
+  katal::make_plan(context, parse("ijk,kl->il"), ref(e3), ref(e), ref(e),
+                   options);
+  REQUIRE(record->operations.size() == 2);
+  CHECK(record->operations[0].precision == Precision::Native);
+  CHECK(record->operations[1].precision == Precision::Tf32);
+}

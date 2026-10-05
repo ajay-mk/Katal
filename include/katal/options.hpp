@@ -34,11 +34,12 @@ enum class WorkspacePreference {
   Max,
 };
 
-/// A faster, lower-precision way for cuTENSOR to compute, beyond what the
-/// `compute` type alone can say. Each runs on tensor cores and needs a
-/// recent GPU and particular storage types, according to cuTENSOR's
-/// contraction table; anything else is refused at plan time as
-/// `Errc::UnsupportedPattern`. Katal passes these through untested.
+/// A faster, lower-precision way for cuTENSOR to compute a contraction,
+/// beyond what the `compute` type alone can say. Each runs on tensor cores
+/// and needs a recent GPU and particular storage types, according to
+/// cuTENSOR's contraction table; anything else is refused at plan time as
+/// `Errc::UnsupportedPattern`. Other operations ignore it. Katal passes
+/// these through untested.
 enum class Precision {
   /// Exactly the `compute` type. The default.
   Native,
@@ -88,8 +89,10 @@ struct PlanOptions {
   /// Costs seconds at plan time.
   bool jit = false;
 
-  /// Replaces `compute` with a tensor-core mode when not Native. Opt in per
-  /// call, or once as the Context's default.
+  /// Replaces `compute` with a tensor-core mode when not Native, for
+  /// contractions only; reductions, permutations and elementwise operations
+  /// ignore it, so it is safe as the Context's default. Opt in per call or
+  /// once there.
   Precision precision = Precision::Native;
 };
 

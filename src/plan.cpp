@@ -454,7 +454,10 @@ class Plan::Impl {
                   "the output carries a unary operator; only inputs can");
     op.compute = compute_type(options, d.type);
     compute_ = op.compute;
-    op.precision = options.precision;
+    // The tensor-core modes exist only in cuTENSOR's contraction table, so a
+    // Context-wide default must not break the other kinds of operation.
+    if (op.kind == backend::OpKind::Contraction)
+      op.precision = options.precision;
     op.equation = equation_;
     kernel_ = backend_->plan(op, options);
 
