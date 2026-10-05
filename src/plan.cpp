@@ -156,6 +156,7 @@ class Plan::Impl {
     backend::Operation op;
     op.kind = backend::OpKind::Elementwise;
     op.binary = binary;
+    binary_ = binary;
     op.inputs = {operand(equation.operand(0), a),
                  operand(equation.operand(1), b)};
     op.output = operand(equation.result(), d);
@@ -211,6 +212,15 @@ class Plan::Impl {
                   std::string("pointer ") + (a == d ? "a" : "b") +
                       " is also the output; an elementwise input must not "
                       "overlap d");
+    // cuTENSOR skips an input whose scale is zero instead of combining a zero
+    // tensor. A sum is the same either way; the other operators are not, so
+    // refuse rather than return max(alpha * a) for max(alpha * a, 0).
+    const auto is_zero = [](Scalar s) { return s.value() == 0.0; };
+    if (binary_ != BinaryOp::Add && (is_zero(alpha) || is_zero(beta)))
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  std::string(is_zero(alpha) ? "alpha" : "beta") +
+                      " is zero, which drops that input instead of using "
+                      "zeros; only Add allows a zero scale");
     check_alignment("a", a, alignment_[0]);
     check_alignment("b", b, alignment_[1]);
     check_alignment("c", c, alignment_[2]);
@@ -285,6 +295,8 @@ class Plan::Impl {
   std::array<std::uint32_t, 3> alignment_{};
   std::string equation_;
   Form form_ = Form::Contraction;
+  /// The elementwise operator; unused by the other forms.
+  BinaryOp binary_ = BinaryOp::Add;
 };
 
 namespace {

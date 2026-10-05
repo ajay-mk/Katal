@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -24,9 +25,8 @@ using katal::backend::Operation;
 using katal::backend::OpKind;
 
 struct Run {
-  katal::Scalar alpha;
+  std::vector<katal::Scalar> scalars;
   std::vector<const void*> inputs;
-  katal::Scalar beta;
   const void* c = nullptr;
   void* d = nullptr;
   katal::Workspace workspace;
@@ -41,25 +41,25 @@ struct Record {
 
 class RecordingKernel : public katal::backend::Kernel {
  public:
-  RecordingKernel(std::shared_ptr<Record> record, std::size_t n_inputs)
-      : record_(std::move(record)), n_inputs_(n_inputs) {}
+  explicit RecordingKernel(std::shared_ptr<Record> record)
+      : record_(std::move(record)) {}
 
   std::uint64_t workspace_size() const noexcept override {
     return record_->workspace;
   }
 
-  void run(katal::Scalar alpha, const void* const* inputs, katal::Scalar beta,
-           const void* c, void* d, katal::Workspace workspace,
-           katal::StreamRef) const override {
-    // Parentheses, not braces: braces would store the two bounds themselves.
-    std::vector<const void*> pointers(inputs, inputs + n_inputs_);
-    record_->runs.push_back(
-        {alpha, std::move(pointers), beta, c, d, workspace});
+  void run(std::span<const katal::Scalar> scalars,
+           std::span<const void* const> inputs, const void* c, void* d,
+           katal::Workspace workspace, katal::StreamRef) const override {
+    record_->runs.push_back({{scalars.begin(), scalars.end()},
+                             {inputs.begin(), inputs.end()},
+                             c,
+                             d,
+                             workspace});
   }
 
  private:
   std::shared_ptr<Record> record_;
-  std::size_t n_inputs_;
 };
 
 class RecordingBackend : public katal::backend::Backend {
@@ -73,7 +73,7 @@ class RecordingBackend : public katal::backend::Backend {
   std::unique_ptr<katal::backend::Kernel> plan(
       const Operation& operation, const katal::PlanOptions&) const override {
     record_->operation = operation;
-    return std::make_unique<RecordingKernel>(record_, operation.inputs.size());
+    return std::make_unique<RecordingKernel>(record_);
   }
 
  private:
@@ -218,8 +218,9 @@ TEST_CASE("execute checks its arguments before the kernel runs", "[backend]") {
                  buffer_d.data(), enough);
     REQUIRE(record->runs.size() == 1);
     const Run& run = record->runs[0];
-    CHECK(run.alpha.value() == 2.0);
-    CHECK(run.beta.value() == 0.5);
+    REQUIRE(run.scalars.size() == 2);
+    CHECK(run.scalars[0].value() == 2.0);
+    CHECK(run.scalars[1].value() == 0.5);
     CHECK(run.inputs ==
           std::vector<const void*>{buffer_a.data(), buffer_b.data()});
     CHECK(run.c == buffer_c.data());
@@ -247,6 +248,52 @@ TEST_CASE("execute checks its arguments before the kernel runs", "[backend]") {
     CHECK_THROWS_AS(plan.execute(1.0, buffer_a.data(), 0.0, buffer_d.data(),
                                  buffer_d.data(), enough),
                     katal::Error);
+    CHECK(record->runs.empty());
+  }
+}
+
+TEST_CASE("an elementwise plan passes c apart from d", "[backend]") {
+  auto record = std::make_shared<Record>();
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const std::array<std::int64_t, 1> ea{2}, eb{3};
+  const std::array<std::int64_t, 2> ed{2, 3};
+  const auto f64 = katal::Dtype::F64;
+  const auto plan = [&](katal::BinaryOp op) {
+    return katal::make_plan(context, katal::Equation::parse("i,j->ij"), op,
+                            katal::make_ref(nullptr, f64, ea),
+                            katal::make_ref(nullptr, f64, eb),
+                            katal::make_ref(nullptr, f64, ed));
+  };
+  const katal::Workspace none{};
+
+  SECTION("both inputs broadcast") {
+    const auto sum = plan(katal::BinaryOp::Add);
+    REQUIRE(record->operation);
+    CHECK(record->operation->kind == OpKind::Elementwise);
+    CHECK(record->operation->binary == katal::BinaryOp::Add);
+    CHECK(record->operation->inputs[0].modes == ids("i"));
+    CHECK(record->operation->inputs[1].modes == ids("j"));
+    CHECK(record->operation->output.modes == ids("ji"));
+
+    sum.execute(1.0, buffer_a.data(), 0.0, buffer_b.data(), 1.0,
+                buffer_c.data(), buffer_d.data(), none);
+    REQUIRE(record->runs.size() == 1);
+    CHECK(record->runs[0].c == buffer_c.data());
+    CHECK(record->runs[0].d == buffer_d.data());
+  }
+
+  SECTION("only Add takes a zero scale") {
+    for (const auto op : {katal::BinaryOp::Multiply, katal::BinaryOp::Max,
+                          katal::BinaryOp::Min}) {
+      const auto p = plan(op);
+      CHECK_THROWS_AS(p.execute(1.0, buffer_a.data(), 0.0, buffer_b.data(), 0.0,
+                                buffer_d.data(), buffer_d.data(), none),
+                      katal::Error);
+      CHECK_THROWS_AS(p.execute(0.0, buffer_a.data(), 1.0, buffer_b.data(), 0.0,
+                                buffer_d.data(), buffer_d.data(), none),
+                      katal::Error);
+    }
     CHECK(record->runs.empty());
   }
 }

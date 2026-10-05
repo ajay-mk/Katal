@@ -78,6 +78,12 @@ along it, and every input label must appear in the result; an equation that
 would sum over a label is `UnsupportedPattern`, since that is einsum's job.
 Neither input may be `d` itself.
 
+alpha and beta must be nonzero except for `Add`. cuTENSOR skips an input
+whose scale is zero rather than treating it as zeros, so `max(x, 0)` written
+as `katal::max(eq, 1.0, x, 0.0, y, d)` would come back as `x`. Katal refuses
+that with `UnsupportedPattern`; for a ReLU, pass a tensor of zeros with a
+scale of one.
+
 To hoist the planning out of a loop, build the plan once with
 `make_plan(context, equation, op, a, b, d)` and call the elementwise
 `Plan::execute(alpha, a, beta, b, gamma, c, d, workspace)`. `c` shares `d`'s

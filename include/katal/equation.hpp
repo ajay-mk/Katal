@@ -293,8 +293,8 @@ inline Classification Equation::classify_elementwise() const {
   const util::Index summed_a = a - d, summed_b = b - d;
   if (summed_a.rank() > 0 || summed_b.rank() > 0)
     throw Error(Errc::UnsupportedPattern, text_,
-                "label(s) \"" + std::string(summed_a) + std::string(summed_b) +
-                    "\" appear in an input but not in the result; an "
+                "label(s) " + quoted(summed_a | summed_b) +
+                    " appear in an input but not in the result; an "
                     "elementwise operation sums over nothing, so use einsum");
 
   Classification c;

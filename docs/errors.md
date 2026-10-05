@@ -22,7 +22,7 @@ try {
 | `ParseError`         | The equation is malformed: an empty operand, a stray arrow, or a separator inside a label. |
 | `RankMismatch`       | Labels and extents disagree in count, or a rank exceeds `max_rank`.     |
 | `ExtentMismatch`     | A label has two extents, an extent is not positive, or a shape overflows. |
-| `UnsupportedPattern` | Well formed but not lowered; cuTENSOR's NOT_SUPPORTED; `execute` got a pointer less aligned than the plan, an elementwise input that is the output, or an overload that does not match the plan. |
+| `UnsupportedPattern` | Well formed but not lowered; cuTENSOR's NOT_SUPPORTED; `execute` got a pointer less aligned than the plan, an elementwise input that is the output or a zero scale on an operator other than Add, or an overload that does not match the plan. |
 | `DtypeMismatch`      | An operand or scalar representation is unsupported.               |
 | `WorkspaceTooSmall`  | `execute` got less workspace than `Plan::workspace_size()`, or cuTENSOR reported too little. |
 | `CutensorError`      | cuTENSOR failed; the message carries its text.                          |

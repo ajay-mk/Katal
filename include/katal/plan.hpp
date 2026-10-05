@@ -134,7 +134,9 @@ class Plan {
   ///
   /// `c` and `d` may be the same pointer, which is how to accumulate; when
   /// gamma is zero, `c` is not read. `a` and `b` must not overlap `d`, and
-  /// passing either as `d` throws `Errc::UnsupportedPattern`.
+  /// passing either as `d` throws `Errc::UnsupportedPattern`. A zero alpha or
+  /// beta skips that input, so only `BinaryOp::Add` accepts one; the other
+  /// operators throw `Errc::UnsupportedPattern`.
   void execute(Scalar alpha, const void* a, Scalar beta, const void* b,
                Scalar gamma, const void* c, void* d, Workspace workspace,
                StreamRef stream = {}) const;

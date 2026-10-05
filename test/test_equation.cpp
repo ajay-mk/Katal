@@ -280,7 +280,7 @@ TEST_CASE("elementwise classification", "[equation]") {
       FAIL("expected a rejection");
     } catch (const katal::Error& e) {
       REQUIRE(e.code() == Errc::UnsupportedPattern);
-      REQUIRE(mentions(e, "\"jj\""));
+      REQUIRE(mentions(e, "label(s) \"j\" appear"));
     }
   }
 

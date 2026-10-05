@@ -83,7 +83,7 @@ TEST_CASE("elementwise add permutes one input against the other",
           "[elementwise][gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
 
-  // d[i][j][a] = t[j][i][a] - t[i][j][a], row-major 2x3 by 2x3 by 4.
+  // d[i][j][a] = t[j][i][a] - t[i][j][a], row-major 3x3x4.
   constexpr std::int64_t n = 3, v = 4;
   const std::array<std::int64_t, 3> e{n, n, v};
   const std::vector<double> t = iota<double>(n * n * v);
@@ -119,6 +119,38 @@ TEST_CASE("elementwise broadcast and accumulate", "[elementwise][gpu]") {
     for (std::int64_t j = 0; j < cols; ++j)
       REQUIRE(got[i * cols + j] ==
               2.0 * a[i * cols + j] + 3.0 * b[j] + 0.5 * d0[i * cols + j]);
+}
+
+TEST_CASE("an outer sum broadcasts both inputs into a separate output",
+          "[elementwise][gpu]") {
+  if (!have_gpu()) SKIP("no CUDA device");
+
+  // d[i][j] = a[i] + 2 * b[j] + c[i][j], with c and d distinct.
+  constexpr std::int64_t rows = 3, cols = 4;
+  const std::array<std::int64_t, 1> ea{rows}, eb{cols};
+  const std::array<std::int64_t, 2> ed{rows, cols};
+  const std::vector<double> a = iota<double>(rows);
+  const std::vector<double> b = iota<double>(cols, 10);
+  const std::vector<double> c = iota<double>(rows * cols, 100);
+  const DeviceBuffer<double> da(a), db(b), dc(c);
+  const DeviceBuffer<double> dd(std::vector<double>(c.size(), 0.0));
+
+  const katal::Plan plan = katal::make_plan(
+      katal::default_context(), katal::Equation::parse("i,j->ij"),
+      katal::BinaryOp::Add, katal::make_ref(da.get(), katal::Dtype::F64, ea),
+      katal::make_ref(db.get(), katal::Dtype::F64, eb),
+      katal::make_ref(dd.get(), katal::Dtype::F64, ed));
+  const katal::util::ScopedWorkspace<katal::CudaAsyncAllocator> scratch(
+      {}, plan.workspace_size(), {});
+  plan.execute(1.0, da.get(), 2.0, db.get(), 1.0, dc.get(), dd.get(),
+               scratch.get());
+  REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+
+  const std::vector<double> got = dd.to_host();
+  for (std::int64_t i = 0; i < rows; ++i)
+    for (std::int64_t j = 0; j < cols; ++j)
+      REQUIRE(got[i * cols + j] == a[i] + 2.0 * b[j] + c[i * cols + j]);
+  REQUIRE(dc.to_host() == c);
 }
 
 TEST_CASE("each binary operator", "[elementwise][gpu]") {
@@ -248,6 +280,19 @@ TEST_CASE("elementwise plans reject misuse", "[elementwise][gpu]") {
     REQUIRE(thrown_code([&] {
               plan.execute(1.0, dd.get(), 1.0, da.get(), 0.0, dd.get(),
                            dd.get(), {});
+            }) == katal::Errc::UnsupportedPattern);
+  }
+
+  SECTION("a zero scale on an operator other than Add") {
+    const katal::Plan max =
+        katal::make_plan(context, katal::Equation::parse("ij,ji->ij"),
+                         katal::BinaryOp::Max, a, a, d);
+    REQUIRE(thrown_code([&] {
+              max.execute(1.0, da.get(), 0.0, da.get(), 0.0, dd.get(), dd.get(),
+                          {});
+            }) == katal::Errc::UnsupportedPattern);
+    REQUIRE(thrown_code([&] {
+              katal::multiply("ij,ji->ij", 0.0, a, 1.0, a, d);
             }) == katal::Errc::UnsupportedPattern);
   }
 
