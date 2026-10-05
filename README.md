@@ -29,5 +29,3 @@ ctest --test-dir build --output-on-failure
 ## License
 
 BSD-3-Clause.
-
-Independent project. Not affiliated with or endorsed by NVIDIA.
