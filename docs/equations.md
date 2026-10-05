@@ -49,11 +49,12 @@ extents.
 With two operands, a label in one input alone (neither in the other nor in
 the result) is summed out of that input first: `"ijk,kl->il"` sums j out of
 the first input, then contracts k. The summed input is kept in the plan's
-workspace, so such a plan has a nonzero `workspace_size()`, runs two kernels,
-and needs its workspace aligned to 256 bytes, which `cudaMallocAsync` and
-the default allocator give. `PlanOptions::workspace_limit` counts the summed
-input too; a limit too small to hold it is `WorkspaceTooSmall` when the plan
-is built. The summed input is stored in the input's own type and summed in
+workspace, so such a plan has a nonzero `workspace_size()`, runs one
+reduction per affected input before the contraction (two kernels, or three
+when both inputs have such labels, as in `"ijk,kml->il"`), and needs its
+workspace aligned to 256 bytes, which `cudaMallocAsync` and the default
+allocator give. `PlanOptions::workspace_limit` counts the summed input too;
+a limit too small to hold it is `WorkspaceTooSmall` when the plan is built. The summed input is stored in the input's own type and summed in
 that type's default compute type, whatever `PlanOptions::compute` asks of the
 contraction. For F16 and BF16 that means the partial sums are rounded to half
 precision before the contraction reads them.
