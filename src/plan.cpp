@@ -97,7 +97,7 @@ class Plan::Impl {
  public:
   Impl(const Context& context, const Equation& equation, const TensorRef& a,
        const TensorRef& b, const TensorRef& d, PlanOptions options)
-      : Impl(context, equation, d.type, 2) {
+      : Impl(context, equation, 2) {
     const Classification classification = equation.classify();
     if (classification.kind != Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
@@ -122,8 +122,9 @@ class Plan::Impl {
                     handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY,
                     desc_b_, ib.data(), CUTENSOR_OP_IDENTITY, desc_d_,
                     id.data(), CUTENSOR_OP_IDENTITY, desc_d_, id.data(),
-                    util::to_compute(options.compute.value_or(d.type))),
+                    util::to_compute(compute_type(options, d))),
                 equation_);
+    read_scalar_type();
     select_kernel(options);
   }
 
@@ -135,7 +136,7 @@ class Plan::Impl {
   /// Add the memcpy path if the copy case ever matters.
   Impl(const Context& context, const Equation& equation, const TensorRef& a,
        const TensorRef& d, PlanOptions options)
-      : Impl(context, equation, d.type, 1) {
+      : Impl(context, equation, 1) {
     if (equation.classify().kind == Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "this equation has two operands; use the two-operand form");
@@ -150,12 +151,13 @@ class Plan::Impl {
     describe(&desc_a_, ma, a);
     describe(&desc_d_, md, d);
 
-    KATAL_CHECK(cutensorCreateReduction(
-                    handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY,
-                    desc_d_, id.data(), CUTENSOR_OP_IDENTITY, desc_d_,
-                    id.data(), CUTENSOR_OP_ADD,
-                    util::to_compute(options.compute.value_or(d.type))),
-                equation_);
+    KATAL_CHECK(
+        cutensorCreateReduction(
+            handle_, &op_, desc_a_, ia.data(), CUTENSOR_OP_IDENTITY, desc_d_,
+            id.data(), CUTENSOR_OP_IDENTITY, desc_d_, id.data(),
+            CUTENSOR_OP_ADD, util::to_compute(compute_type(options, d))),
+        equation_);
+    read_scalar_type();
     select_kernel(options);
   }
 
@@ -179,6 +181,7 @@ class Plan::Impl {
   void contract(Scalar alpha, const void* a, const void* b, Scalar beta,
                 const void* c, void* d, Workspace workspace,
                 StreamRef stream) const {
+    check_workspace(workspace);
     // Stack objects, so this path still allocates nothing.
     const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
     const util::ScalarBytes beta_bytes(beta, scalar_type_);
@@ -191,6 +194,7 @@ class Plan::Impl {
 
   void reduce(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
               Workspace workspace, StreamRef stream) const {
+    check_workspace(workspace);
     const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
     const util::ScalarBytes beta_bytes(beta, scalar_type_);
 
@@ -201,14 +205,41 @@ class Plan::Impl {
   }
 
  private:
+  void check_workspace(Workspace workspace) const {
+    if (workspace.size < workspace_size_)
+      throw Error(Errc::WorkspaceTooSmall, equation_,
+                  "the workspace has " + std::to_string(workspace.size) +
+                      " bytes but this plan needs " +
+                      std::to_string(workspace_size_));
+  }
+
   // Completing the delegated constructor makes ~Impl run if backend setup
   // in either public constructor throws after acquiring a resource.
-  Impl(const Context& context, const Equation& equation, Dtype scalar_type,
-       std::size_t n_operands)
+  Impl(const Context& context, const Equation& equation, std::size_t n_operands)
       : handle_(context.impl().handle()),
         equation_(equation.text()),
-        scalar_type_(scalar_type),
         n_operands_(n_operands) {}
+
+  /// Unset follows the output, except that half-precision output accumulates
+  /// in single precision: that is the pairing cuTENSOR supports for both.
+  static Dtype compute_type(const PlanOptions& options, const TensorRef& d) {
+    if (options.compute) return *options.compute;
+    if (d.type == Dtype::F16 || d.type == Dtype::Bf16) return Dtype::F32;
+    return d.type;
+  }
+
+  /// alpha and beta are passed in the operation's scalar type, which follows
+  /// the compute type rather than the storage, so ask cuTENSOR for it. Checked
+  /// here so that an inexpressible one fails planning, not every execute.
+  void read_scalar_type() {
+    cutensorDataType_t type{};
+    KATAL_CHECK(cutensorOperationDescriptorGetAttribute(
+                    handle_, op_, CUTENSOR_OPERATION_DESCRIPTOR_SCALAR_TYPE,
+                    &type, sizeof(type)),
+                equation_);
+    scalar_type_ = util::from_cutensor(type);
+    const util::ScalarBytes probe(1.0, scalar_type_);
+  }
 
   /// Plan preference, workspace estimate and kernel selection, shared by both
   /// arities.

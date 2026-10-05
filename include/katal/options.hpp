@@ -41,10 +41,11 @@ enum class WorkspacePreference {
 /// policy. `make_plan` uses its own argument, defaulting to PlanOptions{};
 /// it does not inherit the Context policy.
 struct PlanOptions {
-  /// Accumulation type. Unset follows the output tensor, which is the only
-  /// choice cuTENSOR always accepts; asking for f64 accumulation over f32
-  /// storage, for instance, is not a supported combination. Set it to widen
-  /// deliberately where supported. TF32 is not exposed by this interface.
+  /// Accumulation type. Unset follows the output tensor, except that F16 and
+  /// Bf16 outputs accumulate in F32; those are the choices cuTENSOR always
+  /// accepts. Asking for f64 accumulation over f32 storage, for instance, is
+  /// not a supported combination. Set it to widen deliberately where
+  /// supported. TF32 is not exposed by this interface.
   std::optional<Dtype> compute;
 
   /// Caps the scratch a plan may use. 0 takes whatever `workspace` suggests.

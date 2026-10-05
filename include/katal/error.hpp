@@ -28,7 +28,7 @@ enum class Errc {
   /// beta cannot be expressed in it.
   DtypeMismatch,
   /// The workspace handed to `Plan::execute` is smaller than
-  /// `Plan::workspace_size`.
+  /// `Plan::workspace_size`, or cuTENSOR reported too little workspace.
   WorkspaceTooSmall,
   /// cuTENSOR returned a failing status; the message carries its own text.
   CutensorError,

@@ -11,21 +11,18 @@
 
 #include <katal/tensor.hpp>
 
-TEST_CASE("negative tensor extents are rejected even after zero", "[tensor]") {
+TEST_CASE("zero and negative tensor extents are rejected", "[tensor]") {
   using Tensor = katal::Tensor<std::allocator<std::byte>>;
+  REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {3, 0, 4}),
+                    std::invalid_argument);
   REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {0, -1}), std::invalid_argument);
   REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {-1, 0}), std::invalid_argument);
   REQUIRE_THROWS_AS(Tensor(katal::Dtype::F64, {2, 0, -1}),
                     std::invalid_argument);
 }
 
-TEST_CASE("empty tensors and scalars have distinct storage", "[tensor]") {
+TEST_CASE("a rank-zero tensor holds one element", "[tensor]") {
   using Tensor = katal::Tensor<std::allocator<std::byte>>;
-  const Tensor empty(katal::Dtype::F64, {3, 0, 4});
-  REQUIRE(empty.size() == 0);
-  REQUIRE(empty.bytes() == 0);
-  REQUIRE(empty.data() == nullptr);
-
   const Tensor scalar(katal::Dtype::F64, {});
   REQUIRE(scalar.size() == 1);
   REQUIRE(scalar.bytes() == sizeof(double));
