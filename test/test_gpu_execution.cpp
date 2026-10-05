@@ -199,8 +199,9 @@ katal::Plan workspace_hungry_plan(const katal::TensorRef& a,
                           options);
 }
 
+// i, j, c and d are 8; a and b are 16. b is laid out c, d, b, a.
 constexpr std::array<std::int64_t, 4> hungry_a{8, 8, 16, 16},
-    hungry_b{16, 16, 8, 8}, hungry_d{8, 8, 8, 8};
+    hungry_b{8, 8, 16, 16}, hungry_d{8, 8, 8, 8};
 
 void require_workspace_too_small(const std::function<void()>& run) {
   try {
