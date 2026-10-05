@@ -91,8 +91,8 @@ TEST_CASE("elementwise add permutes one input against the other",
   const DeviceBuffer<double> dd(std::vector<double>(t.size(), 0.0));
 
   const std::vector<double> got =
-      run<double>("jia,ija->ija", katal::BinaryOp::Add, 1.0, dt, e, -1.0, dt,
-                  e, 0.0, dd, e, katal::Dtype::F64);
+      run<double>("jia,ija->ija", katal::BinaryOp::Add, 1.0, dt, e, -1.0, dt, e,
+                  0.0, dd, e, katal::Dtype::F64);
   for (std::int64_t i = 0; i < n; ++i)
     for (std::int64_t j = 0; j < n; ++j)
       for (std::int64_t a = 0; a < v; ++a)
@@ -175,10 +175,10 @@ TEST_CASE("the named calls take owning tensors", "[elementwise][gpu]") {
   katal::Tensor<> d(katal::Dtype::F64, {2, 3});
   const std::array<double, 6> av{1, 2, 3, 4, 5, 6};
   const std::array<double, 3> bv{10, 20, 30};
-  REQUIRE(cudaMemcpy(a.data(), av.data(), sizeof(av),
-                     cudaMemcpyHostToDevice) == cudaSuccess);
-  REQUIRE(cudaMemcpy(b.data(), bv.data(), sizeof(bv),
-                     cudaMemcpyHostToDevice) == cudaSuccess);
+  REQUIRE(cudaMemcpy(a.data(), av.data(), sizeof(av), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
+  REQUIRE(cudaMemcpy(b.data(), bv.data(), sizeof(bv), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
 
   // Tensor is column-major: element (i, j) of a 2x3 tensor sits at i + 2j.
   std::array<double, 6> d_host{};
@@ -189,7 +189,8 @@ TEST_CASE("the named calls take owning tensors", "[elementwise][gpu]") {
                        cudaMemcpyDeviceToHost) == cudaSuccess);
     for (std::size_t i = 0; i < 2; ++i)
       for (std::size_t j = 0; j < 3; ++j)
-        REQUIRE(got[i + 2 * j] == expect(av[i + 2 * j], bv[j], d_host[i + 2 * j]));
+        REQUIRE(got[i + 2 * j] ==
+                expect(av[i + 2 * j], bv[j], d_host[i + 2 * j]));
     d_host = got;
   };
 
@@ -261,8 +262,8 @@ TEST_CASE("elementwise plans reject misuse", "[elementwise][gpu]") {
   }
 
   SECTION("an einsum plan refuses the elementwise execute") {
-    const katal::Plan contraction = katal::make_plan(
-        context, katal::Equation::parse("ij,jk->ik"), a, a, d);
+    const katal::Plan contraction =
+        katal::make_plan(context, katal::Equation::parse("ij,jk->ik"), a, a, d);
     REQUIRE(thrown_code([&] {
               contraction.execute(1.0, da.get(), 1.0, da.get(), 0.0, dd.get(),
                                   dd.get(), {});
@@ -271,10 +272,10 @@ TEST_CASE("elementwise plans reject misuse", "[elementwise][gpu]") {
 
   SECTION("the cache keeps elementwise and contraction plans apart") {
     const auto product = katal::cached_plan(context, "ij,ij->ij", a, a, d);
-    const auto sum = katal::cached_plan(context, "ij,ij->ij",
-                                        katal::BinaryOp::Add, a, a, d);
-    const auto max = katal::cached_plan(context, "ij,ij->ij",
-                                        katal::BinaryOp::Max, a, a, d);
+    const auto sum =
+        katal::cached_plan(context, "ij,ij->ij", katal::BinaryOp::Add, a, a, d);
+    const auto max =
+        katal::cached_plan(context, "ij,ij->ij", katal::BinaryOp::Max, a, a, d);
     REQUIRE(product != sum);
     REQUIRE(sum != max);
     REQUIRE(sum == katal::cached_plan(context, "ij,ij->ij",
