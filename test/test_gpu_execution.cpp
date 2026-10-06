@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -97,15 +96,13 @@ DeviceBytes upload(const std::vector<float>& values, ToBits to_bits) {
 /// scalar one in particular, is a real one.
 template <class MakePlan>
 katal::Plan plan_or_skip(MakePlan make) {
-  std::optional<katal::Plan> plan;
   try {
-    plan.emplace(make());
+    return make();
   } catch (const katal::Error& e) {
     if (e.code() == katal::Errc::UnsupportedPattern)
       SKIP("this device has no kernel for the type: " << e.what());
     throw;
   }
-  return std::move(*plan);
 }
 
 /// Small integers, which both 16-bit formats hold exactly.
