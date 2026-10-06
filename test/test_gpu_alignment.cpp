@@ -1,8 +1,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
+#include "cuda_memory.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cuda_runtime.h>
 
@@ -30,6 +32,8 @@ TEST_CASE("a contraction on offset pointers is correct", "[gpu]") {
 
   double* base = nullptr;
   REQUIRE(cudaMalloc(&base, 3 * elements * sizeof(double)) == cudaSuccess);
+  const std::unique_ptr<double, decltype(&katal::test::free_device)> storage(
+      base, &katal::test::free_device);
   double* const da = base + offset;
   double* const db = base + elements + offset;
   double* const dd = base + 2 * elements + offset;
@@ -52,7 +56,6 @@ TEST_CASE("a contraction on offset pointers is correct", "[gpu]") {
   std::vector<double> got(n * n);
   REQUIRE(cudaMemcpy(got.data(), dd, n * n * sizeof(double),
                      cudaMemcpyDeviceToHost) == cudaSuccess);
-  REQUIRE(cudaFree(base) == cudaSuccess);
 
   // Row-major, the make_ref default. Small integers, so the sums are exact.
   for (std::size_t i = 0; i < n; ++i)
