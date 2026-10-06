@@ -33,12 +33,15 @@ inferred differently from what is written.
 
 ## What each equation lowers to
 
-| Operands | Pattern                                   | Kernel        |
-|----------|-------------------------------------------|---------------|
+| Operands | Pattern                                   | Classification |
+|----------|-------------------------------------------|----------------|
 | two      | contracted, batch and free labels         | contraction   |
 | one      | result drops labels                       | reduction     |
 | one      | result reorders labels                    | permutation   |
 | one      | result equals the operand                 | copy          |
+
+The cuTENSOR backend executes all unary classifications through its reduction
+operation, preserving `alpha * input + beta * output` for copies and permutations.
 
 Katal rejects these with `UnsupportedPattern`, naming the labels responsible:
 
