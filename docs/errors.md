@@ -1,14 +1,12 @@
 # Errors
 
-Katal reports failures three ways:
+Katal reports failures two ways, and only two:
 
 - **`std::bad_alloc`** when memory runs out, from a tensor allocator, the
   default workspace allocator, or a tensor too large to address.
 - **`katal::Error`** for everything else. It derives from
   `std::runtime_error`, and carries an `Errc` to branch on and, when there
   is one, the equation that failed.
-- **`std::logic_error`** for misusing the process-wide context, described
-  below.
 
 ```cpp
 try {
@@ -21,18 +19,15 @@ try {
 
 | `Errc`               | Meaning                                                                 |
 |----------------------|-------------------------------------------------------------------------|
-| `ParseError`         | The equation is malformed: an empty operand, a stray arrow.             |
+| `ParseError`         | The equation is malformed: an empty operand, a stray arrow, or a separator inside a label. |
 | `RankMismatch`       | Labels and extents disagree in count, or a rank exceeds `max_rank`.     |
 | `ExtentMismatch`     | A label has two extents, an extent is not positive, or a shape overflows. |
 | `UnsupportedPattern` | Well formed but not lowered; cuTENSOR's NOT_SUPPORTED; or `execute` got a pointer less aligned than the plan. |
 | `DtypeMismatch`      | The compute type cannot hold the operands, alpha or beta.               |
-| `WorkspaceTooSmall`  | `execute` got less workspace than `Plan::workspace_size()`.             |
+| `WorkspaceTooSmall`  | `execute` got less workspace than `Plan::workspace_size()`, or cuTENSOR reported too little. |
 | `CutensorError`      | cuTENSOR failed; the message carries its text.                          |
 | `CudaError`          | A CUDA call failed, or a plan ran with another device current.          |
-
-Misusing the process-wide context throws `std::logic_error`: a second
-`initialize()`, a `Runtime` when a context exists, or `finalize()` while a
-`Runtime` owns it.
+| `InvalidState`       | The process-wide context was misused: a second `initialize()`, a `Runtime` when a context exists, or `finalize()` while a `Runtime` owns it. |
 
 ## Without exceptions in hand
 
