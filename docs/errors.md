@@ -48,5 +48,11 @@ if (ec == katal::Errc::RankMismatch) { /* ... */ }
 Destructors and deallocators never throw. A CUDA failure while releasing
 memory terminates the program, because continuing could free memory a kernel
 still uses. The exception is a failure that means the CUDA context is already
-lost, such as after an illegal-address fault: cleanup then returns, so the
-original error can still reach a handler.
+lost, such as after an illegal-address fault, while an exception is unwinding:
+cleanup then returns so the original error can reach its handler. Outside
+unwinding, including explicit cleanup after catching a fault, it terminates.
+
+Cleanup can detect active unwinding, but cannot identify the exception. If an
+unrelated exception is unwinding when the context is lost, cleanup also
+suppresses that device fault. Check asynchronous CUDA errors explicitly before
+leaving the scope when they must be reported separately.
