@@ -155,11 +155,10 @@ TEST_CASE("mode_order", "[tensor_ref]") {
 }
 
 TEST_CASE("make_ref derives the alignment from the address", "[tensor_ref]") {
-  alignas(256) std::array<double, 8> buffer{};
+  alignas(256) std::array<std::byte, 768> buffer{};
   const auto alignment = [&](std::size_t offset_bytes) {
-    return katal::make_ref(
-               reinterpret_cast<std::byte*>(buffer.data()) + offset_bytes,
-               Dtype::F64, span_of(shape))
+    return katal::make_ref(buffer.data() + offset_bytes, Dtype::F64,
+                           span_of(shape))
         .alignment;
   };
   REQUIRE(alignment(0) == 256);
