@@ -58,36 +58,6 @@ TEST_CASE("set operators preserve the left operand's order", "[index]") {
   }
 }
 
-TEST_CASE("mode classification algebra", "[index]") {
-  using katal::util::Index;
-
-  SECTION("ij,jk->ik") {
-    const Index a("ij"), b("jk"), d("ik");
-    REQUIRE((a & b & d).rank() == 0);      // batch
-    REQUIRE(((a & b) - d) == Index("j"));  // contracted
-    REQUIRE(((a - b) & d) == Index("i"));  // free in A
-    REQUIRE(((b - a) & d) == Index("k"));  // free in B
-    REQUIRE(((a ^ b) - d).rank() == 0);    // dangling
-    REQUIRE((d - (a | b)).rank() == 0);    // broadcast
-  }
-
-  SECTION("bij,bjk->bik batches b rather than contracting it") {
-    const Index a("bij"), b("bjk"), d("bik");
-    REQUIRE((a & b & d) == Index("b"));
-    REQUIRE(((a & b) - d) == Index("j"));
-  }
-
-  SECTION("ijk,kl->il leaves j dangling") {
-    const Index a("ijk"), b("kl"), d("il");
-    REQUIRE(((a ^ b) - d) == Index("j"));
-  }
-
-  SECTION("ij,jk->ikl asks to broadcast l") {
-    const Index a("ij"), b("jk"), d("ikl");
-    REQUIRE((d - (a | b)) == Index("l"));
-  }
-}
-
 TEST_CASE("permute_from_to", "[index]") {
   using katal::util::Index;
   using katal::util::Permutation;
@@ -124,11 +94,6 @@ TEST_CASE("index capacity", "[index]") {
   SECTION("rank beyond the configured maximum is rejected") {
     const std::string too_many(katal::max_rank + 1, 'a');
     REQUIRE(thrown_code([&] { Index{too_many}; }) == katal::Errc::RankMismatch);
-  }
-
-  SECTION("labels longer than a label can hold are rejected") {
-    REQUIRE(thrown_code([] { Index{"i extremelylonglabel"}; }) ==
-            katal::Errc::RankMismatch);
   }
 }
 

@@ -123,7 +123,9 @@ TEST_CASE("managed allocators preserve their stream when rebound", "[tensor]") {
   using Doubles = std::allocator_traits<Bytes>::rebind_alloc<double>;
 
   STATIC_REQUIRE(std::is_same_v<Doubles, katal::ManagedAllocator<double>>);
-  const Bytes bytes;
+  int stream_token = 0;
+  const Bytes bytes(
+      katal::StreamRef(reinterpret_cast<CUstream_st*>(&stream_token)));
   const Doubles doubles(bytes);
   REQUIRE(bytes == doubles);
   REQUIRE(doubles.stream().get() == bytes.stream().get());

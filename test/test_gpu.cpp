@@ -296,7 +296,13 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   const std::unique_ptr<void, katal::test::DeviceFree> storage(scratch);
   const katal::Workspace ws{storage.get(), plan.workspace_size()};
 
-  // beta = 1 twice over a zeroed output must give exactly twice one pass.
+  std::vector<double> expected(8, 0.0);
+  for (std::size_t i = 0; i < 2; ++i)
+    for (std::size_t j = 0; j < 4; ++j)
+      for (std::size_t k = 0; k < 3; ++k)
+        expected[i * 4 + j] += a[i * 3 + k] * b[k * 4 + j];
+
+  // The second execution accumulates into the first result.
   plan.execute(1.0, da.get(), db.get(), 0.0, dd.get(), dd.get(), ws);
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
   const std::vector<double> once = dd.to_host();
@@ -305,8 +311,10 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
   const std::vector<double> twice = dd.to_host();
 
-  for (std::size_t i = 0; i < once.size(); ++i)
-    REQUIRE_THAT(twice[i], WithinRel(2.0 * once[i], 1e-12));
+  for (std::size_t i = 0; i < expected.size(); ++i) {
+    REQUIRE_THAT(once[i], WithinRel(expected[i], 1e-12));
+    REQUIRE_THAT(twice[i], WithinRel(2.0 * expected[i], 1e-12));
+  }
 }
 
 TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
@@ -330,8 +338,8 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
   };
   static_assert(katal::WorkspaceAllocator<CountingAllocator>);
 
-  const std::array<std::int64_t, 4> ea{2, 3, 4, 5}, eb{4, 5, 6, 7},
-      ed{2, 3, 6, 7};
+  const std::array<std::int64_t, 4> ea{8, 8, 16, 16}, eb{8, 8, 16, 16},
+      ed{8, 8, 8, 8};
   const std::vector<double> a = ramp<double>(elements(ea), 1.0);
   const std::vector<double> b = ramp<double>(elements(eb), 0.5);
   const std::vector<double> d(elements(ed), 0.0);
@@ -341,14 +349,21 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
   const katal::TensorRef br = katal::make_ref(db.get(), katal::Dtype::F64, eb);
   const katal::TensorRef dr = katal::make_ref(dd.get(), katal::Dtype::F64, ed);
 
+  katal::PlanOptions options;
+  options.algo = katal::Algo::Ttgt;
+  options.workspace = katal::WorkspacePreference::Max;
+  const auto plan = katal::cached_plan(katal::default_context(),
+                                       "ijab,cdba->ijdc", ar, br, dr, options);
+  if (plan->workspace_size() == 0) SKIP("this plan needs no workspace");
+
   int allocations = 0, deallocations = 0;
-  katal::einsum("ijab,abcd->ijcd", 1.0, ar, br, 0.0, dr, {}, {},
+  katal::einsum("ijab,cdba->ijdc", 1.0, ar, br, 0.0, dr, options, {},
                 katal::default_context(),
                 CountingAllocator{&allocations, &deallocations});
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
 
-  // The plan may need no scratch, but if it allocated it must have released.
-  REQUIRE(allocations == deallocations);
+  REQUIRE(allocations == 1);
+  REQUIRE(deallocations == 1);
 
   const std::vector<double> got = dd.to_host();
   std::vector<double> want(d.size(), 0.0);
@@ -356,7 +371,7 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
       katal::make_ref(const_cast<double*>(a.data()), katal::Dtype::F64, ea),
       katal::make_ref(const_cast<double*>(b.data()), katal::Dtype::F64, eb)};
   katal::test::reference_einsum<double>(
-      katal::Equation::parse("ijab,abcd->ijcd"), 1.0, host, 0.0,
+      katal::Equation::parse("ijab,cdba->ijdc"), 1.0, host, 0.0,
       katal::make_ref(want.data(), katal::Dtype::F64, ed));
   for (std::size_t i = 0; i < got.size(); ++i)
     REQUIRE_THAT(got[i], WithinRel(want[i], 1e-12));
