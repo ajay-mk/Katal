@@ -23,11 +23,15 @@ try {
 | `RankMismatch`       | Labels and extents disagree in count, or a rank exceeds `max_rank`.     |
 | `ExtentMismatch`     | A label has two extents, an extent is not positive, or a shape overflows. |
 | `UnsupportedPattern` | Well formed but not lowered; cuTENSOR's NOT_SUPPORTED; or `execute` got a pointer less aligned than the plan. |
-| `DtypeMismatch`      | The compute type cannot hold the operands, alpha or beta.               |
+| `DtypeMismatch`      | An operand or scalar representation is unsupported.               |
 | `WorkspaceTooSmall`  | `execute` got less workspace than `Plan::workspace_size()`, or cuTENSOR reported too little. |
 | `CutensorError`      | cuTENSOR failed; the message carries its text.                          |
 | `CudaError`          | A CUDA call failed, or a plan ran with another device current.          |
 | `InvalidState`       | The process-wide context was misused: a second `initialize()`, a `Runtime` when a context exists, or `finalize()` while a `Runtime` owns it. |
+
+Scalars are converted to the backend's compute type. This conversion can narrow
+precision, and a complex scalar's imaginary part is discarded for real compute
+types; `DtypeMismatch` does not diagnose these losses.
 
 ## Without exceptions in hand
 

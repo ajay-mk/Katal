@@ -26,8 +26,8 @@ enum class Errc {
   /// reported as not supported. Also a pointer handed to `Plan::execute` that
   /// is less aligned than the plan was built for.
   UnsupportedPattern,
-  /// The requested compute type cannot represent the operands, or alpha and
-  /// beta cannot be expressed in it.
+  /// An operand or scalar representation is unsupported. Scalar narrowing and
+  /// discarding an imaginary part for real computation do not raise this error.
   DtypeMismatch,
   /// The workspace handed to `Plan::execute` is smaller than
   /// `Plan::workspace_size`, or cuTENSOR reported too little workspace.
