@@ -39,10 +39,14 @@ inline bool context_lost(cudaError_t status) noexcept {
 
 /// For a release in cleanup, which cannot throw. A failure while the context
 /// is healthy would leak or free memory still in use, so it terminates. One
-/// after the context is lost only repeats the original fault, which the
-/// program is already unwinding from, so it is ignored.
+/// after context loss is ignored only during exception unwinding, so the
+/// active exception can reach its handler. This cannot identify that exception:
+/// an unrelated exception can also suppress a device fault encountered here.
+/// Outside unwinding the failure must not go unreported.
 inline void check_release(cudaError_t status) noexcept {
-  if (status != cudaSuccess && !context_lost(status)) std::terminate();
+  if (status != cudaSuccess &&
+      (!context_lost(status) || std::uncaught_exceptions() == 0))
+    std::terminate();
 }
 
 /// Makes `device` current for its lifetime and restores the previous device

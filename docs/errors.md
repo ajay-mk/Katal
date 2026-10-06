@@ -23,11 +23,15 @@ try {
 | `RankMismatch`       | Labels and extents disagree in count, or a rank exceeds `max_rank`.     |
 | `ExtentMismatch`     | A label has two extents, an extent is not positive, or a shape overflows. |
 | `UnsupportedPattern` | Well formed but not lowered; cuTENSOR's NOT_SUPPORTED; or `execute` got a pointer less aligned than the plan. |
-| `DtypeMismatch`      | The compute type cannot hold the operands, alpha or beta.               |
+| `DtypeMismatch`      | An operand or scalar representation is unsupported.               |
 | `WorkspaceTooSmall`  | `execute` got less workspace than `Plan::workspace_size()`, or cuTENSOR reported too little. |
 | `CutensorError`      | cuTENSOR failed; the message carries its text.                          |
 | `CudaError`          | A CUDA call failed, or a plan ran with another device current.          |
 | `InvalidState`       | The process-wide context was misused: a second `initialize()`, a `Runtime` when a context exists, or `finalize()` while a `Runtime` owns it. |
+
+Scalars are converted to the backend's compute type. This conversion can narrow
+precision, and a complex scalar's imaginary part is discarded for real compute
+types; `DtypeMismatch` does not diagnose these losses.
 
 ## Without exceptions in hand
 
@@ -48,5 +52,11 @@ if (ec == katal::Errc::RankMismatch) { /* ... */ }
 Destructors and deallocators never throw. A CUDA failure while releasing
 memory terminates the program, because continuing could free memory a kernel
 still uses. The exception is a failure that means the CUDA context is already
-lost, such as after an illegal-address fault: cleanup then returns, so the
-original error can still reach a handler.
+lost, such as after an illegal-address fault, while an exception is unwinding:
+cleanup then returns so the original error can reach its handler. Outside
+unwinding, including explicit cleanup after catching a fault, it terminates.
+
+Cleanup can detect active unwinding, but cannot identify the exception. If an
+unrelated exception is unwinding when the context is lost, cleanup also
+suppresses that device fault. Check asynchronous CUDA errors explicitly before
+leaving the scope when they must be reported separately.

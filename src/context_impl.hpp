@@ -60,9 +60,9 @@ class Context::Impl {
   ///
   /// Planning runs outside the lock, since with JIT it can take seconds and
   /// every other thread's lookup would wait on it. Two threads that miss on
-  /// the same key both plan; the first to insert wins and both return its
-  /// plan. When full, the least recently used plan is evicted; outstanding
-  /// shared_ptrs keep any plan in use alive.
+  /// the same key may both plan; insertion reuses a matching plan if it is
+  /// still cached. When full, the least recently used plan is evicted;
+  /// outstanding shared_ptrs keep any plan in use alive.
   template <class Make>
   std::shared_ptr<const Plan> cached(const std::string& key, Make make) const {
     // A hit skips planning, which is where a plan checks its device, so check
@@ -88,7 +88,14 @@ class Context::Impl {
 
     const std::lock_guard<std::mutex> lock(mutex_);
     if (auto raced = touch(key)) return raced;
-    if (plans_.size() >= config_.plan_cache_entries) {
+    plans_.emplace_front(key, plan);
+    try {
+      index_.emplace(key, plans_.begin());
+    } catch (...) {
+      plans_.pop_front();
+      throw;
+    }
+    if (plans_.size() > config_.plan_cache_entries) {
       KATAL_LOG(
           "cache.evict device="
           << device_ << " key=" << std::hash<std::string>{}(plans_.back().first)
@@ -96,8 +103,6 @@ class Context::Impl {
       index_.erase(plans_.back().first);
       plans_.pop_back();
     }
-    plans_.emplace_front(key, plan);
-    index_.emplace(key, plans_.begin());
     KATAL_LOG("cache.insert device="
               << device_ << " key=" << std::hash<std::string>{}(key)
               << " equation=" << util::log_quote(plan->equation())

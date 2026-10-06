@@ -62,9 +62,10 @@ Wait for GPU work before accessing the data on the CPU, and finish CPU writes
 before submitting GPU work. Last-owner release waits for the stream before
 freeing managed memory. A CUDA cleanup failure terminates rather than throwing
 from destruction or freeing storage that may still be in use. The exception is
-a failure that means the CUDA context is already lost, such as after an illegal
-address fault: the memory goes with the context, so cleanup returns and the
-original error can still be reported.
+a failure that means the CUDA context is already lost while an exception is
+unwinding: the memory goes with the context, so cleanup returns and the original
+error can reach its handler. Cleanup outside unwinding terminates on any CUDA
+failure, including one already caught by the caller.
 
 Managed allocations use `cudaMallocManaged` / `cudaFree`; they are not pooled.
 Pooled device allocations use `cudaMallocAsync` / `cudaFreeAsync` on their

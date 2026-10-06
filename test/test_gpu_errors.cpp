@@ -1,8 +1,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <new>
-#include <optional>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -48,38 +48,41 @@ TEST_CASE("the default workspace allocator reports exhaustion as bad_alloc",
   REQUIRE(cudaGetLastError() == cudaSuccess);
 }
 
-// Runs in its own process under CTest, since it breaks the CUDA context on
-// purpose. Every cleanup path below used to call std::terminate, which killed
-// the process during unwinding before the original error could be reported.
-TEST_CASE("cleanup after a sticky device fault does not terminate", "[gpu]") {
+// Runs in its own process under CTest because the fault destroys its CUDA
+// context.
+TEST_CASE("cleanup during sticky-fault unwinding does not terminate", "[gpu]") {
   if (!have_device()) SKIP("no CUDA device");
-
-  std::optional<katal::Tensor<>> pooled;
-  std::optional<katal::Tensor<katal::ManagedAllocator<std::byte>>> managed;
-  pooled.emplace(katal::Dtype::F64, katal::Extents{64, 64});
-  managed.emplace(katal::Dtype::F64, katal::Extents{64, 64});
-  const katal::CudaAsyncAllocator allocator;
-  const katal::Workspace workspace = allocator.allocate(1024, {});
-
-  // A 256-byte aligned address that nothing maps, so the kernel that writes
-  // the result faults.
-  void* const unmapped = reinterpret_cast<void*>(std::uintptr_t{1} << 46);
-  const std::array<std::int64_t, 2> extent{64, 64};
-  const auto input = pooled->ref();
-  const auto output = katal::make_ref(unmapped, katal::Dtype::F64, extent,
-                                      katal::Layout::ColumnMajor);
+  struct DeviceFault {};
   try {
-    katal::einsum("ij,jk->ik", 1.0, input, input, 0.0, output);
-  } catch (const katal::Error&) {
-    // Some launches report the fault here rather than at the sync below.
+    katal::Tensor<> pooled(katal::Dtype::F64, {64, 64});
+    katal::Tensor<katal::ManagedAllocator<std::byte>> managed(katal::Dtype::F64,
+                                                              {64, 64});
+    const katal::util::ScopedWorkspace workspace(katal::CudaAsyncAllocator{},
+                                                 1024, katal::StreamRef{});
+    // Aligned but unmapped, so the output kernel faults.
+    void* const unmapped = reinterpret_cast<void*>(std::uintptr_t{1} << 46);
+    const std::array<std::int64_t, 2> extent{64, 64};
+    const auto input = pooled.ref();
+    const auto output = katal::make_ref(unmapped, katal::Dtype::F64, extent,
+                                        katal::Layout::ColumnMajor);
+    std::exception_ptr launch_error;
+    try {
+      katal::einsum("ij,jk->ik", 1.0, input, input, 0.0, output);
+    } catch (const katal::Error& error) {
+      // A launch may report the device fault before the explicit wait.
+      if (error.code() != katal::Errc::CudaError &&
+          error.code() != katal::Errc::CutensorError)
+        throw;
+      launch_error = std::current_exception();
+    }
+    const auto fault = cudaDeviceSynchronize();
+    if (fault != cudaErrorIllegalAddress && fault != cudaErrorLaunchFailure) {
+      if (launch_error) std::rethrow_exception(launch_error);
+      REQUIRE(fault == cudaSuccess);
+      SKIP("the unmapped write did not trigger a sticky device fault");
+    }
+    throw DeviceFault{};
+  } catch (const DeviceFault&) {
+    SUCCEED("the original fault reached its handler after cleanup");
   }
-  const cudaError_t fault = cudaDeviceSynchronize();
-  if (fault != cudaErrorIllegalAddress && fault != cudaErrorLaunchFailure)
-    SKIP("could not provoke a sticky fault; got " +
-         std::string(cudaGetErrorName(fault)));
-
-  allocator.deallocate(workspace, {});
-  pooled.reset();
-  managed.reset();
-  SUCCEED("every cleanup returned");
 }

@@ -30,7 +30,8 @@ Errc code_of(std::string_view text) {
 // max_rank labels, none shared with another block. Bytes from 'A' upward
 // avoid the separators and whitespace, and above 127 are still labels.
 std::string distinct_labels(std::size_t block) {
-  static_assert('A' + 2 * katal::max_rank <= 256, "labels must fit in a byte");
+  if (katal::max_rank > (256 - 'A') / 2)
+    SKIP("two disjoint maximum-rank operands need more byte labels");
   std::string labels;
   for (std::size_t i = 0; i < katal::max_rank; ++i)
     labels += static_cast<char>('A' + block * katal::max_rank + i);

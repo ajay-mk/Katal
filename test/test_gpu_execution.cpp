@@ -2,11 +2,12 @@
 #include <bit>
 #include <cstdint>
 #include <functional>
-#include <optional>
+#include <memory>
 #include <span>
 #include <utility>
 #include <vector>
 
+#include "cuda_memory.hpp"
 #include "reference.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -53,27 +54,28 @@ template <class T>
 class DeviceBuffer {
  public:
   explicit DeviceBuffer(const std::vector<T>& host) : size_(host.size()) {
-    REQUIRE(cudaMalloc(&ptr_, bytes()) == cudaSuccess);
-    REQUIRE(cudaMemcpy(ptr_, host.data(), bytes(), cudaMemcpyHostToDevice) ==
-            cudaSuccess);
+    T* data = nullptr;
+    REQUIRE(cudaMalloc(&data, bytes()) == cudaSuccess);
+    ptr_.reset(data);
+    REQUIRE(cudaMemcpy(ptr_.get(), host.data(), bytes(),
+                       cudaMemcpyHostToDevice) == cudaSuccess);
   }
-  ~DeviceBuffer() { cudaFree(ptr_); }
   DeviceBuffer(const DeviceBuffer&) = delete;
   DeviceBuffer& operator=(const DeviceBuffer&) = delete;
 
-  T* get() const noexcept { return ptr_; }
+  T* get() const noexcept { return ptr_.get(); }
 
   std::vector<T> to_host() const {
     std::vector<T> host(size_);
-    REQUIRE(cudaMemcpy(host.data(), ptr_, bytes(), cudaMemcpyDeviceToHost) ==
-            cudaSuccess);
+    REQUIRE(cudaMemcpy(host.data(), ptr_.get(), bytes(),
+                       cudaMemcpyDeviceToHost) == cudaSuccess);
     return host;
   }
 
  private:
   std::size_t bytes() const noexcept { return size_ * sizeof(T); }
 
-  T* ptr_ = nullptr;
+  std::unique_ptr<T, katal::test::DeviceFree> ptr_;
   std::size_t size_ = 0;
 };
 
@@ -93,15 +95,13 @@ DeviceBytes upload(const std::vector<float>& values, ToBits to_bits) {
 /// scalar one in particular, is a real one.
 template <class MakePlan>
 katal::Plan plan_or_skip(MakePlan make) {
-  std::optional<katal::Plan> plan;
   try {
-    plan.emplace(make());
+    return make();
   } catch (const katal::Error& e) {
     if (e.code() == katal::Errc::UnsupportedPattern)
       SKIP("this device has no kernel for the type: " << e.what());
     throw;
   }
-  return std::move(*plan);
 }
 
 /// Small integers, which both 16-bit formats hold exactly.

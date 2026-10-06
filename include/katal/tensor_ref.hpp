@@ -72,8 +72,8 @@ struct BasicTensorRef {
   std::span<const std::int64_t> stride;
   /// Which convention `extent` and `stride` are written in.
   Layout layout = Layout::RowMajor;
-  /// Alignment of `data` in bytes, asserted rather than enforced: a value
-  /// larger than the pointer actually satisfies is a way to get wrong answers.
+  /// Alignment required by the plan, in bytes. Execution rejects pointers
+  /// that do not satisfy it.
   /// `make_ref` and `Tensor::ref` derive it from the address.
   std::uint32_t alignment = 256;
 

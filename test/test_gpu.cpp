@@ -1,11 +1,13 @@
 #include <array>
 #include <complex>
 #include <cstdint>
+#include <memory>
 #include <numeric>
 #include <span>
 #include <string_view>
 #include <vector>
 
+#include "cuda_memory.hpp"
 #include "reference.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -40,25 +42,26 @@ template <class T>
 class DeviceBuffer {
  public:
   explicit DeviceBuffer(const std::vector<T>& host) : size_(host.size()) {
-    REQUIRE(cudaMalloc(&ptr_, size_ * sizeof(T)) == cudaSuccess);
-    REQUIRE(cudaMemcpy(ptr_, host.data(), size_ * sizeof(T),
+    T* data = nullptr;
+    REQUIRE(cudaMalloc(&data, size_ * sizeof(T)) == cudaSuccess);
+    ptr_.reset(data);
+    REQUIRE(cudaMemcpy(ptr_.get(), host.data(), size_ * sizeof(T),
                        cudaMemcpyHostToDevice) == cudaSuccess);
   }
-  ~DeviceBuffer() { cudaFree(ptr_); }
   DeviceBuffer(const DeviceBuffer&) = delete;
   DeviceBuffer& operator=(const DeviceBuffer&) = delete;
 
-  T* get() const noexcept { return ptr_; }
+  T* get() const noexcept { return ptr_.get(); }
 
   std::vector<T> to_host() const {
     std::vector<T> host(size_);
-    REQUIRE(cudaMemcpy(host.data(), ptr_, size_ * sizeof(T),
+    REQUIRE(cudaMemcpy(host.data(), ptr_.get(), size_ * sizeof(T),
                        cudaMemcpyDeviceToHost) == cudaSuccess);
     return host;
   }
 
  private:
-  T* ptr_ = nullptr;
+  std::unique_ptr<T, katal::test::DeviceFree> ptr_;
   std::size_t size_ = 0;
 };
 
@@ -290,7 +293,8 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   void* scratch = nullptr;
   if (plan.workspace_size() > 0)
     REQUIRE(cudaMalloc(&scratch, plan.workspace_size()) == cudaSuccess);
-  const katal::Workspace ws{scratch, plan.workspace_size()};
+  const std::unique_ptr<void, katal::test::DeviceFree> storage(scratch);
+  const katal::Workspace ws{storage.get(), plan.workspace_size()};
 
   // beta = 1 twice over a zeroed output must give exactly twice one pass.
   plan.execute(1.0, da.get(), db.get(), 0.0, dd.get(), dd.get(), ws);
@@ -303,8 +307,6 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
 
   for (std::size_t i = 0; i < once.size(); ++i)
     REQUIRE_THAT(twice[i], WithinRel(2.0 * once[i], 1e-12));
-
-  cudaFree(scratch);
 }
 
 TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
@@ -323,7 +325,7 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
     }
     void deallocate(katal::Workspace workspace, katal::StreamRef) {
       ++*deallocations;
-      cudaFree(workspace.ptr);
+      katal::test::free_device(workspace.ptr);
     }
   };
   static_assert(katal::WorkspaceAllocator<CountingAllocator>);
