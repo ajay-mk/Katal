@@ -23,7 +23,8 @@ enum class Errc {
   /// Well formed and correctly shaped, but not something Katal lowers: a
   /// free reduction beside a contraction, a broadcast, a diagonal, more
   /// operands than the current lowering handles, or a cuTENSOR operation
-  /// reported as not supported.
+  /// reported as not supported. Also a pointer handed to `Plan::execute` that
+  /// is less aligned than the plan was built for.
   UnsupportedPattern,
   /// The requested compute type cannot represent the operands, or alpha and
   /// beta cannot be expressed in it.

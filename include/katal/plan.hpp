@@ -99,8 +99,10 @@ class Plan {
   /// Computes `d = alpha * <equation over a and b> + beta * c`.
   ///
   /// The pointers are device memory shaped as the TensorRefs this plan was
-  /// built from; anything else is undefined rather than diagnosed. `c` and `d`
-  /// may be the same pointer, which is how to accumulate.
+  /// built from; anything else is undefined rather than diagnosed, except
+  /// that a pointer less aligned than its TensorRef was throws
+  /// `Errc::UnsupportedPattern`. `c` and `d` may be the same pointer, which is
+  /// how to accumulate.
   ///
   /// Throws `Errc::WorkspaceTooSmall` if `workspace` is smaller than
   /// `workspace_size()`, before any work is queued.
@@ -121,10 +123,11 @@ class Plan {
  private:
   explicit Plan(std::unique_ptr<Impl> impl);
   const Impl& impl() const noexcept;
-  friend Plan make_plan(const Context&, const Equation&, const TensorRef&,
-                        const TensorRef&, const TensorRef&, PlanOptions);
-  friend Plan make_plan(const Context&, const Equation&, const TensorRef&,
-                        const TensorRef&, PlanOptions);
+  friend Plan make_plan(const Context&, const Equation&, const ConstTensorRef&,
+                        const ConstTensorRef&, const ConstTensorRef&,
+                        PlanOptions);
+  friend Plan make_plan(const Context&, const Equation&, const ConstTensorRef&,
+                        const ConstTensorRef&, PlanOptions);
 
   std::unique_ptr<Impl> impl_;
 };
@@ -136,28 +139,31 @@ class Plan {
 /// `Errc::ExtentMismatch` when a shared label disagrees across operands, and
 /// `Errc::CutensorError` when cuTENSOR refuses the descriptor.
 /// A cuTENSOR NOT_SUPPORTED status is reported as UnsupportedPattern.
+///
+/// Only shapes, types and alignments are read; no data pointer is, so every
+/// operand, the output included, is taken read-only.
 Plan make_plan(const Context& context, const Equation& equation,
-               const TensorRef& a, const TensorRef& b, const TensorRef& d,
-               PlanOptions options = {});
+               const ConstTensorRef& a, const ConstTensorRef& b,
+               const ConstTensorRef& d, PlanOptions options = {});
 
 /// The one-operand form. Permutation, reduction and copy all go through
 /// cuTENSOR's reduction, its only unary entry point that accepts beta.
 Plan make_plan(const Context& context, const Equation& equation,
-               const TensorRef& a, const TensorRef& d,
+               const ConstTensorRef& a, const ConstTensorRef& d,
                PlanOptions options = {});
 
 /// Looks up a plan in the context's cache, building it on a miss. Returns a
 /// shared plan so the caller keeps it alive even if the cache evicts it, and
 /// so a disabled cache costs the same call.
 std::shared_ptr<const Plan> cached_plan(
-    const Context& context, std::string_view equation, const TensorRef& a,
-    const TensorRef& b, const TensorRef& d,
+    const Context& context, std::string_view equation, const ConstTensorRef& a,
+    const ConstTensorRef& b, const ConstTensorRef& d,
     std::optional<PlanOptions> options = {});
 
 /// The one-operand form.
 std::shared_ptr<const Plan> cached_plan(
-    const Context& context, std::string_view equation, const TensorRef& a,
-    const TensorRef& d, std::optional<PlanOptions> options = {});
+    const Context& context, std::string_view equation, const ConstTensorRef& a,
+    const ConstTensorRef& d, std::optional<PlanOptions> options = {});
 
 /// Look up a cached plan, allocate scratch and run, in one call.
 ///
@@ -165,8 +171,8 @@ std::shared_ptr<const Plan> cached_plan(
 /// plan and allocates scratch; hoist a Plan and its workspace out of a hot loop
 /// to avoid that overhead.
 template <WorkspaceAllocator A = CudaAsyncAllocator>
-void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
-            const TensorRef& b, Scalar beta, const TensorRef& d,
+void einsum(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
+            const ConstTensorRef& b, Scalar beta, const TensorRef& d,
             std::optional<PlanOptions> options = {}, StreamRef stream = {},
             const Context& context = default_context(), A allocator = {}) {
   const std::shared_ptr<const Plan> plan =
@@ -179,7 +185,7 @@ void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
 
 /// The one-operand form: a permutation, a reduction, or a copy.
 template <WorkspaceAllocator A = CudaAsyncAllocator>
-void einsum(std::string_view equation, Scalar alpha, const TensorRef& a,
+void einsum(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
             Scalar beta, const TensorRef& d,
             std::optional<PlanOptions> options = {}, StreamRef stream = {},
             const Context& context = default_context(), A allocator = {}) {

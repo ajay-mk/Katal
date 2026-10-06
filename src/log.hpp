@@ -46,7 +46,7 @@ inline const char* log_dtype(Dtype type) {
   return "unknown";
 }
 
-inline std::string log_tensor(const TensorRef& tensor) {
+inline std::string log_tensor(const ConstTensorRef& tensor) {
   std::ostringstream output;
   output << log_dtype(tensor.type) << '[';
   for (std::size_t i = 0; i < tensor.extent.size(); ++i) {
