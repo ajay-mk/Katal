@@ -26,7 +26,10 @@ class CutensorKernel final : public Kernel {
 
     switch (operation.kind) {
       case OpKind::Contraction: {
-        const Operand& b = operation.inputs.at(1);
+        if (operation.inputs.size() != 2)
+          throw Error(Errc::UnsupportedPattern, operation.equation,
+                      "a contraction takes two inputs");
+        const Operand& b = operation.inputs[1];
         describe(&desc_b_, b);
         // C and D share a descriptor: beta scales the output in place.
         KATAL_CHECK(cutensorCreateContraction(

@@ -12,6 +12,7 @@
 #include "log.hpp"
 
 #include <katal/context.hpp>
+#include <katal/error.hpp>
 #include <katal/plan.hpp>
 
 namespace katal {
@@ -24,13 +25,10 @@ class Context::Impl {
  public:
   explicit Impl(Config config)
       : config_(std::move(config)),
-        backend_(backend::make_cutensor_backend(config_)),
-        device_(backend_->device()) {}
+        backend_(backend::make_cutensor_backend(config_)) {}
 
   Impl(Config config, std::unique_ptr<backend::Backend> backend)
-      : config_(std::move(config)),
-        backend_(std::move(backend)),
-        device_(backend_->device()) {}
+      : config_(std::move(config)), backend_(non_null(std::move(backend))) {}
 
   /// A context that plans and runs through `backend` instead of cuTENSOR,
   /// which is how the host tests watch what the front end lowers.
@@ -40,17 +38,11 @@ class Context::Impl {
         std::make_unique<Impl>(std::move(config), std::move(backend)));
   }
 
-  // Cached plans borrow the backend, so they go first.
-  ~Impl() {
-    index_.clear();
-    plans_.clear();
-  }
-
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
 
   const backend::Backend& backend() const noexcept { return *backend_; }
-  int device() const noexcept { return device_; }
+  int device() const noexcept { return backend_->device(); }
   const Config& config() const noexcept { return config_; }
 
   /// Looks a plan up by key, building it with `make` on a miss. A plan may be
@@ -67,7 +59,7 @@ class Context::Impl {
     // here too: a plan from this cache is no use on another device.
     check_device();
     if (config_.plan_cache_entries == 0) {
-      KATAL_LOG("cache.bypass device=" << device_ << " key="
+      KATAL_LOG("cache.bypass device=" << device() << " key="
                                        << std::hash<std::string>{}(key));
       return std::make_shared<const Plan>(make());
     }
@@ -75,12 +67,12 @@ class Context::Impl {
       const std::lock_guard<std::mutex> lock(mutex_);
       if (auto hit = touch(key)) {
         KATAL_LOG("cache.hit device="
-                  << device_ << " key=" << std::hash<std::string>{}(key)
+                  << device() << " key=" << std::hash<std::string>{}(key)
                   << " equation=" << util::log_quote(hit->equation()));
         return hit;
       }
     }
-    KATAL_LOG("cache.miss device=" << device_
+    KATAL_LOG("cache.miss device=" << device()
                                    << " key=" << std::hash<std::string>{}(key));
     auto plan = std::make_shared<const Plan>(make());
 
@@ -94,15 +86,15 @@ class Context::Impl {
       throw;
     }
     if (plans_.size() > config_.plan_cache_entries) {
-      KATAL_LOG(
-          "cache.evict device="
-          << device_ << " key=" << std::hash<std::string>{}(plans_.back().first)
-          << " equation=" << util::log_quote(plans_.back().second->equation()));
+      KATAL_LOG("cache.evict device="
+                << device() << " key="
+                << std::hash<std::string>{}(plans_.back().first) << " equation="
+                << util::log_quote(plans_.back().second->equation()));
       index_.erase(plans_.back().first);
       plans_.pop_back();
     }
     KATAL_LOG("cache.insert device="
-              << device_ << " key=" << std::hash<std::string>{}(key)
+              << device() << " key=" << std::hash<std::string>{}(key)
               << " equation=" << util::log_quote(plan->equation())
               << " entries=" << plans_.size());
     return plan;
@@ -113,6 +105,13 @@ class Context::Impl {
 
   using Entry = std::pair<std::string, std::shared_ptr<const Plan>>;
 
+  static std::unique_ptr<backend::Backend> non_null(
+      std::unique_ptr<backend::Backend> backend) {
+    if (backend == nullptr)
+      throw Error(Errc::InvalidState, "", "a context needs a backend");
+    return backend;
+  }
+
   /// The cached plan for `key`, moved to the front as the most recently used,
   /// or null. Requires the lock.
   std::shared_ptr<const Plan> touch(const std::string& key) const {
@@ -122,10 +121,11 @@ class Context::Impl {
     return it->second->second;
   }
 
-  // Declared in initialization order: the backend reads the config.
+  // Declared in initialization order: the backend reads the config. Cached
+  // plans borrow the backend, so the cache is declared after it and destroyed
+  // first.
   Config config_;
   std::unique_ptr<backend::Backend> backend_;
-  int device_ = 0;
   mutable std::mutex mutex_;
   /// Most recently used first. Splicing keeps the iterators in `index_` valid.
   mutable std::list<Entry> plans_;

@@ -10,6 +10,7 @@
 
 #include "backend.hpp"
 #include "context_impl.hpp"
+#include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/context.hpp>
@@ -190,6 +191,12 @@ TEST_CASE("one operand lowers to a reduction", "[backend]") {
   REQUIRE(record->operation->inputs.size() == 1);
   CHECK(record->operation->inputs[0].modes == ids("ji"));
   CHECK(record->operation->output.modes == ids("i"));
+}
+
+TEST_CASE("a context refuses a null backend", "[backend]") {
+  REQUIRE(katal::test::thrown_code([] {
+            katal::Context::Impl::with_backend(nullptr);
+          }) == katal::Errc::InvalidState);
 }
 
 TEST_CASE("execute checks its arguments before the kernel runs", "[backend]") {
