@@ -123,6 +123,7 @@ TEST_CASE("managed allocators preserve their stream when rebound", "[tensor]") {
   using Doubles = std::allocator_traits<Bytes>::rebind_alloc<double>;
 
   STATIC_REQUIRE(std::is_same_v<Doubles, katal::ManagedAllocator<double>>);
+  // This token is only stored and compared, never passed to CUDA.
   int stream_token = 0;
   const Bytes bytes(
       katal::StreamRef(reinterpret_cast<CUstream_st*>(&stream_token)));
