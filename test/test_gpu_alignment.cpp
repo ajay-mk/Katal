@@ -32,8 +32,7 @@ TEST_CASE("a contraction on offset pointers is correct", "[gpu]") {
 
   double* base = nullptr;
   REQUIRE(cudaMalloc(&base, 3 * elements * sizeof(double)) == cudaSuccess);
-  const std::unique_ptr<double, decltype(&katal::test::free_device)> storage(
-      base, &katal::test::free_device);
+  const std::unique_ptr<double, katal::test::DeviceFree> storage(base);
   double* const da = base + offset;
   double* const db = base + elements + offset;
   double* const dd = base + 2 * elements + offset;

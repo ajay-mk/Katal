@@ -61,8 +61,7 @@ class DeviceBuffer {
   }
 
  private:
-  std::unique_ptr<T, decltype(&katal::test::free_device)> ptr_{
-      nullptr, &katal::test::free_device};
+  std::unique_ptr<T, katal::test::DeviceFree> ptr_;
   std::size_t size_ = 0;
 };
 
@@ -294,8 +293,7 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   void* scratch = nullptr;
   if (plan.workspace_size() > 0)
     REQUIRE(cudaMalloc(&scratch, plan.workspace_size()) == cudaSuccess);
-  const std::unique_ptr<void, decltype(&katal::test::free_device)> storage(
-      scratch, &katal::test::free_device);
+  const std::unique_ptr<void, katal::test::DeviceFree> storage(scratch);
   const katal::Workspace ws{storage.get(), plan.workspace_size()};
 
   // beta = 1 twice over a zeroed output must give exactly twice one pass.

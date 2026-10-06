@@ -75,8 +75,7 @@ class DeviceBuffer {
  private:
   std::size_t bytes() const noexcept { return size_ * sizeof(T); }
 
-  std::unique_ptr<T, decltype(&katal::test::free_device)> ptr_{
-      nullptr, &katal::test::free_device};
+  std::unique_ptr<T, katal::test::DeviceFree> ptr_;
   std::size_t size_ = 0;
 };
 

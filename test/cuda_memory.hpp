@@ -17,6 +17,10 @@ inline void free_device(void* data) noexcept {
   }
 }
 
+struct DeviceFree {
+  void operator()(void* data) const noexcept { free_device(data); }
+};
+
 }  // namespace katal::test
 
 #endif  // KATAL_TEST_CUDA_MEMORY_HPP_
