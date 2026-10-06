@@ -130,15 +130,26 @@ class Tensor {
   }
 
   /// A reference to write through. Copies share storage, so this is how an
-  /// output is passed; a const Tensor gives only a ConstTensorRef.
-  TensorRef ref() noexcept {
+  /// output is passed; a const Tensor gives only a ConstTensorRef. A
+  /// temporary has none, so a reference cannot be stored from one and then
+  /// outlive the extents it borrows.
+  TensorRef ref() & noexcept {
     return make_ref(data(), type_, {extent_.data(), extent_.size()},
                     Layout::ColumnMajor);
   }
-  ConstTensorRef ref() const noexcept {
+  ConstTensorRef ref() const& noexcept {
     return make_ref(data(), type_, {extent_.data(), extent_.size()},
                     Layout::ColumnMajor);
   }
+  TensorRef ref() && = delete;
+  ConstTensorRef ref() const&& = delete;
+
+  /// Lets a Tensor be passed straight to einsum, make_plan and cached_plan,
+  /// with the same const and temporary rules as ref().
+  operator TensorRef() & noexcept { return ref(); }
+  operator ConstTensorRef() const& noexcept { return ref(); }
+  operator TensorRef() && = delete;
+  operator ConstTensorRef() const&& = delete;
 
  private:
   using Traits = std::allocator_traits<Allocator>;

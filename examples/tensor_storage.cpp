@@ -30,7 +30,7 @@ void matrix_product(const char* label) {
   check_cuda(
       cudaMemcpy(b.data(), bv.data(), sizeof(bv), cudaMemcpyHostToDevice));
 
-  katal::einsum("ab,bc->ac", 1.0, a.ref(), b.ref(), 0.0, d.ref());
+  katal::einsum("ab,bc->ac", 1.0, a, b, 0.0, d);
   check_cuda(cudaStreamSynchronize(nullptr));
   std::array<double, 4> result{};
   check_cuda(cudaMemcpy(result.data(), d.data(), sizeof(result),
