@@ -25,5 +25,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Building and testing: building.md
+  - Equations: equations.md
+  - Errors: errors.md
   - Tensor ownership and allocators: tensors.md
   - Examples: examples.md

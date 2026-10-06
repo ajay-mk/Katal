@@ -10,6 +10,34 @@ stable yet.
 
 ## Quick start
 
+```cpp
+#include <cuda_runtime.h>
+#include <katal/plan.hpp>
+#include <katal/tensor.hpp>
+
+int main() {
+  const katal::Runtime runtime;  // owns the cuTENSOR handle for this scope
+
+  // Device tensors, column-major. Fill them with cudaMemcpy.
+  katal::Tensor<> t2(katal::Dtype::F64, {4, 4, 20, 20});  // i j a b
+  katal::Tensor<> v(katal::Dtype::F64, {20, 20, 20, 20});  // a b c d
+  katal::Tensor<> r(katal::Dtype::F64, {4, 4, 20, 20});   // i j c d
+
+  // r = 0.5 * t2 . v + 1.0 * r, planned once and cached by shape.
+  katal::einsum("ijab,abcd->ijcd", 0.5, t2.ref(), v.ref(), 1.0, r.ref());
+
+  // einsum is asynchronous: wait before reading r or leaving the Runtime.
+  cudaDeviceSynchronize();
+}
+```
+
+For a hot loop, build the `Plan` once with `katal::make_plan` and call
+`execute` each iteration. See [equations](docs/equations.md) for the notation,
+including how a result without `->` is ordered, and [errors](docs/errors.md)
+for what each call throws.
+
+## Building
+
 Needs a C++20 compiler and CMake 3.24 or newer. GPU execution also requires
 the CUDA Toolkit and cuTENSOR; without them, only the host-side layers build.
 
@@ -23,6 +51,8 @@ ctest --test-dir build --output-on-failure
 
 - [Overview](docs/index.md)
 - [Building, testing, and development](docs/building.md)
+- [Equations](docs/equations.md)
+- [Errors](docs/errors.md)
 - [Tensor ownership and allocators](docs/tensors.md)
 - [Examples](docs/examples.md)
 
