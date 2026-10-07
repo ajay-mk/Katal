@@ -277,9 +277,9 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
 
   const std::array<std::int64_t, 2> ea{2, 3}, eb{3, 4}, ed{2, 4};
-  const std::vector<double> a = ramp<double>(6, 1.0);
-  const std::vector<double> b = ramp<double>(12, 0.5);
-  const std::vector<double> zero(8, 0.0);
+  const std::vector<double> a = ramp<double>(elements(ea), 1.0);
+  const std::vector<double> b = ramp<double>(elements(eb), 0.5);
+  const std::vector<double> zero(elements(ed), 0.0);
 
   DeviceBuffer<double> da(a), db(b), dd(zero);
   const katal::TensorRef ar = katal::make_ref(da.get(), katal::Dtype::F64, ea);
@@ -296,17 +296,25 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   const std::unique_ptr<void, katal::test::DeviceFree> storage(scratch);
   const katal::Workspace ws{storage.get(), plan.workspace_size()};
 
-  // beta = 1 twice over a zeroed output must give exactly twice one pass.
+  std::vector<double> expected(zero.size(), 0.0);
+  for (std::int64_t i = 0; i < ea[0]; ++i)
+    for (std::int64_t j = 0; j < eb[1]; ++j)
+      for (std::int64_t k = 0; k < ea[1]; ++k)
+        expected[i * eb[1] + j] += a[i * ea[1] + k] * b[k * eb[1] + j];
+
   plan.execute(1.0, da.get(), db.get(), 0.0, dd.get(), dd.get(), ws);
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
   const std::vector<double> once = dd.to_host();
 
+  // The second execution accumulates into the first result.
   plan.execute(1.0, da.get(), db.get(), 1.0, dd.get(), dd.get(), ws);
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
   const std::vector<double> twice = dd.to_host();
 
-  for (std::size_t i = 0; i < once.size(); ++i)
-    REQUIRE_THAT(twice[i], WithinRel(2.0 * once[i], 1e-12));
+  for (std::size_t i = 0; i < expected.size(); ++i) {
+    REQUIRE_THAT(once[i], WithinRel(expected[i], 1e-12));
+    REQUIRE_THAT(twice[i], WithinRel(2.0 * expected[i], 1e-12));
+  }
 }
 
 TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
@@ -330,8 +338,8 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
   };
   static_assert(katal::WorkspaceAllocator<CountingAllocator>);
 
-  const std::array<std::int64_t, 4> ea{2, 3, 4, 5}, eb{4, 5, 6, 7},
-      ed{2, 3, 6, 7};
+  const std::array<std::int64_t, 4> ea{8, 8, 16, 16}, eb{8, 8, 16, 16},
+      ed{8, 8, 8, 8};
   const std::vector<double> a = ramp<double>(elements(ea), 1.0);
   const std::vector<double> b = ramp<double>(elements(eb), 0.5);
   const std::vector<double> d(elements(ed), 0.0);
@@ -341,14 +349,27 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
   const katal::TensorRef br = katal::make_ref(db.get(), katal::Dtype::F64, eb);
   const katal::TensorRef dr = katal::make_ref(dd.get(), katal::Dtype::F64, ed);
 
+  katal::PlanOptions options;
+  options.algo = katal::Algo::Ttgt;
+  options.workspace = katal::WorkspacePreference::Max;
+  try {
+    const auto plan = katal::cached_plan(
+        katal::default_context(), "ijab,cdba->ijdc", ar, br, dr, options);
+    if (plan->workspace_size() == 0) SKIP("this plan needs no workspace");
+  } catch (const katal::Error& error) {
+    if (error.code() == katal::Errc::UnsupportedPattern)
+      SKIP("no supported TTGT kernel for this contraction");
+    throw;
+  }
+
   int allocations = 0, deallocations = 0;
-  katal::einsum("ijab,abcd->ijcd", 1.0, ar, br, 0.0, dr, {}, {},
+  katal::einsum("ijab,cdba->ijdc", 1.0, ar, br, 0.0, dr, options, {},
                 katal::default_context(),
                 CountingAllocator{&allocations, &deallocations});
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
 
-  // The plan may need no scratch, but if it allocated it must have released.
-  REQUIRE(allocations == deallocations);
+  REQUIRE(allocations == 1);
+  REQUIRE(deallocations == 1);
 
   const std::vector<double> got = dd.to_host();
   std::vector<double> want(d.size(), 0.0);
@@ -356,7 +377,7 @@ TEST_CASE("a caller's allocator supplies the scratch", "[gpu]") {
       katal::make_ref(const_cast<double*>(a.data()), katal::Dtype::F64, ea),
       katal::make_ref(const_cast<double*>(b.data()), katal::Dtype::F64, eb)};
   katal::test::reference_einsum<double>(
-      katal::Equation::parse("ijab,abcd->ijcd"), 1.0, host, 0.0,
+      katal::Equation::parse("ijab,cdba->ijdc"), 1.0, host, 0.0,
       katal::make_ref(want.data(), katal::Dtype::F64, ed));
   for (std::size_t i = 0; i < got.size(); ++i)
     REQUIRE_THAT(got[i], WithinRel(want[i], 1e-12));
@@ -404,7 +425,7 @@ TEST_CASE("every algorithm gives the same answer", "[gpu]") {
   // The coupled-cluster shape, since that is where the algorithms differ.
   const std::array<std::int64_t, 4> ea{2, 3, 4, 5}, eb{4, 5, 6, 7},
       ed{2, 3, 6, 7};
-  const std::vector<double> a = ramp<double>(elements(ea), 1.0);
+  const std::vector<double> a = ramp<double>(6, 1.0);
   const std::vector<double> b = ramp<double>(elements(eb), 0.5);
   const std::vector<double> zero(elements(ed), 0.0);
 
