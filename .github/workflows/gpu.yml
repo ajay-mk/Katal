@@ -1,0 +1,54 @@
+name: gpu
+
+# Runs the gpu-labelled tests on a Modal T4, the only CI job with a device.
+# Pushes to main, pull requests labelled `gpu`, and manual runs. Every other
+# job here only compiles the GPU code.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  gpu-tests:
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'gpu')
+    runs-on: ubuntu-latest
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    steps:
+      # Secrets cannot appear in a job-level `if`, and a fork's pull request
+      # never receives them, so the check is a step. Without the tokens the
+      # job passes with a notice rather than failing every PR.
+      - name: Check for Modal credentials
+        id: modal
+        run: |
+          if [[ -n "${MODAL_TOKEN_ID}" && -n "${MODAL_TOKEN_SECRET}" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::MODAL_TOKEN_ID and MODAL_TOKEN_SECRET are not set; skipping the GPU tests"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.modal.outputs.configured == 'true'
+
+      - uses: actions/setup-python@v6
+        if: steps.modal.outputs.configured == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Install the Modal client
+        if: steps.modal.outputs.configured == 'true'
+        run: pip install modal
+
+      - name: Run ctest -L gpu on a T4
+        if: steps.modal.outputs.configured == 'true'
+        run: modal run tools/modal_gpu.py

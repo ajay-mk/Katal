@@ -39,13 +39,13 @@ foreach(src IN LISTS KATAL_TEST_SOURCES)
     target_compile_definitions(
       ${name} PRIVATE KATAL_ENABLE_LOGGING=$<BOOL:${KATAL_ENABLE_LOGGING}>)
   endif()
-  # The GPU cases SKIP themselves when no device is present, but Catch2's exit
-  # code for an all-skipped run does not match what catch_discover_tests sets as
-  # SKIP_RETURN_CODE, so CTest calls them failures. Labelling them lets a
-  # machine without a device exclude them: ctest --label-exclude gpu.
+  # The GPU cases SKIP themselves when no device is present, or when the device
+  # lacks a kernel or a second GPU. Catch2 exits 4 when every case it ran was
+  # skipped, which CTest reads as a skip only once told so. Labelling them lets
+  # a machine without a device exclude them: ctest --label-exclude gpu.
   if(name MATCHES "test_gpu")
     target_link_libraries(${name} PRIVATE CUDA::cudart)
-    catch_discover_tests(${name} PROPERTIES LABELS gpu)
+    catch_discover_tests(${name} PROPERTIES LABELS gpu SKIP_RETURN_CODE 4)
   else()
     catch_discover_tests(${name})
   endif()
