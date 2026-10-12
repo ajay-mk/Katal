@@ -7,3 +7,6 @@ docs/api/
 # Planning documents are not part of the source tree.
 rough_spec.md
 TODO.md
+
+# Python bytecode from tools/modal_gpu.py.
+__pycache__/
