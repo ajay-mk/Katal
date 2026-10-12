@@ -68,7 +68,10 @@ class CutensorKernel final : public Kernel {
             equation_);
         break;
       case OpKind::Elementwise: {
-        const Operand& b = operation.inputs.at(1);
+        if (operation.inputs.size() != 2)
+          throw Error(Errc::UnsupportedPattern, operation.equation,
+                      "an elementwise operation takes two inputs");
+        const Operand& b = operation.inputs[1];
         describe(&desc_b_, b);
         // cuTENSOR's binary form requires C to share D's descriptor, which
         // would leave no input free to be permuted or broadcast on that side.
