@@ -50,11 +50,11 @@ struct Config {
   std::size_t plan_cache_entries = 128;
 };
 
-/// Owns a cuTENSOR handle. Move-only; `execute` on a plan built from it is
-/// const and stream-safe. A context serves the one CUDA device that was current
-/// when it was built: planning or executing with another device current throws
-/// `Errc::CudaError`. A moved-from context may only be destroyed or assigned
-/// to.
+/// Owns a backend, cuTENSOR by default, and the plan cache. Move-only;
+/// `execute` on a plan built from it is const and stream-safe. A context serves
+/// the one CUDA device that was current when it was built: planning or
+/// executing with another device current throws `Errc::CudaError`. A moved-from
+/// context may only be destroyed or assigned to.
 class Context {
  public:
   explicit Context(Config config = {});
@@ -64,12 +64,13 @@ class Context {
   Context& operator=(const Context&) = delete;
   ~Context();
 
-  /// The CUDA device this context's handle was created on. A plan built here
+  /// The CUDA device this context's backend was created on. A plan built here
   /// is tied to that device.
   int device() const noexcept;
 
-  /// Internal. Public only so the compiled glue can reach the handle without
-  /// putting <cutensor.h> in this header.
+  /// Internal. Public only so the compiled front end can reach the backend
+  /// and plan cache, and so tests can build a context around their own
+  /// backend, without putting any library header in this one.
   class Impl;
   const Impl& impl() const noexcept {
     assert(impl_ != nullptr && "katal: use of a moved-from Context");
@@ -77,6 +78,9 @@ class Context {
   }
 
  private:
+  /// For Impl, which builds a context around a backend it is handed.
+  explicit Context(std::unique_ptr<Impl> impl) noexcept;
+
   std::unique_ptr<Impl> impl_;
 };
 

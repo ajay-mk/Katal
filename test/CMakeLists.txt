@@ -20,8 +20,10 @@ file(GLOB KATAL_TEST_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp")
 
 # The GPU tests need a device to run on, not just cuTENSOR to link against.
+# test_backend needs neither, but tests the compiled library, which only exists
+# with cuTENSOR.
 if(NOT KATAL_HAVE_CUTENSOR)
-  list(FILTER KATAL_TEST_SOURCES EXCLUDE REGEX "test_gpu")
+  list(FILTER KATAL_TEST_SOURCES EXCLUDE REGEX "test_gpu|test_backend")
 endif()
 
 foreach(src IN LISTS KATAL_TEST_SOURCES)
@@ -29,7 +31,11 @@ foreach(src IN LISTS KATAL_TEST_SOURCES)
   add_executable(${name} ${src})
   target_link_libraries(${name} PRIVATE Katal::katal Catch2::Catch2WithMain)
   katal_target_warnings(${name})
-  if(name STREQUAL "test_gpu_logging")
+  if(name STREQUAL "test_backend")
+    # Reaches past the public headers to swap in a recording backend.
+    target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  endif()
+  if(name STREQUAL "test_gpu_logging" OR name STREQUAL "test_backend")
     target_compile_definitions(
       ${name} PRIVATE KATAL_ENABLE_LOGGING=$<BOOL:${KATAL_ENABLE_LOGGING}>)
   endif()

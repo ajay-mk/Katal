@@ -3,6 +3,7 @@
 #include "cuda_status.hpp"
 #include <cuda_runtime.h>
 
+#include <katal/plan.hpp>
 #include <katal/tensor.hpp>
 
 namespace katal::detail {
@@ -50,3 +51,20 @@ void deallocate_managed_bytes(void* data, StreamRef stream) noexcept {
 }
 
 }  // namespace katal::detail
+
+namespace katal {
+
+// The default workspace allocator is CUDA's, not any one backend's.
+Workspace CudaAsyncAllocator::allocate(uint64_t bytes, StreamRef stream) const {
+  Workspace workspace;
+  workspace.ptr = detail::allocate_device_bytes(bytes, stream);
+  workspace.size = bytes;
+  return workspace;
+}
+
+void CudaAsyncAllocator::deallocate(Workspace workspace,
+                                    StreamRef stream) const noexcept {
+  detail::deallocate_device_bytes(workspace.ptr, stream);
+}
+
+}  // namespace katal
