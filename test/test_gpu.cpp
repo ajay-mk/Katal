@@ -425,7 +425,7 @@ TEST_CASE("every algorithm gives the same answer", "[gpu]") {
   // The coupled-cluster shape, since that is where the algorithms differ.
   const std::array<std::int64_t, 4> ea{2, 3, 4, 5}, eb{4, 5, 6, 7},
       ed{2, 3, 6, 7};
-  const std::vector<double> a = ramp<double>(6, 1.0);
+  const std::vector<double> a = ramp<double>(elements(ea), 1.0);
   const std::vector<double> b = ramp<double>(elements(eb), 0.5);
   const std::vector<double> zero(elements(ed), 0.0);
 
