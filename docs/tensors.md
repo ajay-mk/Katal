@@ -24,6 +24,11 @@
   `einsum("ij,jk->ik", 1.0, a, b, 0.0, d)`. A temporary Tensor neither
   converts nor has a `ref()`, so a reference cannot be stored from one and
   outlive the extents it borrows.
+- `a.conj()` is `a` read as its complex conjugate, for passing to `einsum`,
+  the same as `katal::conj(a)`. `a.sum<T>()`, `a.max<T>()` and `a.min<T>()`
+  reduce the whole tensor and return the value to the host, blocking until
+  it arrives; `T` is the element type. To keep the result on the device or
+  reduce only some labels, use `reduce` or the one-operand `einsum`.
 - `Context` owns the cuTENSOR handle and plan cache. `Plan` holds a selected
   operation ready for repeated execution. `einsum` uses cached plans;
   an explicit Plan lets callers hoist setup out of a loop.

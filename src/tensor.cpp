@@ -50,6 +50,15 @@ void deallocate_managed_bytes(void* data, StreamRef stream) noexcept {
   util::check_release(cudaFree(data));
 }
 
+void copy_to_host(void* host, const void* device, std::size_t bytes,
+                  StreamRef stream) {
+  cudaError_t status = cudaMemcpyAsync(host, device, bytes,
+                                       cudaMemcpyDeviceToHost, stream.get());
+  if (status == cudaSuccess) status = cudaStreamSynchronize(stream.get());
+  if (status != cudaSuccess)
+    throw Error(Errc::CudaError, {}, cudaGetErrorString(status));
+}
+
 }  // namespace katal::detail
 
 namespace katal {

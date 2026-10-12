@@ -28,11 +28,16 @@ namespace katal::backend {
 /// What an Operation computes:
 /// - Contraction, `d = alpha * A.B + beta * c`, summing the shared modes the
 ///   output drops.
-/// - Reduction, `d = alpha * sum(A) + beta * c` over the modes the output
-///   drops. A reduction over no modes is a permutation or a copy.
+/// - Reduction, `d = alpha * reduce(A) + beta * c` over the modes the output
+///   drops, reducing with `Operation::binary`. A reduction over no modes is a
+///   permutation or a copy.
 /// - Elementwise, `d = op(alpha * A, beta * B) + gamma * c`, with an input
 ///   broadcast along any output mode it lacks.
-enum class OpKind { Contraction, Reduction, Elementwise };
+/// - Permutation, `d = alpha * A`, with A permuted and broadcast to the
+///   output's modes and converted to its type. No beta, no workspace.
+///
+/// Every input is read through its Operand's unary `op`.
+enum class OpKind { Contraction, Reduction, Elementwise, Permutation };
 
 /// One tensor as the backend sees it: modes in descriptor order, with the
 /// extents and strides (in elements) permuted to match. A mode id is the same
@@ -45,6 +50,8 @@ struct Operand {
   /// The largest power of two, up to 256, that the data pointer is planned to
   /// be aligned to.
   std::uint32_t alignment = 256;
+  /// Applied to each element as an input is read. Identity for the output.
+  UnaryOp op = UnaryOp::Identity;
 };
 
 /// A fully checked request. `c` shares `output`'s layout, so beta scales the
@@ -56,7 +63,8 @@ struct Operation {
   Operand output;
   /// The accumulation type the front end chose.
   Dtype compute = Dtype::F64;
-  /// How an elementwise operation combines its inputs; unused otherwise.
+  /// How an elementwise operation combines its inputs, or how a reduction
+  /// reduces; unused otherwise.
   BinaryOp binary = BinaryOp::Add;
   /// The equation text, which every error a backend raises quotes.
   std::string equation;
@@ -75,10 +83,10 @@ class Kernel {
   virtual std::uint64_t workspace_size() const noexcept = 0;
 
   /// Queues the work on `stream`. `scalars` holds the operation's factors in
-  /// the order OpKind writes them: alpha and beta, or alpha, beta and gamma
-  /// for an elementwise one. `inputs` holds one device pointer per Operation
-  /// input, in the same order. The front end has already checked the device,
-  /// the alignments and the workspace size.
+  /// the order OpKind writes them: alpha and beta, alpha, beta and gamma for
+  /// an elementwise one, or alpha alone for a permutation. `inputs` holds one
+  /// device pointer per Operation input, in the same order. The front end has
+  /// already checked the device, the alignments and the workspace size.
   virtual void run(std::span<const Scalar> scalars,
                    std::span<const void* const> inputs, const void* c, void* d,
                    Workspace workspace, StreamRef stream) const = 0;

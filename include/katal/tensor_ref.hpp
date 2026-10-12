@@ -50,6 +50,41 @@ inline constexpr Dtype dtype_of = DtypeOf<T>::value;
 /// arrays are written in, whether or not those strides are dense.
 enum class Layout { RowMajor, ColumnMajor };
 
+/// An elementwise function applied to a tensor as it is read, without
+/// changing its data. These are cuTENSOR's unary operators. Which ones a
+/// given operation and type accepts is up to the backend; a refusal is
+/// `Errc::UnsupportedPattern` at plan time.
+enum class UnaryOp {
+  Identity,
+  Conj,
+  Neg,
+  Abs,
+  Sqrt,
+  Rcp,  ///< 1 / x
+  Exp,
+  Log,  ///< natural log
+  Sin,
+  Cos,
+  Tan,
+  Sinh,
+  Cosh,
+  Tanh,
+  Asin,
+  Acos,
+  Atan,
+  Asinh,
+  Acosh,
+  Atanh,
+  Ceil,
+  Floor,
+  Relu,
+  Sigmoid,   ///< 1 / (1 + exp(-x))
+  Mish,      ///< x * tanh(softplus(x))
+  Swish,     ///< x * sigmoid(x)
+  SoftPlus,  ///< log(exp(x) + 1)
+  SoftSign,  ///< x / (abs(x) + 1)
+};
+
 /// Extents or strides for one tensor. Fixed capacity, so building a
 /// descriptor allocates nothing.
 using Extents = util::StaticVector<std::int64_t, max_rank>;
@@ -76,17 +111,34 @@ struct BasicTensorRef {
   /// that do not satisfy it.
   /// `make_ref` and `Tensor::ref` derive it from the address.
   std::uint32_t alignment = 256;
+  /// Applied to each element as an input is read; see `apply` and `conj`.
+  /// An output must leave it as `Identity`.
+  UnaryOp op = UnaryOp::Identity;
 
   /// Any reference can be read through.
   operator BasicTensorRef<const void*>() const noexcept  // NOLINT: implicit
     requires std::same_as<Pointer, void*>
   {
-    return {data, type, extent, stride, layout, alignment};
+    return {data, type, extent, stride, layout, alignment, op};
   }
 };
 
 using TensorRef = BasicTensorRef<void*>;
 using ConstTensorRef = BasicTensorRef<const void*>;
+
+/// The same input, read through `op`: `reduce("ij->i", BinaryOp::Max, 1.0,
+/// apply(UnaryOp::Abs, a), 0.0, d)` takes the largest magnitude in each row.
+/// Replaces any operator the reference already carried. Contractions accept
+/// only Identity and Conj.
+inline ConstTensorRef apply(UnaryOp op, ConstTensorRef tensor) noexcept {
+  tensor.op = op;
+  return tensor;
+}
+
+/// The same input, complex conjugated as it is read.
+inline ConstTensorRef conj(const ConstTensorRef& tensor) noexcept {
+  return apply(UnaryOp::Conj, tensor);
+}
 
 /// The largest power of two that divides `data`, capped at 256 so that
 /// equivalent buffers share plans: CUDA allocations are 256-byte aligned, and

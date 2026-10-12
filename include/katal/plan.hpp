@@ -15,7 +15,8 @@
 
 namespace katal {
 
-/// How an elementwise plan combines its two inputs.
+/// How an elementwise plan combines its two inputs, or how a reduction
+/// combines the elements it reduces.
 enum class BinaryOp {
   Add,
   Multiply,
@@ -124,7 +125,10 @@ class Plan {
                StreamRef stream = {}) const;
 
   /// The one-operand form, for a permutation, a reduction or a copy. Throws
-  /// if this plan was built from two operands.
+  /// if this plan was built from two operands. A plan from
+  /// `make_permutation_plan` computes `d = alpha * a`, ignores `c`, and
+  /// throws `Errc::UnsupportedPattern` if beta is not zero or if the bytes
+  /// `a` addresses overlap those `d` does.
   void execute(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
                Workspace workspace, StreamRef stream = {}) const;
 
@@ -154,6 +158,12 @@ class Plan {
   friend Plan make_plan(const Context&, const Equation&, BinaryOp,
                         const ConstTensorRef&, const ConstTensorRef&,
                         const ConstTensorRef&, PlanOptions);
+  friend Plan make_plan(const Context&, const Equation&, BinaryOp,
+                        const ConstTensorRef&, const ConstTensorRef&,
+                        PlanOptions);
+  friend Plan make_permutation_plan(const Context&, const Equation&,
+                                    const ConstTensorRef&,
+                                    const ConstTensorRef&, PlanOptions);
 
   std::unique_ptr<Impl> impl_;
 };
@@ -187,6 +197,24 @@ Plan make_plan(const Context& context, const Equation& equation, BinaryOp op,
                const ConstTensorRef& a, const ConstTensorRef& b,
                const ConstTensorRef& d, PlanOptions options = {});
 
+/// The one-operand form with a choice of reduction: `d = alpha * reduce(a) +
+/// beta * c`, combining the elements over each label the result drops with
+/// `reduce` instead of summing them. `"ij->i"` with `BinaryOp::Max` takes
+/// each row's maximum.
+Plan make_plan(const Context& context, const Equation& equation,
+               BinaryOp reduce, const ConstTensorRef& a,
+               const ConstTensorRef& d, PlanOptions options = {});
+
+/// A dedicated permutation, `d = alpha * a`, through cuTENSOR's own
+/// permutation kernel rather than a reduction. The result may also
+/// broadcast `a` along labels it lacks, as in `"i->ij"`, and may have a
+/// different type, such as F32 from F16 or F64; unless `options.compute` is
+/// set, a conversion accumulates in the wider of the two types. See
+/// `Equation::classify_permutation`.
+Plan make_permutation_plan(const Context& context, const Equation& equation,
+                           const ConstTensorRef& a, const ConstTensorRef& d,
+                           PlanOptions options = {});
+
 /// Looks up a plan in the context's cache, building it on a miss. Returns a
 /// shared plan so the caller keeps it alive even if the cache evicts it, and
 /// so a disabled cache costs the same call.
@@ -205,6 +233,17 @@ std::shared_ptr<const Plan> cached_plan(
     const Context& context, std::string_view equation, BinaryOp op,
     const ConstTensorRef& a, const ConstTensorRef& b, const ConstTensorRef& d,
     std::optional<PlanOptions> options = {});
+
+/// The one-operand form with a choice of reduction.
+std::shared_ptr<const Plan> cached_plan(
+    const Context& context, std::string_view equation, BinaryOp reduce,
+    const ConstTensorRef& a, const ConstTensorRef& d,
+    std::optional<PlanOptions> options = {});
+
+/// The permutation form.
+std::shared_ptr<const Plan> cached_permutation_plan(
+    const Context& context, std::string_view equation, const ConstTensorRef& a,
+    const ConstTensorRef& d, std::optional<PlanOptions> options = {});
 
 /// Look up a cached plan, allocate scratch and run, in one call.
 ///
@@ -235,6 +274,37 @@ void einsum(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
   const util::ScopedWorkspace<A> scratch(allocator, plan->workspace_size(),
                                          stream);
   plan->execute(alpha, a.data, beta, d.data, d.data, scratch.get(), stream);
+}
+
+/// `d = alpha * reduce(a) + beta * d` over the labels the result drops, with
+/// the same caching as einsum. `reduce("ij->i", BinaryOp::Max, 1.0, a, 0.0,
+/// d)` takes each row's maximum.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
+void reduce(std::string_view equation, BinaryOp op, Scalar alpha,
+            const ConstTensorRef& a, Scalar beta, const TensorRef& d,
+            std::optional<PlanOptions> options = {}, StreamRef stream = {},
+            const Context& context = default_context(), A allocator = {}) {
+  const std::shared_ptr<const Plan> plan =
+      cached_plan(context, equation, op, a, d, options);
+  const util::ScopedWorkspace<A> scratch(allocator, plan->workspace_size(),
+                                         stream);
+  plan->execute(alpha, a.data, beta, d.data, d.data, scratch.get(), stream);
+}
+
+/// `d = alpha * a`, permuted, broadcast and converted to d's type, through a
+/// dedicated permutation kernel. `a` must not overlap `d`, which throws. To
+/// accumulate into d,
+/// use the one-operand einsum.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
+void permute(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
+             const TensorRef& d, std::optional<PlanOptions> options = {},
+             StreamRef stream = {}, const Context& context = default_context(),
+             A allocator = {}) {
+  const std::shared_ptr<const Plan> plan =
+      cached_permutation_plan(context, equation, a, d, options);
+  const util::ScopedWorkspace<A> scratch(allocator, plan->workspace_size(),
+                                         stream);
+  plan->execute(alpha, a.data, 0.0, d.data, d.data, scratch.get(), stream);
 }
 
 /// `d = op(alpha * a, beta * b) + gamma * d`, with the same caching as

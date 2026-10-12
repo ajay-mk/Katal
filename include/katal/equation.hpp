@@ -80,6 +80,15 @@ class Equation {
   /// Same, reporting through `ec`.
   Classification classify_elementwise(std::error_code& ec) const noexcept;
 
+  /// Checks the equation as a permutation of one input, which may also
+  /// broadcast it along result labels it lacks but sums over nothing. The
+  /// kind is `Permute`, or `Copy` when the result repeats the input.
+  /// Throws `Errc::UnsupportedPattern` otherwise, naming the labels.
+  Classification classify_permutation() const;
+
+  /// Same, reporting through `ec`.
+  Classification classify_permutation(std::error_code& ec) const noexcept;
+
  private:
   util::Index make_index(std::string_view piece) const;
   util::Index implicit_result() const;
@@ -311,6 +320,39 @@ inline Classification Equation::classify_elementwise(
   try {
     ec.clear();
     return classify_elementwise();
+  } catch (const Error& e) {
+    ec = make_error_code(e.code());
+  } catch (...) {
+    ec = make_error_code(Errc::UnsupportedPattern);
+  }
+  return Classification{};
+}
+
+inline Classification Equation::classify_permutation() const {
+  check_repeats();
+  if (operands_.size() != 1)
+    throw Error(Errc::UnsupportedPattern, text_,
+                "a permutation takes one input, not " +
+                    std::to_string(operands_.size()));
+
+  const util::Index &a = operands_[0], &d = result_;
+  if (const util::Index summed = a - d; summed.rank() > 0)
+    throw Error(Errc::UnsupportedPattern, text_,
+                "label(s) " + quoted(summed) +
+                    " appear in the input but not in the result; a "
+                    "permutation sums over nothing, so use einsum or reduce");
+
+  Classification c;
+  c.kind = (a == d) ? Lowering::Copy : Lowering::Permute;
+  c.broadcast = d - a;
+  return c;
+}
+
+inline Classification Equation::classify_permutation(
+    std::error_code& ec) const noexcept {
+  try {
+    ec.clear();
+    return classify_permutation();
   } catch (const Error& e) {
     ec = make_error_code(e.code());
   } catch (...) {
