@@ -1,15 +1,18 @@
 #ifndef KATAL_TENSOR_HPP_
 #define KATAL_TENSOR_HPP_
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <new>
+#include <string>
 #include <type_traits>
 #include <utility>
 
 #include <katal/context.hpp>
+#include <katal/plan.hpp>
 #include <katal/tensor_ref.hpp>
 
 namespace katal {
@@ -20,6 +23,29 @@ void* allocate_device_bytes(std::size_t bytes, StreamRef stream);
 void deallocate_device_bytes(void* data, StreamRef stream) noexcept;
 void* allocate_managed_bytes(std::size_t bytes);
 void deallocate_managed_bytes(void* data, StreamRef stream) noexcept;
+/// Copies device bytes to the host once `stream` reaches the copy, and waits.
+void copy_to_host(void* host, const void* device, std::size_t bytes,
+                  StreamRef stream);
+
+/// `"abc->"` for rank 3: the equation that reduces every label away. Letters
+/// first, then any other byte the grammar accepts as a label, so every rank
+/// an equation can spell has one.
+inline std::string full_reduction_equation(std::size_t rank) {
+  std::string text;
+  const auto take = [&](unsigned char b) {
+    const char c = static_cast<char>(b);
+    if (text.size() < rank && c != ',' && c != '-' && c != '>' &&
+        !util::Index::is_space(c) && text.find(c) == std::string::npos)
+      text.push_back(c);
+  };
+  for (unsigned char b = 'a'; b <= 'z'; ++b) take(b);
+  for (unsigned char b = 'A'; b <= 'Z'; ++b) take(b);
+  for (int b = 1; b < 256; ++b) take(static_cast<unsigned char>(b));
+  if (text.size() < rank)
+    throw Error(Errc::RankMismatch, {},
+                "too many modes to label in one equation");
+  return text + "->";
+}
 
 }  // namespace detail
 
@@ -151,7 +177,54 @@ class Tensor {
   operator TensorRef() && = delete;
   operator ConstTensorRef() const&& = delete;
 
+  /// This tensor, complex conjugated as it is read, for passing to einsum:
+  /// `einsum("ij,jk->ik", 1.0, a.conj(), b, 0.0, d)`. The data is unchanged.
+  /// The same as `katal::conj(a)`.
+  ConstTensorRef conj() const& noexcept { return katal::conj(ref()); }
+  ConstTensorRef conj() const&& = delete;
+
+  /// The sum of every element, returned to the host. T is the element type,
+  /// so `a.sum<double>()` on an F64 tensor; another T is `DtypeMismatch`.
+  /// Like the other whole-tensor reductions, this runs on `stream` and blocks
+  /// until the result is back, using the default context. To keep it on the
+  /// device, reduce only some labels or use another context, call `reduce`
+  /// or the one-operand einsum.
+  template <class T>
+  T sum(StreamRef stream = {}) const {
+    return reduce_all<T>(BinaryOp::Add, stream);
+  }
+
+  /// The largest element, returned to the host. Real types only.
+  template <std::floating_point T>
+  T max(StreamRef stream = {}) const {
+    return reduce_all<T>(BinaryOp::Max, stream);
+  }
+
+  /// The smallest element, returned to the host. Real types only.
+  template <std::floating_point T>
+  T min(StreamRef stream = {}) const {
+    return reduce_all<T>(BinaryOp::Min, stream);
+  }
+
  private:
+  template <class T>
+  T reduce_all(BinaryOp op, StreamRef stream) const {
+    if (dtype_of<T> != type_)
+      throw Error(Errc::DtypeMismatch, {},
+                  "the result type must be the tensor's element type");
+    T result{};
+    if (extent_.empty()) {
+      // One element: it is its own sum, maximum and minimum.
+      detail::copy_to_host(&result, data(), sizeof(T), stream);
+      return result;
+    }
+    const util::ScopedWorkspace<CudaAsyncAllocator> out({}, sizeof(T), stream);
+    reduce(detail::full_reduction_equation(extent_.size()), op, 1.0, ref(), 0.0,
+           make_ref(out.get().ptr, type_, {}, Layout::ColumnMajor), {}, stream);
+    detail::copy_to_host(&result, out.get().ptr, sizeof(T), stream);
+    return result;
+  }
+
   using Traits = std::allocator_traits<Allocator>;
 
   class Storage {

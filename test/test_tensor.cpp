@@ -1,9 +1,12 @@
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <new>
 #include <optional>
+#include <set>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -32,6 +35,12 @@ template <class T>
 constexpr bool einsum_writes_const = requires(T& t, const T& c) {
   katal::einsum("ij,jk->ik", 1.0, t, t, 0.0, c);
 };
+
+template <class T, class U>
+constexpr bool has_max = requires(const T& t) { t.template max<U>(); };
+
+template <class T>
+constexpr bool has_temporary_conj = requires { std::declval<T>().conj(); };
 
 }  // namespace
 
@@ -200,4 +209,34 @@ TEST_CASE("a tensor converts to the reference ref() returns", "[tensor]") {
   same(write);
   same(read);
   same(read_const);
+}
+
+TEST_CASE("a tensor reads as its conjugate without changing", "[tensor]") {
+  using Tensor = katal::Tensor<std::allocator<std::byte>>;
+  STATIC_REQUIRE(!has_temporary_conj<Tensor>);
+
+  const Tensor tensor(katal::Dtype::C64, {2, 3});
+  const katal::ConstTensorRef read = tensor.conj();
+  REQUIRE(read.op == katal::UnaryOp::Conj);
+  REQUIRE(read.data == tensor.data());
+  REQUIRE(read.extent.data() == tensor.extents().data());
+  REQUIRE(tensor.ref().op == katal::UnaryOp::Identity);
+}
+
+TEST_CASE("whole-tensor reductions check the result type", "[tensor]") {
+  using Tensor = katal::Tensor<std::allocator<std::byte>>;
+  REQUIRE(katal::detail::full_reduction_equation(0) == "->");
+  REQUIRE(katal::detail::full_reduction_equation(3) == "abc->");
+
+  // Past the letters, any byte the grammar accepts, so a configured
+  // max_rank above 52 still has distinct labels.
+  const std::string many = katal::detail::full_reduction_equation(200);
+  const std::string labels = many.substr(0, many.size() - 2);
+  REQUIRE(labels.size() == 200);
+  REQUIRE(std::set<char>(labels.begin(), labels.end()).size() == 200);
+  REQUIRE(labels.find_first_of(",-> \t\n\v\f\r") == std::string::npos);
+
+  // A maximum or minimum is only ordered for real types.
+  STATIC_REQUIRE(has_max<Tensor, double>);
+  STATIC_REQUIRE(!has_max<Tensor, std::complex<double>>);
 }
