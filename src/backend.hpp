@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -24,10 +25,14 @@
 /// make_cutensor_backend. Devices are still CUDA devices.
 namespace katal::backend {
 
-/// What an Operation computes, `d = alpha * op(inputs) + beta * c`:
-/// a contraction of two inputs, or a reduction of one input over the modes
-/// the output drops. A reduction over no modes is a permutation or a copy.
-enum class OpKind { Contraction, Reduction };
+/// What an Operation computes:
+/// - Contraction, `d = alpha * A.B + beta * c`, summing the shared modes the
+///   output drops.
+/// - Reduction, `d = alpha * sum(A) + beta * c` over the modes the output
+///   drops. A reduction over no modes is a permutation or a copy.
+/// - Elementwise, `d = op(alpha * A, beta * B) + gamma * c`, with an input
+///   broadcast along any output mode it lacks.
+enum class OpKind { Contraction, Reduction, Elementwise };
 
 /// One tensor as the backend sees it: modes in descriptor order, with the
 /// extents and strides (in elements) permuted to match. A mode id is the same
@@ -51,6 +56,8 @@ struct Operation {
   Operand output;
   /// The accumulation type the front end chose.
   Dtype compute = Dtype::F64;
+  /// How an elementwise operation combines its inputs; unused otherwise.
+  BinaryOp binary = BinaryOp::Add;
   /// The equation text, which every error a backend raises quotes.
   std::string equation;
 };
@@ -67,12 +74,14 @@ class Kernel {
   /// The scratch `run` needs, which may be zero.
   virtual std::uint64_t workspace_size() const noexcept = 0;
 
-  /// Queues the work on `stream`. `inputs` holds one device pointer per
-  /// Operation input, in the same order. The front end has already checked
-  /// the device, the alignments and the workspace size.
-  virtual void run(Scalar alpha, const void* const* inputs, Scalar beta,
-                   const void* c, void* d, Workspace workspace,
-                   StreamRef stream) const = 0;
+  /// Queues the work on `stream`. `scalars` holds the operation's factors in
+  /// the order OpKind writes them: alpha and beta, or alpha, beta and gamma
+  /// for an elementwise one. `inputs` holds one device pointer per Operation
+  /// input, in the same order. The front end has already checked the device,
+  /// the alignments and the workspace size.
+  virtual void run(std::span<const Scalar> scalars,
+                   std::span<const void* const> inputs, const void* c, void* d,
+                   Workspace workspace, StreamRef stream) const = 0;
 };
 
 /// One library on one device. A Context owns exactly one, and every Kernel it

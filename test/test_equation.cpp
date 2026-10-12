@@ -2,6 +2,7 @@
 #include <string>
 #include <system_error>
 
+#include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/equation.hpp>
@@ -10,6 +11,7 @@ using katal::Classification;
 using katal::Equation;
 using katal::Errc;
 using katal::Lowering;
+using katal::test::thrown_code;
 
 namespace {
 
@@ -250,4 +252,65 @@ TEST_CASE("the error_code overloads agree with the throwing ones",
   ec.clear();
   Equation::parse("ijk,kl->il").classify(ec);
   REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+}
+
+TEST_CASE("elementwise classification", "[equation]") {
+  SECTION("matching labels in any order") {
+    const Classification c =
+        Equation::parse("jiab,ijab->ijab").classify_elementwise();
+    REQUIRE(c.kind == Lowering::Elementwise);
+    REQUIRE(c.batch == katal::util::Index("jiab"));
+    REQUIRE(c.broadcast.rank() == 0);
+  }
+
+  SECTION("an input lacking a result label is broadcast along it") {
+    const Classification c =
+        Equation::parse("ijab,ab->ijab").classify_elementwise();
+    REQUIRE(c.batch == katal::util::Index("ab"));
+    REQUIRE(c.broadcast == katal::util::Index("ij"));
+  }
+
+  SECTION("a result label in neither input is broadcast from both") {
+    const Classification c = Equation::parse("i,j->ijk").classify_elementwise();
+    REQUIRE(c.batch.rank() == 0);
+    REQUIRE(c.broadcast == katal::util::Index("ijk"));
+  }
+
+  SECTION("an equation einsum would contract is not elementwise") {
+    try {
+      Equation::parse("ij,jk->ik").classify_elementwise();
+      FAIL("expected a rejection");
+    } catch (const katal::Error& e) {
+      REQUIRE(e.code() == Errc::UnsupportedPattern);
+      REQUIRE(mentions(e, "label(s) \"j\" appear"));
+    }
+  }
+
+  SECTION("summed labels from both inputs can exceed one index") {
+    const std::string text =
+        distinct_labels(0) + "," + distinct_labels(1) + "->";
+    REQUIRE(thrown_code([&] {
+              Equation::parse(text).classify_elementwise();
+            }) == Errc::UnsupportedPattern);
+  }
+
+  SECTION("one or three inputs") {
+    std::error_code ec;
+    Equation::parse("ij->ji").classify_elementwise(ec);
+    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+    Equation::parse("ij,ij,ij->ij").classify_elementwise(ec);
+    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+  }
+
+  SECTION("a repeated label is still rejected") {
+    std::error_code ec;
+    Equation::parse("ii,ij->ij").classify_elementwise(ec);
+    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+  }
+
+  SECTION("the error_code overload clears on success") {
+    std::error_code ec = katal::make_error_code(Errc::ParseError);
+    Equation::parse("ij,j->ij").classify_elementwise(ec);
+    REQUIRE_FALSE(ec);
+  }
 }

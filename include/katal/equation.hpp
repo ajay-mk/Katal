@@ -14,7 +14,7 @@
 namespace katal {
 
 /// The kernel an equation lowers to.
-enum class Lowering { Contract, Permute, Reduce, Copy };
+enum class Lowering { Contract, Permute, Reduce, Copy, Elementwise };
 
 /// How each mode of an equation participates. The sets are named from the
 /// contraction's point of view; only the ones the chosen lowering needs are
@@ -26,6 +26,9 @@ struct Classification {
   util::Index free_a;      ///< in A and the result only
   util::Index free_b;      ///< in B and the result only
   util::Index reduced;  ///< unary only: present in A, dropped from the result
+  /// Elementwise only: in the result but missing from an input, which is
+  /// broadcast along it.
+  util::Index broadcast;
 };
 
 /// A parsed einsum equation: the operand indices and the result index.
@@ -68,11 +71,21 @@ class Equation {
   /// Same, reporting through `ec`.
   Classification classify(std::error_code& ec) const noexcept;
 
+  /// Checks the equation as an elementwise operation on two inputs, which
+  /// pairs elements by label rather than summing over shared ones. A label an
+  /// input lacks is broadcast; every input label must appear in the result.
+  /// Throws `Errc::UnsupportedPattern` otherwise, naming the labels.
+  Classification classify_elementwise() const;
+
+  /// Same, reporting through `ec`.
+  Classification classify_elementwise(std::error_code& ec) const noexcept;
+
  private:
   util::Index make_index(std::string_view piece) const;
   util::Index implicit_result() const;
   Classification classify_unary() const;
   Classification classify_binary() const;
+  void check_repeats() const;
 
   /// Renders an index for a diagnostic. Multi-character labels come back
   /// space separated, which is how they were written.
@@ -229,7 +242,7 @@ inline Classification Equation::classify_unary() const {
   return c;
 }
 
-inline Classification Equation::classify() const {
+inline void Equation::check_repeats() const {
   if (operands_.empty())
     throw Error(Errc::ParseError, text_, "the equation has no operands");
 
@@ -243,6 +256,10 @@ inline Classification Equation::classify() const {
     throw Error(Errc::UnsupportedPattern, text_,
                 "the result " + quoted(result_) +
                     " repeats a label; writing a diagonal is not expressible");
+}
+
+inline Classification Equation::classify() const {
+  check_repeats();
 
   // With at most two operands and no repeats within one, no label can occur
   // more than twice, so that rejection is the arity check below.
@@ -256,6 +273,44 @@ inline Classification Equation::classify(std::error_code& ec) const noexcept {
   try {
     ec.clear();
     return classify();
+  } catch (const Error& e) {
+    ec = make_error_code(e.code());
+  } catch (...) {
+    ec = make_error_code(Errc::UnsupportedPattern);
+  }
+  return Classification{};
+}
+
+inline Classification Equation::classify_elementwise() const {
+  check_repeats();
+  if (operands_.size() != 2)
+    throw Error(Errc::UnsupportedPattern, text_,
+                "an elementwise operation takes two inputs, not " +
+                    std::to_string(operands_.size()));
+
+  const util::Index &a = operands_[0], &b = operands_[1], &d = result_;
+  // Checked and rendered per input, as in classify_binary: the two together
+  // can carry more labels than one index holds.
+  const util::Index summed_a = a - d, summed_b = b - d;
+  if (summed_a.rank() > 0 || summed_b.rank() > 0)
+    throw Error(Errc::UnsupportedPattern, text_,
+                "label(s) \"" + std::string(summed_a) +
+                    std::string(summed_b - summed_a) + "\"" +
+                    " appear in an input but not in the result; an "
+                    "elementwise operation sums over nothing, so use einsum");
+
+  Classification c;
+  c.kind = Lowering::Elementwise;
+  c.batch = a & b;
+  c.broadcast = d - (a & b);
+  return c;
+}
+
+inline Classification Equation::classify_elementwise(
+    std::error_code& ec) const noexcept {
+  try {
+    ec.clear();
+    return classify_elementwise();
   } catch (const Error& e) {
     ec = make_error_code(e.code());
   } catch (...) {

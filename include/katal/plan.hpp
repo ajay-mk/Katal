@@ -15,6 +15,16 @@
 
 namespace katal {
 
+/// How an elementwise plan combines its two inputs.
+enum class BinaryOp {
+  Add,
+  Multiply,
+  /// The larger of the two.
+  Max,
+  /// The smaller of the two.
+  Min,
+};
+
 /// Scratch Katal does not own.
 struct Workspace {
   /// Device memory owned by the caller, which must stay alive until the
@@ -118,6 +128,19 @@ class Plan {
   void execute(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
                Workspace workspace, StreamRef stream = {}) const;
 
+  /// The elementwise form: `d = op(alpha * a, beta * b) + gamma * c`, where
+  /// an input lacking a label of the result is broadcast along it. Throws if
+  /// this plan is not elementwise.
+  ///
+  /// `c` and `d` may be the same pointer, which is how to accumulate; when
+  /// gamma is zero, `c` is not read. `a` and `b` must not overlap `d`, and
+  /// passing either as `d` throws `Errc::UnsupportedPattern`. A zero alpha or
+  /// beta skips that input, so only `BinaryOp::Add` accepts one; the other
+  /// operators throw `Errc::UnsupportedPattern`.
+  void execute(Scalar alpha, const void* a, Scalar beta, const void* b,
+               Scalar gamma, const void* c, void* d, Workspace workspace,
+               StreamRef stream = {}) const;
+
   class Impl;
 
  private:
@@ -127,6 +150,9 @@ class Plan {
                         const ConstTensorRef&, const ConstTensorRef&,
                         PlanOptions);
   friend Plan make_plan(const Context&, const Equation&, const ConstTensorRef&,
+                        const ConstTensorRef&, PlanOptions);
+  friend Plan make_plan(const Context&, const Equation&, BinaryOp,
+                        const ConstTensorRef&, const ConstTensorRef&,
                         const ConstTensorRef&, PlanOptions);
 
   std::unique_ptr<Impl> impl_;
@@ -152,6 +178,15 @@ Plan make_plan(const Context& context, const Equation& equation,
                const ConstTensorRef& a, const ConstTensorRef& d,
                PlanOptions options = {});
 
+/// The elementwise form, `d = op(alpha * a, beta * b) + gamma * c`. The
+/// equation names how the inputs line up with the result, as in
+/// `"jiab,ijab->ijab"` or, broadcasting b along i and j, `"ijab,ab->ijab"`.
+/// Every input label must appear in the result; see
+/// `Equation::classify_elementwise`.
+Plan make_plan(const Context& context, const Equation& equation, BinaryOp op,
+               const ConstTensorRef& a, const ConstTensorRef& b,
+               const ConstTensorRef& d, PlanOptions options = {});
+
 /// Looks up a plan in the context's cache, building it on a miss. Returns a
 /// shared plan so the caller keeps it alive even if the cache evicts it, and
 /// so a disabled cache costs the same call.
@@ -164,6 +199,12 @@ std::shared_ptr<const Plan> cached_plan(
 std::shared_ptr<const Plan> cached_plan(
     const Context& context, std::string_view equation, const ConstTensorRef& a,
     const ConstTensorRef& d, std::optional<PlanOptions> options = {});
+
+/// The elementwise form.
+std::shared_ptr<const Plan> cached_plan(
+    const Context& context, std::string_view equation, BinaryOp op,
+    const ConstTensorRef& a, const ConstTensorRef& b, const ConstTensorRef& d,
+    std::optional<PlanOptions> options = {});
 
 /// Look up a cached plan, allocate scratch and run, in one call.
 ///
@@ -194,6 +235,64 @@ void einsum(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
   const util::ScopedWorkspace<A> scratch(allocator, plan->workspace_size(),
                                          stream);
   plan->execute(alpha, a.data, beta, d.data, d.data, scratch.get(), stream);
+}
+
+/// `d = op(alpha * a, beta * b) + gamma * d`, with the same caching as
+/// einsum. A label an input lacks is broadcast, so `"ij,j->ij"` adds a row
+/// vector to every row. `a` and `b` must not be `d`.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
+void elementwise(std::string_view equation, BinaryOp op, Scalar alpha,
+                 const ConstTensorRef& a, Scalar beta, const ConstTensorRef& b,
+                 Scalar gamma, const TensorRef& d,
+                 std::optional<PlanOptions> options = {}, StreamRef stream = {},
+                 const Context& context = default_context(), A allocator = {}) {
+  const std::shared_ptr<const Plan> plan =
+      cached_plan(context, equation, op, a, b, d, options);
+  const util::ScopedWorkspace<A> scratch(allocator, plan->workspace_size(),
+                                         stream);
+  plan->execute(alpha, a.data, beta, b.data, gamma, d.data, d.data,
+                scratch.get(), stream);
+}
+
+/// `d = alpha * a + beta * b`, overwriting d. For example,
+/// `add("jiab,ijab->ijab", 1.0, t, -1.0, t, d)` antisymmetrizes t.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
+void add(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
+         Scalar beta, const ConstTensorRef& b, const TensorRef& d,
+         std::optional<PlanOptions> options = {}, StreamRef stream = {},
+         const Context& context = default_context(), A allocator = {}) {
+  elementwise(equation, BinaryOp::Add, alpha, a, beta, b, 0.0, d, options,
+              stream, context, allocator);
+}
+
+/// `d = (alpha * a) * (beta * b)` elementwise, overwriting d.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
+void multiply(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
+              Scalar beta, const ConstTensorRef& b, const TensorRef& d,
+              std::optional<PlanOptions> options = {}, StreamRef stream = {},
+              const Context& context = default_context(), A allocator = {}) {
+  elementwise(equation, BinaryOp::Multiply, alpha, a, beta, b, 0.0, d, options,
+              stream, context, allocator);
+}
+
+/// `d = max(alpha * a, beta * b)` elementwise, overwriting d.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
+void max(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
+         Scalar beta, const ConstTensorRef& b, const TensorRef& d,
+         std::optional<PlanOptions> options = {}, StreamRef stream = {},
+         const Context& context = default_context(), A allocator = {}) {
+  elementwise(equation, BinaryOp::Max, alpha, a, beta, b, 0.0, d, options,
+              stream, context, allocator);
+}
+
+/// `d = min(alpha * a, beta * b)` elementwise, overwriting d.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
+void min(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
+         Scalar beta, const ConstTensorRef& b, const TensorRef& d,
+         std::optional<PlanOptions> options = {}, StreamRef stream = {},
+         const Context& context = default_context(), A allocator = {}) {
+  elementwise(equation, BinaryOp::Min, alpha, a, beta, b, 0.0, d, options,
+              stream, context, allocator);
 }
 
 }  // namespace katal

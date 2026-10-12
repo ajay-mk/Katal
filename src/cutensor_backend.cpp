@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -12,6 +13,20 @@
 
 namespace katal::backend {
 namespace {
+
+cutensorOperator_t to_cutensor(BinaryOp op) {
+  switch (op) {
+    case BinaryOp::Add:
+      return CUTENSOR_OP_ADD;
+    case BinaryOp::Multiply:
+      return CUTENSOR_OP_MUL;
+    case BinaryOp::Max:
+      return CUTENSOR_OP_MAX;
+    case BinaryOp::Min:
+      return CUTENSOR_OP_MIN;
+  }
+  return CUTENSOR_OP_ADD;
+}
 
 class CutensorKernel final : public Kernel {
  public:
@@ -52,6 +67,24 @@ class CutensorKernel final : public Kernel {
                 d.modes.data(), CUTENSOR_OP_ADD, compute),
             equation_);
         break;
+      case OpKind::Elementwise: {
+        if (operation.inputs.size() != 2)
+          throw Error(Errc::UnsupportedPattern, operation.equation,
+                      "an elementwise operation takes two inputs");
+        const Operand& b = operation.inputs[1];
+        describe(&desc_b_, b);
+        // cuTENSOR's binary form requires C to share D's descriptor, which
+        // would leave no input free to be permuted or broadcast on that side.
+        // The trinary form frees both inputs, with D as C for the gamma term.
+        KATAL_CHECK(
+            cutensorCreateElementwiseTrinary(
+                handle_, &op_, desc_a_, a.modes.data(), CUTENSOR_OP_IDENTITY,
+                desc_b_, b.modes.data(), CUTENSOR_OP_IDENTITY, desc_d_,
+                d.modes.data(), CUTENSOR_OP_IDENTITY, desc_d_, d.modes.data(),
+                to_cutensor(operation.binary), CUTENSOR_OP_ADD, compute),
+            equation_);
+        break;
+      }
     }
     kind_ = operation.kind;
     read_scalar_type();
@@ -74,11 +107,12 @@ class CutensorKernel final : public Kernel {
     return workspace_size_;
   }
 
-  void run(Scalar alpha, const void* const* inputs, Scalar beta, const void* c,
-           void* d, Workspace workspace, StreamRef stream) const override {
+  void run(std::span<const Scalar> scalars, std::span<const void* const> inputs,
+           const void* c, void* d, Workspace workspace,
+           StreamRef stream) const override {
     // Stack objects, so this path still allocates nothing.
-    const util::ScalarBytes alpha_bytes(alpha, scalar_type_);
-    const util::ScalarBytes beta_bytes(beta, scalar_type_);
+    const util::ScalarBytes alpha_bytes(scalars[0], scalar_type_);
+    const util::ScalarBytes beta_bytes(scalars[1], scalar_type_);
     switch (kind_) {
       case OpKind::Contraction:
         KATAL_CHECK(
@@ -93,6 +127,15 @@ class CutensorKernel final : public Kernel {
                                    workspace.ptr, workspace.size, stream.get()),
                     equation_);
         return;
+      case OpKind::Elementwise: {
+        const util::ScalarBytes gamma_bytes(scalars[2], scalar_type_);
+        KATAL_CHECK(cutensorElementwiseTrinaryExecute(
+                        handle_, plan_, alpha_bytes.data(), inputs[0],
+                        beta_bytes.data(), inputs[1], gamma_bytes.data(), c, d,
+                        stream.get()),
+                    equation_);
+        return;
+      }
     }
   }
 

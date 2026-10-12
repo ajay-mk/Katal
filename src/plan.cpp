@@ -1,5 +1,6 @@
 #include <array>
 #include <cassert>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -39,10 +40,14 @@ void append_tensor(std::string& key, const ConstTensorRef& t) {
   append(key, t.stride.data(), t.stride.size_bytes());
 }
 
+/// `op` is -1 for an einsum plan, which the tensor count already tells apart
+/// from a one-operand one, and the BinaryOp for an elementwise plan.
 std::string plan_key(std::string_view equation, PlanOptions options,
-                     std::initializer_list<const ConstTensorRef*> tensors) {
+                     std::initializer_list<const ConstTensorRef*> tensors,
+                     int32_t op = -1) {
   std::string key(equation);
   key.push_back('\0');
+  append(key, &op, sizeof(op));
   const int32_t compute =
       options.compute ? static_cast<int32_t>(*options.compute) : -1;
   append(key, &compute, sizeof(compute));
@@ -99,10 +104,13 @@ void check_extents(
 /// backend::Operation here; the backend's Kernel holds the rest.
 class Plan::Impl {
  public:
+  /// Which execute overload a plan answers to.
+  enum class Form { Contraction, OneOperand, Elementwise };
+
   Impl(const Context& context, const Equation& equation,
        const ConstTensorRef& a, const ConstTensorRef& b,
        const ConstTensorRef& d, const PlanOptions& options)
-      : Impl(context, equation, 2) {
+      : Impl(context, equation, Form::Contraction) {
     const Classification classification = equation.classify();
     if (classification.kind != Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
@@ -124,7 +132,7 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation,
        const ConstTensorRef& a, const ConstTensorRef& d,
        const PlanOptions& options)
-      : Impl(context, equation, 1) {
+      : Impl(context, equation, Form::OneOperand) {
     if (equation.classify().kind == Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "this equation has two operands; use the two-operand form");
@@ -139,13 +147,34 @@ class Plan::Impl {
     alignment_ = {a.alignment, 0, d.alignment};
   }
 
+  /// The elementwise form.
+  Impl(const Context& context, const Equation& equation, BinaryOp binary,
+       const ConstTensorRef& a, const ConstTensorRef& b,
+       const ConstTensorRef& d, const PlanOptions& options)
+      : Impl(context, equation, Form::Elementwise) {
+    equation.classify_elementwise();
+
+    backend::Operation op;
+    op.kind = backend::OpKind::Elementwise;
+    op.binary = binary;
+    binary_ = binary;
+    op.inputs = {operand(equation.operand(0), a),
+                 operand(equation.operand(1), b)};
+    op.output = operand(equation.result(), d);
+    check_extents(equation, {{&equation.operand(0), &a},
+                             {&equation.operand(1), &b},
+                             {&equation.result(), &d}});
+    finish(std::move(op), d, options);
+    alignment_ = {a.alignment, b.alignment, d.alignment};
+  }
+
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
 
   uint64_t workspace_size() const noexcept { return kernel_->workspace_size(); }
   std::string_view equation() const noexcept { return equation_; }
 
-  std::size_t n_operands() const noexcept { return n_operands_; }
+  Form form() const noexcept { return form_; }
 
   void contract(Scalar alpha, const void* a, const void* b, Scalar beta,
                 const void* c, void* d, Workspace workspace,
@@ -156,8 +185,9 @@ class Plan::Impl {
     check_alignment("c", c, alignment_[2]);
     check_alignment("d", d, alignment_[2]);
     check_workspace(workspace);
+    const std::array<Scalar, 2> scalars{alpha, beta};
     const std::array<const void*, 2> inputs{a, b};
-    kernel_->run(alpha, inputs.data(), beta, c, d, workspace, stream);
+    kernel_->run(scalars, inputs, c, d, workspace, stream);
   }
 
   void reduce(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
@@ -167,14 +197,53 @@ class Plan::Impl {
     check_alignment("c", c, alignment_[2]);
     check_alignment("d", d, alignment_[2]);
     check_workspace(workspace);
-    kernel_->run(alpha, &a, beta, c, d, workspace, stream);
+    const std::array<Scalar, 2> scalars{alpha, beta};
+    const std::array<const void*, 1> inputs{a};
+    kernel_->run(scalars, inputs, c, d, workspace, stream);
+  }
+
+  void combine(Scalar alpha, const void* a, Scalar beta, const void* b,
+               Scalar gamma, const void* c, void* d, Workspace workspace,
+               StreamRef stream) const {
+    backend_->check_device(equation_, "plan");
+    // cuTENSOR requires the inputs not to overlap the output. Only the exact
+    // alias is cheap to spot; it is also the likely mistake.
+    if (a == d || b == d)
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  std::string("pointer ") + (a == d ? "a" : "b") +
+                      " is also the output; an elementwise input must not "
+                      "overlap d");
+    // cuTENSOR skips an input whose scale is zero instead of combining a zero
+    // tensor. A sum is the same either way; the other operators are not, so
+    // refuse rather than return max(alpha * a) for max(alpha * a, 0). Tested
+    // after narrowing to the compute precision, where 1e-50 is already zero.
+    const bool narrow = compute_ != Dtype::F64 && compute_ != Dtype::C64;
+    const auto is_zero = [narrow](Scalar s) {
+      const std::complex<double> v = s.value();
+      if (!narrow) return v == 0.0;
+      return static_cast<float>(v.real()) == 0.0F &&
+             static_cast<float>(v.imag()) == 0.0F;
+    };
+    if (binary_ != BinaryOp::Add && (is_zero(alpha) || is_zero(beta)))
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  std::string(is_zero(alpha) ? "alpha" : "beta") +
+                      " is zero, which drops that input instead of using "
+                      "zeros; only Add allows a zero scale");
+    check_alignment("a", a, alignment_[0]);
+    check_alignment("b", b, alignment_[1]);
+    check_alignment("c", c, alignment_[2]);
+    check_alignment("d", d, alignment_[2]);
+    check_workspace(workspace);
+    const std::array<Scalar, 3> scalars{alpha, beta, gamma};
+    const std::array<const void*, 2> inputs{a, b};
+    kernel_->run(scalars, inputs, c, d, workspace, stream);
   }
 
  private:
-  Impl(const Context& context, const Equation& equation, std::size_t n_operands)
+  Impl(const Context& context, const Equation& equation, Form form)
       : backend_(&context.impl().backend()),
         equation_(equation.text()),
-        n_operands_(n_operands) {
+        form_(form) {
     backend_->check_device(equation_, "plan");
   }
 
@@ -194,6 +263,7 @@ class Plan::Impl {
   void finish(backend::Operation op, const ConstTensorRef& d,
               const PlanOptions& options) {
     op.compute = compute_type(options, d);
+    compute_ = op.compute;
     op.equation = equation_;
     kernel_ = backend_->plan(op, options);
   }
@@ -233,8 +303,28 @@ class Plan::Impl {
   /// Planned alignment of a, b and d, which c shares; b is unused by reduce.
   std::array<std::uint32_t, 3> alignment_{};
   std::string equation_;
-  std::size_t n_operands_ = 2;
+  Form form_ = Form::Contraction;
+  /// The elementwise operator; unused by the other forms.
+  BinaryOp binary_ = BinaryOp::Add;
+  /// The accumulation type, whose precision alpha and beta are narrowed to.
+  Dtype compute_ = Dtype::F64;
 };
+
+namespace {
+
+std::string form_name(Plan::Impl::Form form) {
+  switch (form) {
+    case Plan::Impl::Form::Contraction:
+      return "two-operand";
+    case Plan::Impl::Form::OneOperand:
+      return "one-operand";
+    case Plan::Impl::Form::Elementwise:
+      return "elementwise";
+  }
+  return "matching";
+}
+
+}  // namespace
 
 Plan::Plan(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 Plan::Plan(Plan&&) noexcept = default;
@@ -255,19 +345,32 @@ void Plan::execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                    const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
   const Impl& plan = impl();
-  if (plan.n_operands() != 2)
+  if (plan.form() != Impl::Form::Contraction)
     throw Error(Errc::UnsupportedPattern, plan.equation(),
-                "this plan takes one operand; use the one-operand execute");
+                "this plan is not a contraction; use the " +
+                    form_name(plan.form()) + " execute");
   plan.contract(alpha, a, b, beta, c, d, workspace, stream);
 }
 
 void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
                    void* d, Workspace workspace, StreamRef stream) const {
   const Impl& plan = impl();
-  if (plan.n_operands() != 1)
+  if (plan.form() != Impl::Form::OneOperand)
     throw Error(Errc::UnsupportedPattern, plan.equation(),
-                "this plan takes two operands; use the two-operand execute");
+                "this plan takes two operands; use the " +
+                    form_name(plan.form()) + " execute");
   plan.reduce(alpha, a, beta, c, d, workspace, stream);
+}
+
+void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* b,
+                   Scalar gamma, const void* c, void* d, Workspace workspace,
+                   StreamRef stream) const {
+  const Impl& plan = impl();
+  if (plan.form() != Impl::Form::Elementwise)
+    throw Error(Errc::UnsupportedPattern, plan.equation(),
+                "this plan is not elementwise; use the " +
+                    form_name(plan.form()) + " execute");
+  plan.combine(alpha, a, beta, b, gamma, c, d, workspace, stream);
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
@@ -312,6 +415,29 @@ Plan make_plan(const Context& context, const Equation& equation,
   return plan;
 }
 
+Plan make_plan(const Context& context, const Equation& equation, BinaryOp op,
+               const ConstTensorRef& a, const ConstTensorRef& b,
+               const ConstTensorRef& d, PlanOptions options) {
+#if KATAL_ENABLE_LOGGING
+  const auto start = std::chrono::steady_clock::now();
+#endif
+  Plan plan(
+      std::make_unique<Plan::Impl>(context, equation, op, a, b, d, options));
+#if KATAL_ENABLE_LOGGING
+  const auto elapsed = std::chrono::duration<double, std::micro>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
+#endif
+  KATAL_LOG("plan.created device="
+            << context.device()
+            << " equation=" << util::log_quote(equation.text())
+            << " op=" << util::log_binary(op) << " a=" << util::log_tensor(a)
+            << " b=" << util::log_tensor(b) << " output=" << util::log_tensor(d)
+            << ' ' << util::log_options(options) << " workspace_bytes="
+            << plan.workspace_size() << " host_plan_us=" << elapsed);
+  return plan;
+}
+
 std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         std::string_view equation,
                                         const ConstTensorRef& a,
@@ -337,6 +463,22 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
   return context.impl().cached(plan_key(equation, resolved, {&a, &d}), [&] {
     return make_plan(context, Equation::parse(equation), a, d, resolved);
   });
+}
+
+std::shared_ptr<const Plan> cached_plan(const Context& context,
+                                        std::string_view equation, BinaryOp op,
+                                        const ConstTensorRef& a,
+                                        const ConstTensorRef& b,
+                                        const ConstTensorRef& d,
+                                        std::optional<PlanOptions> options) {
+  const PlanOptions resolved =
+      options.value_or(context.impl().config().plan_options);
+  return context.impl().cached(
+      plan_key(equation, resolved, {&a, &b, &d}, static_cast<int32_t>(op)),
+      [&] {
+        return make_plan(context, Equation::parse(equation), op, a, b, d,
+                         resolved);
+      });
 }
 
 }  // namespace katal
