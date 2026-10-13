@@ -5,6 +5,8 @@ site_dir: docs-build/site
 
 theme:
   name: material
+  logo: assets/katal-mark-dark.svg
+  favicon: assets/katal-mark-light.svg
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
