@@ -503,8 +503,8 @@ TEST_CASE("gpu rejections name the problem", "[gpu]") {
   // j is 3 in the first operand and 5 in the second.
   REQUIRE_THROWS_AS(katal::einsum("ij,jk->ik", 1.0, ar, br, 0.0, dr),
                     katal::Error);
-  // A free reduction beside a contraction stays rejected.
-  REQUIRE_THROWS_AS(katal::einsum("ijk,kl->il", 1.0, ar, br, 0.0, dr),
+  // Writing a diagonal stays rejected.
+  REQUIRE_THROWS_AS(katal::einsum("ij,jk->ii", 1.0, ar, br, 0.0, dr),
                     katal::Error);
   // Arity mismatches between the equation and the overload are caught.
   REQUIRE_THROWS_AS(katal::einsum("ij,jk->ik", 1.0, ar, 0.0, dr), katal::Error);

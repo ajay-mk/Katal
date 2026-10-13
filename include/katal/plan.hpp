@@ -99,8 +99,9 @@ class Plan {
   Plan& operator=(const Plan&) = delete;
   ~Plan();
 
-  /// Bytes of scratch `execute` needs. Exact rather than estimated: it is
-  /// what the selected kernel was planned against. Often zero.
+  /// Bytes of scratch `execute` needs. Exact rather than estimated: what the
+  /// selected kernels were planned against, plus room for any input summed
+  /// ahead of a contraction. Often zero.
   uint64_t workspace_size() const noexcept;
 
   /// The equation this plan came from, for diagnostics. The view is valid only
@@ -116,7 +117,9 @@ class Plan {
   /// how to accumulate.
   ///
   /// Throws `Errc::WorkspaceTooSmall` if `workspace` is smaller than
-  /// `workspace_size()`, before any work is queued.
+  /// `workspace_size()`, before any work is queued. A plan that sums a label
+  /// out of one input first keeps that input in the workspace, and throws
+  /// `Errc::UnsupportedPattern` unless `workspace.ptr` is 256-byte aligned.
   ///
   /// Const and allocation-free, so one plan can be shared across streams and
   /// run on a hot path.

@@ -40,17 +40,31 @@ inferred differently from what is written.
 | one      | result reorders labels                    | permutation   |
 | one      | result equals the operand                 | copy          |
 
-The cuTENSOR backend executes all unary classifications through its reduction
-operation, preserving `alpha * input + beta * output` for copies and permutations.
+A label repeated within one input reads that input along its diagonal:
+`"ii->"` is a trace, `"ii->i"` the diagonal, and `"iij,jk->ik"` contracts
+the diagonal of the first input. Katal merges the repeats into one mode whose
+stride is the sum of theirs, so no copy is made. The repeats must have equal
+extents.
+
+With two operands, a label in one input alone (neither in the other nor in
+the result) is summed out of that input first: `"ijk,kl->il"` sums j out of
+the first input, then contracts k. The summed input is kept in the plan's
+workspace, so such a plan has a nonzero `workspace_size()`, runs one
+reduction per affected input before the contraction (two kernels, or three
+when both inputs have such labels, as in `"ijk,kml->il"`), and needs its
+workspace aligned to 256 bytes, which `cudaMallocAsync` and the default
+allocator give. `PlanOptions::workspace_limit` counts the summed input too;
+a limit too small to hold it is `WorkspaceTooSmall` when the plan is built. The summed input is stored in the input's own type and summed in
+that type's default compute type, whatever `PlanOptions::compute` asks of the
+contraction. For F16 and BF16 that means the partial sums are rounded to half
+precision before the contraction reads them.
 
 Katal rejects these with `UnsupportedPattern`, naming the labels responsible:
 
-- a label repeated within one operand (a diagonal or trace) or in the result,
+- a label repeated in the result (writing a diagonal),
 - in einsum, a result label that appears in no input (broadcasting; see
   [Elementwise operations](#elementwise-operations) and
-  [Permutations](#permutations)),
-- with two operands, a label in one input that is neither in the other nor in
-  the result (a reduction fused into a contraction).
+  [Permutations](#permutations)).
 
 Three or more operands are also `UnsupportedPattern`, since they would need
 a contraction path.

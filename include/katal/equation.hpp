@@ -26,6 +26,13 @@ struct Classification {
   util::Index free_a;      ///< in A and the result only
   util::Index free_b;      ///< in B and the result only
   util::Index reduced;  ///< unary only: present in A, dropped from the result
+  /// Binary only: in A alone, summed out of A before the contraction.
+  util::Index reduced_a;
+  /// Binary only: in B alone, summed out of B before the contraction.
+  util::Index reduced_b;
+  /// Repeated within an input, which is read along that diagonal: `"ii->"`
+  /// is a trace, `"ii->i"` a diagonal.
+  util::Index diagonal;
   /// Elementwise only: in the result but missing from an input, which is
   /// broadcast along it.
   util::Index broadcast;
@@ -94,12 +101,36 @@ class Equation {
   util::Index implicit_result() const;
   Classification classify_unary() const;
   Classification classify_binary() const;
-  void check_repeats() const;
+  void check_result() const;
 
   /// Renders an index for a diagnostic. Multi-character labels come back
   /// space separated, which is how they were written.
   static std::string quoted(const util::Index& i) {
     return "\"" + std::string(i) + "\"";
+  }
+
+  /// Each label once, in first-seen order: an operand with its diagonal
+  /// labels merged, which is how every classification sees it.
+  static util::Index unique(const util::Index& i) {
+    util::Index u;
+    for (const util::Label l : i)
+      if (!u.contains(l)) u.push_back(l);
+    return u;
+  }
+
+  /// Labels that occur more than once in `i`, each listed once.
+  static util::Index repeated(const util::Index& i) {
+    util::Index r;
+    for (std::size_t x = 0; x < i.rank(); ++x)
+      for (std::size_t y = x + 1; y < i.rank(); ++y)
+        if (i[x] == i[y] && !r.contains(i[x])) r.push_back(i[x]);
+    return r;
+  }
+
+  Classification with_diagonal(Classification c) const {
+    for (const util::Index& o : operands_)
+      c.diagonal = c.diagonal | repeated(o);
+    return c;
   }
 
   static bool has_repeated_label(const util::Index& i) {
@@ -206,17 +237,8 @@ inline Equation Equation::parse(std::string_view text,
 }
 
 inline Classification Equation::classify_binary() const {
-  const util::Index &a = operands_[0], &b = operands_[1], &d = result_;
-
-  // Checked per input: the two together can carry more labels than one index
-  // holds.
-  const util::Index dangling_a = (a - b) - d, dangling_b = (b - a) - d;
-  if (dangling_a.rank() > 0 || dangling_b.rank() > 0)
-    throw Error(Errc::UnsupportedPattern, text_,
-                "label(s) \"" + std::string(dangling_a) +
-                    std::string(dangling_b) + "\"" +
-                    " appear in one input only and not in the result; a free "
-                    "reduction cannot be fused into a contraction");
+  const util::Index a = unique(operands_[0]), b = unique(operands_[1]);
+  const util::Index& d = result_;
 
   if (const util::Index broadcast = (d - a) - b; broadcast.rank() > 0)
     throw Error(Errc::UnsupportedPattern, text_,
@@ -230,11 +252,16 @@ inline Classification Equation::classify_binary() const {
   c.contracted = (a & b) - d;
   c.free_a = (a - b) & d;
   c.free_b = (b - a) & d;
-  return c;
+  // Kept per input: the two together can carry more labels than one index
+  // holds.
+  c.reduced_a = (a - b) - d;
+  c.reduced_b = (b - a) - d;
+  return with_diagonal(c);
 }
 
 inline Classification Equation::classify_unary() const {
-  const util::Index &a = operands_[0], &d = result_;
+  const util::Index a = unique(operands_[0]);
+  const util::Index& d = result_;
 
   if (const util::Index broadcast = d - a; broadcast.rank() > 0)
     throw Error(Errc::UnsupportedPattern, text_,
@@ -248,18 +275,12 @@ inline Classification Equation::classify_unary() const {
     c.kind = Lowering::Reduce;
   else
     c.kind = (a == d) ? Lowering::Copy : Lowering::Permute;
-  return c;
+  return with_diagonal(c);
 }
 
-inline void Equation::check_repeats() const {
+inline void Equation::check_result() const {
   if (operands_.empty())
     throw Error(Errc::ParseError, text_, "the equation has no operands");
-
-  for (const util::Index& o : operands_)
-    if (has_repeated_label(o))
-      throw Error(Errc::UnsupportedPattern, text_,
-                  "operand " + quoted(o) +
-                      " repeats a label; diagonal extraction is not supported");
 
   if (has_repeated_label(result_))
     throw Error(Errc::UnsupportedPattern, text_,
@@ -268,10 +289,8 @@ inline void Equation::check_repeats() const {
 }
 
 inline Classification Equation::classify() const {
-  check_repeats();
+  check_result();
 
-  // With at most two operands and no repeats within one, no label can occur
-  // more than twice, so that rejection is the arity check below.
   if (operands_.size() == 1) return classify_unary();
   if (operands_.size() == 2) return classify_binary();
   throw Error(Errc::UnsupportedPattern, text_,
@@ -291,13 +310,14 @@ inline Classification Equation::classify(std::error_code& ec) const noexcept {
 }
 
 inline Classification Equation::classify_elementwise() const {
-  check_repeats();
+  check_result();
   if (operands_.size() != 2)
     throw Error(Errc::UnsupportedPattern, text_,
                 "an elementwise operation takes two inputs, not " +
                     std::to_string(operands_.size()));
 
-  const util::Index &a = operands_[0], &b = operands_[1], &d = result_;
+  const util::Index a = unique(operands_[0]), b = unique(operands_[1]);
+  const util::Index& d = result_;
   // Checked and rendered per input, as in classify_binary: the two together
   // can carry more labels than one index holds.
   const util::Index summed_a = a - d, summed_b = b - d;
@@ -312,7 +332,7 @@ inline Classification Equation::classify_elementwise() const {
   c.kind = Lowering::Elementwise;
   c.batch = a & b;
   c.broadcast = d - (a & b);
-  return c;
+  return with_diagonal(c);
 }
 
 inline Classification Equation::classify_elementwise(
@@ -329,13 +349,14 @@ inline Classification Equation::classify_elementwise(
 }
 
 inline Classification Equation::classify_permutation() const {
-  check_repeats();
+  check_result();
   if (operands_.size() != 1)
     throw Error(Errc::UnsupportedPattern, text_,
                 "a permutation takes one input, not " +
                     std::to_string(operands_.size()));
 
-  const util::Index &a = operands_[0], &d = result_;
+  const util::Index a = unique(operands_[0]);
+  const util::Index& d = result_;
   if (const util::Index summed = a - d; summed.rank() > 0)
     throw Error(Errc::UnsupportedPattern, text_,
                 "label(s) " + quoted(summed) +
@@ -345,7 +366,7 @@ inline Classification Equation::classify_permutation() const {
   Classification c;
   c.kind = (a == d) ? Lowering::Copy : Lowering::Permute;
   c.broadcast = d - a;
-  return c;
+  return with_diagonal(c);
 }
 
 inline Classification Equation::classify_permutation(

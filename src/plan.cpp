@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <new>
 #include <optional>
 #include <string>
 #include <utility>
@@ -167,6 +169,15 @@ bool overlaps(const void* x, ByteSpan xs, const void* y, ByteSpan ys) {
   return at(x, xs.low) < at(y, ys.high) && at(y, ys.low) < at(x, xs.high);
 }
 
+/// What cuTENSOR assumes of every base pointer it is given without being told
+/// otherwise, and so where each scratch tensor in a workspace starts.
+constexpr std::uint64_t scratch_alignment = 256;
+
+std::uint64_t round_up(std::uint64_t bytes) {
+  return (bytes + scratch_alignment - 1) / scratch_alignment *
+         scratch_alignment;
+}
+
 }  // namespace
 
 /// The front end of a plan: everything about an equation that does not depend
@@ -198,7 +209,13 @@ class Plan::Impl {
     check_extents(equation, {{&equation.operand(0), &a},
                              {&equation.operand(1), &b},
                              {&equation.result(), &d}});
-    finish(std::move(op), d, options);
+    // A label in one input alone is summed out of it first, into scratch,
+    // since a contraction kernel only sums labels both inputs share.
+    prereduce(0, op.inputs[0], classification.reduced_a);
+    prereduce(1, op.inputs[1], classification.reduced_b);
+    const PlanOptions kernel_options = scratch_budget(options);
+    plan_prereductions(kernel_options);
+    finish(std::move(op), d, kernel_options);
     alignment_ = {a.alignment, b.alignment, d.alignment};
   }
 
@@ -273,7 +290,7 @@ class Plan::Impl {
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
 
-  uint64_t workspace_size() const noexcept { return kernel_->workspace_size(); }
+  uint64_t workspace_size() const noexcept { return workspace_size_; }
   std::string_view equation() const noexcept { return equation_; }
 
   Form form() const noexcept { return form_; }
@@ -287,9 +304,30 @@ class Plan::Impl {
     check_alignment("c", c, alignment_[2]);
     check_alignment("d", d, alignment_[2]);
     check_workspace(workspace);
+    std::array<const void*, 2> inputs{a, b};
+    Workspace scratch = workspace;
+    if (scratch_offset_ > 0) {
+      if (alignment_of(workspace.ptr) < scratch_alignment)
+        throw Error(Errc::UnsupportedPattern, equation_,
+                    "the workspace is aligned to " +
+                        std::to_string(alignment_of(workspace.ptr)) +
+                        " bytes but this plan keeps reduced inputs in it and "
+                        "needs " +
+                        std::to_string(scratch_alignment));
+      auto* base = static_cast<std::byte*>(workspace.ptr);
+      scratch = {base + scratch_offset_, workspace.size - scratch_offset_};
+      const std::array<Scalar, 2> overwrite{1.0, 0.0};
+      for (std::size_t k = 0; k < pre_.size(); ++k) {
+        if (pre_[k].kernel == nullptr) continue;
+        void* reduced = base + pre_[k].offset;
+        const std::array<const void*, 1> input{inputs[k]};
+        pre_[k].kernel->run(overwrite, input, reduced, reduced, scratch,
+                            stream);
+        inputs[k] = reduced;
+      }
+    }
     const std::array<Scalar, 2> scalars{alpha, beta};
-    const std::array<const void*, 2> inputs{a, b};
-    kernel_->run(scalars, inputs, c, d, workspace, stream);
+    kernel_->run(scalars, inputs, c, d, scratch, stream);
   }
 
   void reduce(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
@@ -370,14 +408,37 @@ class Plan::Impl {
     backend_->check_device(equation_, "plan");
   }
 
-  /// Puts a tensor into descriptor order, with labels as mode ids.
+  /// Puts a tensor into descriptor order, with labels as mode ids. A label
+  /// repeated within the tensor becomes one mode whose stride is the sum of
+  /// the repeats', which walks the diagonal.
   backend::Operand operand(const util::Index& labels,
                            const ConstTensorRef& tensor) const {
     const ModeOrder order = mode_order(labels, tensor, equation_);
+    const std::vector<int32_t> ids = mode_ids(order.modes);
     backend::Operand result;
-    result.modes = mode_ids(order.modes);
-    result.extent = order.extent;
-    result.stride = order.stride;
+    for (std::size_t p = 0; p < ids.size(); ++p) {
+      const auto seen =
+          std::find(result.modes.begin(), result.modes.end(), ids[p]);
+      if (seen == result.modes.end()) {
+        result.modes.push_back(ids[p]);
+        result.extent.push_back(order.extent[p]);
+        result.stride.push_back(order.stride[p]);
+        continue;
+      }
+      const auto q = static_cast<std::size_t>(seen - result.modes.begin());
+      if (result.extent[q] != order.extent[p])
+        throw Error(Errc::ExtentMismatch, equation_,
+                    "label \"" + std::string(1, order.modes[p]) +
+                        "\" is repeated with extents " +
+                        std::to_string(result.extent[q]) + " and " +
+                        std::to_string(order.extent[p]) +
+                        "; a diagonal needs them equal");
+      if (__builtin_add_overflow(result.stride[q], order.stride[p],
+                                 &result.stride[q]))
+        throw Error(Errc::ExtentMismatch, equation_,
+                    "label \"" + std::string(1, order.modes[p]) +
+                        "\" is repeated with strides whose sum overflows");
+    }
     result.type = tensor.type;
     result.alignment = tensor.alignment;
     result.op = tensor.op;
@@ -389,20 +450,109 @@ class Plan::Impl {
     if (d.op != UnaryOp::Identity)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "the output carries a unary operator; only inputs can");
-    op.compute = compute_type(options, d);
+    op.compute = compute_type(options, d.type);
     compute_ = op.compute;
     op.equation = equation_;
     kernel_ = backend_->plan(op, options);
+
+    std::uint64_t kernel_scratch = kernel_->workspace_size();
+    for (const Prereduction& pre : pre_)
+      if (pre.kernel != nullptr)
+        kernel_scratch = std::max(kernel_scratch, pre.kernel->workspace_size());
+    workspace_size_ = scratch_offset_ + kernel_scratch;
+  }
+
+  /// Lays out summing `labels` out of `input` into a dense scratch tensor,
+  /// and makes `input` that tensor. The operator `input` was read through
+  /// goes with it, since it applies before the sum. plan_prereductions picks
+  /// the kernel once every buffer's place in the workspace is known.
+  void prereduce(std::size_t k, backend::Operand& input,
+                 const util::Index& labels) {
+    if (labels.rank() == 0) return;
+    const std::vector<int32_t> drop = mode_ids(labels);
+
+    backend::Operand reduced;
+    reduced.type = input.type;
+    reduced.alignment = scratch_alignment;
+    for (std::size_t p = 0; p < input.modes.size(); ++p)
+      if (std::find(drop.begin(), drop.end(), input.modes[p]) == drop.end()) {
+        reduced.modes.push_back(input.modes[p]);
+        reduced.extent.push_back(input.extent[p]);
+      }
+    reduced.stride =
+        dense_strides(reduced.extent, Layout::ColumnMajor, equation_);
+    constexpr std::int64_t max = std::numeric_limits<std::int64_t>::max();
+    std::int64_t elements = 1;
+    for (const std::int64_t e : reduced.extent) {
+      if (e > 0 && elements > max / e)
+        throw Error(Errc::ExtentMismatch, equation_,
+                    "a reduced input is too large to address");
+      elements *= e;
+    }
+    const std::int64_t size = element_bytes(reduced.type);
+    if (elements > max / size)
+      throw Error(Errc::ExtentMismatch, equation_,
+                  "a reduced input is too large to address");
+
+    backend::Operation& op = pre_[k].operation;
+    op.kind = backend::OpKind::Reduction;
+    op.inputs = {input};
+    op.output = reduced;
+    // The storage type's own default, not options.compute: that names the
+    // contraction's accumulation, and a reduction supports fewer pairings
+    // (an F64 tensor summed in F32 is a contraction-only combination).
+    op.compute = compute_type({}, reduced.type);
+    op.equation = equation_;
+    // Each buffer fits std::int64_t; keep their sum there too, so offsets
+    // and workspace_size() cannot wrap.
+    const std::uint64_t bytes =
+        round_up(static_cast<std::uint64_t>(elements * size));
+    constexpr auto most = static_cast<std::uint64_t>(max);
+    if (bytes > most || scratch_offset_ > most - bytes)
+      throw Error(Errc::ExtentMismatch, equation_,
+                  "the reduced inputs are too large to address");
+    pre_[k].offset = scratch_offset_;
+    scratch_offset_ += bytes;
+    input = reduced;
+  }
+
+  /// `options` with workspace_limit lowered by the reduced inputs, which
+  /// share the workspace with the kernels' own scratch. Throws if the
+  /// reduced inputs alone exceed it.
+  PlanOptions scratch_budget(const PlanOptions& options) const {
+    PlanOptions budget = options;
+    if (options.workspace_limit == 0 || scratch_offset_ == 0) return budget;
+    if (scratch_offset_ > options.workspace_limit)
+      throw Error(Errc::WorkspaceTooSmall, equation_,
+                  "the reduced inputs need " + std::to_string(scratch_offset_) +
+                      " bytes of workspace but workspace_limit is " +
+                      std::to_string(options.workspace_limit));
+    // A limit of zero means none, so an exhausted budget asks for one byte,
+    // which only a kernel needing no scratch fits.
+    budget.workspace_limit =
+        std::max<std::uint64_t>(options.workspace_limit - scratch_offset_, 1);
+    return budget;
+  }
+
+  void plan_prereductions(const PlanOptions& options) {
+    // Algorithm and kernel choices name contraction kernels; leave them to
+    // the contraction.
+    PlanOptions reduce_options;
+    reduce_options.workspace_limit = options.workspace_limit;
+    reduce_options.workspace = options.workspace;
+    reduce_options.jit = options.jit;
+    for (Prereduction& pre : pre_)
+      if (!pre.operation.inputs.empty())
+        pre.kernel = backend_->plan(pre.operation, reduce_options);
   }
 
   /// Unset follows the output, except that half-precision output accumulates
   /// in single precision: that is the pairing cuTENSOR supports for both. A
   /// front-end policy, so that every backend gets the same default.
-  static Dtype compute_type(const PlanOptions& options,
-                            const ConstTensorRef& d) {
+  static Dtype compute_type(const PlanOptions& options, Dtype output) {
     if (options.compute) return *options.compute;
-    if (d.type == Dtype::F16 || d.type == Dtype::Bf16) return Dtype::F32;
-    return d.type;
+    if (output == Dtype::F16 || output == Dtype::Bf16) return Dtype::F32;
+    return output;
   }
 
   /// A permutation that converts accumulates in the wider of its two types,
@@ -442,8 +592,23 @@ class Plan::Impl {
                       std::to_string(workspace_size()));
   }
 
+  /// One input summed into scratch before the contraction runs.
+  struct Prereduction {
+    /// Empty inputs when the operand needs no prereduction.
+    backend::Operation operation;
+    std::unique_ptr<backend::Kernel> kernel;
+    /// Where the reduced input sits in the workspace.
+    std::uint64_t offset = 0;
+  };
+
   const backend::Backend* backend_ = nullptr;
   std::unique_ptr<backend::Kernel> kernel_;
+  /// For a and b; empty unless the contraction has a label in one input
+  /// alone.
+  std::array<Prereduction, 2> pre_;
+  /// Where the kernels' own scratch starts, after any reduced inputs.
+  std::uint64_t scratch_offset_ = 0;
+  std::uint64_t workspace_size_ = 0;
   /// Planned alignment of a, b and d, which c shares; b is unused by reduce.
   std::array<std::uint32_t, 3> alignment_{};
   std::string equation_;
