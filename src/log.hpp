@@ -88,7 +88,8 @@ inline std::string log_options(const PlanOptions& options) {
          << " workspace_preference=" << static_cast<int>(options.workspace)
          << " workspace_limit=" << options.workspace_limit
          << " kernel_rank=" << options.kernel_rank.value_or(-1)
-         << " jit=" << options.jit;
+         << " jit=" << options.jit
+         << " precision=" << static_cast<int>(options.precision);
   return output.str();
 }
 

@@ -34,6 +34,35 @@ enum class WorkspacePreference {
   Max,
 };
 
+/// A faster, lower-precision way for cuTENSOR to compute a contraction,
+/// beyond what the `compute` type alone can say. Each runs on tensor cores
+/// and needs a recent GPU and particular storage types, according to
+/// cuTENSOR's contraction table; anything else is refused at plan time as
+/// `Errc::UnsupportedPattern`. Katal checks the GPU generation itself, since
+/// cuTENSOR may otherwise run an emulated mode in native precision. The
+/// emulated modes (`Bf16x9`, `F16x4`, `Int8x8`) also depend on the CUDA
+/// version, which NVIDIA does not document per mode; where CUDA lacks one,
+/// cuTENSOR still computes in native F32 or F64 rather than failing, so the
+/// result is at least as accurate as asked but not faster. Other operations
+/// ignore it. Katal passes these through untested.
+enum class Precision {
+  /// Exactly the `compute` type. The default.
+  Native,
+  /// F32 or C32 data in TF32: 10 mantissa bits. Ampere and newer.
+  Tf32,
+  /// F32 or C32 data in three TF32 terms: more precise than TF32, less than
+  /// F32. Ampere and newer.
+  Tf32x3,
+  /// F32 or C32 data in three bf16 terms, 23 mantissa bits. Hopper and
+  /// newer.
+  Bf16x9,
+  /// F32 or C32 data in two f16 terms, 23 mantissa bits. Blackwell and newer.
+  F16x4,
+  /// F64 or C64 data emulated with int8 terms, chosen at run time to be at
+  /// least as accurate as F64. Hopper and newer.
+  Int8x8,
+};
+
 /// How to plan a contraction, as opposed to what to contract.
 ///
 /// A Context carries one of these as its default, so a program can set a policy
@@ -45,7 +74,7 @@ struct PlanOptions {
   /// Bf16 outputs accumulate in F32; those are the choices cuTENSOR always
   /// accepts. Asking for f64 accumulation over f32 storage, for instance, is
   /// not a supported combination. Set it to widen deliberately where
-  /// supported. TF32 is not exposed by this interface.
+  /// supported; `precision` covers TF32 and the other tensor-core modes.
   std::optional<Dtype> compute;
 
   /// Caps the scratch a plan may use, including any input it sums ahead of a
@@ -64,6 +93,12 @@ struct PlanOptions {
   /// Lets cuTENSOR compile a kernel for this exact problem. Ampere and newer.
   /// Costs seconds at plan time.
   bool jit = false;
+
+  /// Replaces `compute` with a tensor-core mode when not Native, for
+  /// contractions only; reductions, permutations and elementwise operations
+  /// ignore it, so it is safe as the Context's default. Opt in per call or
+  /// once there.
+  Precision precision = Precision::Native;
 };
 
 }  // namespace katal

@@ -1,6 +1,8 @@
 #ifndef KATAL_SRC_CUTENSOR_TYPES_HPP_
 #define KATAL_SRC_CUTENSOR_TYPES_HPP_
 
+#include <string_view>
+
 #include <cutensor.h>
 
 #include <katal/error.hpp>
@@ -67,6 +69,64 @@ inline cutensorComputeDescriptor_t to_compute(Dtype type) {
       return CUTENSOR_COMPUTE_DESC_16BF;
   }
   throw Error(Errc::DtypeMismatch, "", "unrecognized compute type");
+}
+
+/// The descriptor for a tensor-core mode, or for `compute` when Native.
+/// `equation` is quoted by any error, as every backend error must.
+inline cutensorComputeDescriptor_t to_compute(Dtype compute,
+                                              Precision precision,
+                                              std::string_view equation) {
+  switch (precision) {
+    case Precision::Native:
+      return to_compute(compute);
+    case Precision::Tf32:
+      return CUTENSOR_COMPUTE_DESC_TF32;
+    case Precision::Tf32x3:
+      return CUTENSOR_COMPUTE_DESC_3XTF32;
+    // Each emulated mode is gated at the release that introduced it.
+    case Precision::Bf16x9:
+#if CUTENSOR_VERSION >= 20400
+      return CUTENSOR_COMPUTE_DESC_9X16BF;
+#else
+      throw Error(Errc::UnsupportedPattern, equation,
+                  "this precision needs cuTENSOR 2.4 or newer");
+#endif
+    case Precision::F16x4:
+#if CUTENSOR_VERSION >= 20500
+      return CUTENSOR_COMPUTE_DESC_4X16F;
+#else
+      throw Error(Errc::UnsupportedPattern, equation,
+                  "this precision needs cuTENSOR 2.5 or newer");
+#endif
+    case Precision::Int8x8:
+#if CUTENSOR_VERSION >= 20400
+      return CUTENSOR_COMPUTE_DESC_8XINT8;
+#else
+      throw Error(Errc::UnsupportedPattern, equation,
+                  "this precision needs cuTENSOR 2.4 or newer");
+#endif
+  }
+  throw Error(Errc::DtypeMismatch, equation, "unrecognized precision");
+}
+
+/// The oldest compute capability, as major * 10 + minor, that cuTENSOR's
+/// contraction table lists for a tensor-core mode; 0 for Native. Checked
+/// before planning, because cuTENSOR may quietly run an emulated mode in
+/// native precision on an older GPU rather than refuse it.
+inline int min_compute_capability(Precision precision) {
+  switch (precision) {
+    case Precision::Native:
+      return 0;
+    case Precision::Tf32:
+    case Precision::Tf32x3:
+      return 80;  // Ampere
+    case Precision::Bf16x9:
+    case Precision::Int8x8:
+      return 90;  // Hopper
+    case Precision::F16x4:
+      return 100;  // Blackwell
+  }
+  return 0;
 }
 
 inline cutensorAlgo_t to_cutensor(Algo algo) {

@@ -63,6 +63,8 @@ struct Operation {
   Operand output;
   /// The accumulation type the front end chose.
   Dtype compute = Dtype::F64;
+  /// When not Native, the backend computes in this mode instead of `compute`.
+  Precision precision = Precision::Native;
   /// How an elementwise operation combines its inputs, or how a reduction
   /// reduces; unused otherwise.
   BinaryOp binary = BinaryOp::Add;

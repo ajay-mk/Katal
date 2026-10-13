@@ -58,6 +58,11 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   std::string key(equation);
   key.push_back('\0');
   append(key, &op, sizeof(op));
+  // Only the two-operand einsum contracts; every other form ignores the
+  // precision, so it must not split the cache. A tensor-core mode replaces
+  // the compute type, which then must not split it either.
+  if (op != -1 || tensors.size() != 3) options.precision = Precision::Native;
+  if (options.precision != Precision::Native) options.compute.reset();
   const int32_t compute =
       options.compute ? static_cast<int32_t>(*options.compute) : -1;
   append(key, &compute, sizeof(compute));
@@ -66,6 +71,8 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   const auto workspace = static_cast<int32_t>(options.workspace);
   const int32_t rank = options.kernel_rank.value_or(-1);
   const auto jit = static_cast<int32_t>(options.jit);
+  const auto precision = static_cast<int32_t>(options.precision);
+  append(key, &precision, sizeof(precision));
   append(key, &algo, sizeof(algo));
   append(key, &workspace, sizeof(workspace));
   append(key, &rank, sizeof(rank));
@@ -452,6 +459,10 @@ class Plan::Impl {
                   "the output carries a unary operator; only inputs can");
     op.compute = compute_type(options, d.type);
     compute_ = op.compute;
+    // The tensor-core modes exist only in cuTENSOR's contraction table, so a
+    // Context-wide default must not break the other kinds of operation.
+    if (op.kind == backend::OpKind::Contraction)
+      op.precision = options.precision;
     op.equation = equation_;
     kernel_ = backend_->plan(op, options);
 
