@@ -1,5 +1,8 @@
 site_name: Katal
 site_description: A C++20 einsum frontend for GPU tensor libraries
+repo_url: https://github.com/ajay-mk/Katal
+repo_name: ajay-mk/Katal
+edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: docs-build/site
 
@@ -7,6 +10,16 @@ theme:
   name: material
   logo: assets/katal-mark-dark.svg
   favicon: assets/katal-mark-light.svg
+  features:
+    - content.code.copy
+    - content.tabs.link
+    - navigation.footer
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.suggest
+    - toc.follow
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -19,10 +32,27 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
+validation:
+  anchors: warn
+  unrecognized_links: warn
+
+plugins:
+  - search
+
 markdown_extensions:
   - admonition
   - attr_list
   - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
 
 nav:
   - Home: index.md
