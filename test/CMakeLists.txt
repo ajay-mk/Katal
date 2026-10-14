@@ -34,6 +34,7 @@ foreach(src IN LISTS KATAL_TEST_SOURCES)
   if(name STREQUAL "test_backend")
     # Reaches past the public headers to swap in a recording backend.
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(${name} PRIVATE enumstr::enumstr)
   endif()
   if(name STREQUAL "test_gpu_logging" OR name STREQUAL "test_backend")
     target_compile_definitions(

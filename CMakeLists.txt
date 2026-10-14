@@ -44,6 +44,20 @@ if(cuTENSOR_FOUND AND CUDAToolkit_FOUND)
   target_compile_definitions(
     katal PRIVATE KATAL_ENABLE_LOGGING=$<BOOL:${KATAL_ENABLE_LOGGING}>)
   target_link_libraries(katal PRIVATE Katal::cutensor CUDA::cudart)
+  # enumstr names enums in diagnostics. It is header-only and private to the
+  # compiled library, so an installed Katal does not need it. An installed
+  # enumstr is used when found; FETCHCONTENT_SOURCE_DIR_ENUMSTR points the fetch
+  # at a local copy.
+  find_package(enumstr CONFIG QUIET)
+  if(NOT enumstr_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+      enumstr
+      GIT_REPOSITORY https://github.com/ajay-mk/enumstr.git
+      GIT_TAG 1b51bebd334af4ad02deff67f2593c91092e600d)
+    FetchContent_MakeAvailable(enumstr)
+  endif()
+  target_link_libraries(katal PRIVATE $<BUILD_INTERFACE:enumstr::enumstr>)
   katal_target_warnings(katal)
 else()
   set(KATAL_HAVE_CUTENSOR OFF)
