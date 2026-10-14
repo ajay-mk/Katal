@@ -10,6 +10,7 @@
 #include "cuda_status.hpp"
 #include "cutensor_status.hpp"
 #include "cutensor_types.hpp"
+#include <enumstr.hpp>
 
 namespace katal::backend {
 namespace {
@@ -342,10 +343,16 @@ class CutensorBackend final : public Backend {
 
   std::unique_ptr<Kernel> plan(const Operation& operation,
                                const PlanOptions& options) const override {
-    if (compute_capability_ < util::min_compute_capability(operation.precision))
-      throw Error(Errc::UnsupportedPattern, operation.equation,
-                  "this precision needs a newer GPU than device " +
-                      std::to_string(device_));
+    const int needed = util::min_compute_capability(operation.precision);
+    if (compute_capability_ < needed)
+      throw Error(
+          Errc::UnsupportedPattern, operation.equation,
+          "precision " + std::string(enumstr::to_string(operation.precision)) +
+              " needs compute capability " + std::to_string(needed / 10) + "." +
+              std::to_string(needed % 10) + " or newer, but device " +
+              std::to_string(device_) + " has " +
+              std::to_string(compute_capability_ / 10) + "." +
+              std::to_string(compute_capability_ % 10));
     return std::make_unique<CutensorKernel>(handle_, device_, operation,
                                             options);
   }

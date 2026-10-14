@@ -1,9 +1,11 @@
 #ifndef KATAL_SRC_CUTENSOR_TYPES_HPP_
 #define KATAL_SRC_CUTENSOR_TYPES_HPP_
 
+#include <string>
 #include <string_view>
 
 #include <cutensor.h>
+#include <enumstr.hpp>
 
 #include <katal/error.hpp>
 #include <katal/options.hpp>
@@ -89,21 +91,24 @@ inline cutensorComputeDescriptor_t to_compute(Dtype compute,
       return CUTENSOR_COMPUTE_DESC_9X16BF;
 #else
       throw Error(Errc::UnsupportedPattern, equation,
-                  "this precision needs cuTENSOR 2.4 or newer");
+                  "precision " + std::string(enumstr::to_string(precision)) +
+                      " needs cuTENSOR 2.4 or newer");
 #endif
     case Precision::F16x4:
 #if CUTENSOR_VERSION >= 20500
       return CUTENSOR_COMPUTE_DESC_4X16F;
 #else
       throw Error(Errc::UnsupportedPattern, equation,
-                  "this precision needs cuTENSOR 2.5 or newer");
+                  "precision " + std::string(enumstr::to_string(precision)) +
+                      " needs cuTENSOR 2.5 or newer");
 #endif
     case Precision::Int8x8:
 #if CUTENSOR_VERSION >= 20400
       return CUTENSOR_COMPUTE_DESC_8XINT8;
 #else
       throw Error(Errc::UnsupportedPattern, equation,
-                  "this precision needs cuTENSOR 2.4 or newer");
+                  "precision " + std::string(enumstr::to_string(precision)) +
+                      " needs cuTENSOR 2.4 or newer");
 #endif
   }
   throw Error(Errc::DtypeMismatch, equation, "unrecognized precision");
