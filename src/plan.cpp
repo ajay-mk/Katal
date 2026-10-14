@@ -757,8 +757,8 @@ Plan make_plan(const Context& context, const Equation& equation, BinaryOp op,
 #endif
   KATAL_LOG("plan.created device="
             << context.device()
-            << " equation=" << util::log_quote(equation.text())
-            << " op=" << enumstr::to_string(op) << " a=" << util::log_tensor(a)
+            << " equation=" << util::log_quote(equation.text()) << " op="
+            << enumstr::to_string_view(op) << " a=" << util::log_tensor(a)
             << " b=" << util::log_tensor(b) << " output=" << util::log_tensor(d)
             << ' ' << util::log_options(options) << " workspace_bytes="
             << plan.workspace_size() << " host_plan_us=" << elapsed);
@@ -824,7 +824,7 @@ Plan make_plan(const Context& context, const Equation& equation,
   KATAL_LOG("plan.created device="
             << context.device()
             << " equation=" << util::log_quote(equation.text())
-            << " reduce=" << enumstr::to_string(reduce)
+            << " reduce=" << enumstr::to_string_view(reduce)
             << " a=" << util::log_tensor(a) << " output=" << util::log_tensor(d)
             << ' ' << util::log_options(options) << " workspace_bytes="
             << plan.workspace_size() << " host_plan_us=" << elapsed);

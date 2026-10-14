@@ -16,7 +16,7 @@ struct Catch::StringMaker<
     E, std::enable_if_t<std::is_enum_v<E> &&
                         !std::is_convertible_v<E, std::underlying_type_t<E>>>> {
   static std::string convert(E value) {
-    const std::string_view name = enumstr::to_string(value);
+    const std::string_view name = enumstr::to_string_view(value);
     if (name == "<unknown>")
       return std::to_string(static_cast<std::underlying_type_t<E>>(value));
     return std::string(name);

@@ -91,7 +91,7 @@ inline cutensorComputeDescriptor_t to_compute(Dtype compute,
       return CUTENSOR_COMPUTE_DESC_9X16BF;
 #else
       throw Error(Errc::UnsupportedPattern, equation,
-                  "precision " + std::string(enumstr::to_string(precision)) +
+                  "precision " + enumstr::to_string(precision) +
                       " needs cuTENSOR 2.4 or newer");
 #endif
     case Precision::F16x4:
@@ -99,7 +99,7 @@ inline cutensorComputeDescriptor_t to_compute(Dtype compute,
       return CUTENSOR_COMPUTE_DESC_4X16F;
 #else
       throw Error(Errc::UnsupportedPattern, equation,
-                  "precision " + std::string(enumstr::to_string(precision)) +
+                  "precision " + enumstr::to_string(precision) +
                       " needs cuTENSOR 2.5 or newer");
 #endif
     case Precision::Int8x8:
@@ -107,7 +107,7 @@ inline cutensorComputeDescriptor_t to_compute(Dtype compute,
       return CUTENSOR_COMPUTE_DESC_8XINT8;
 #else
       throw Error(Errc::UnsupportedPattern, equation,
-                  "precision " + std::string(enumstr::to_string(precision)) +
+                  "precision " + enumstr::to_string(precision) +
                       " needs cuTENSOR 2.4 or newer");
 #endif
   }

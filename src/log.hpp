@@ -33,7 +33,7 @@ inline std::string log_quote(std::string_view text) {
 
 inline std::string log_tensor(const ConstTensorRef& tensor) {
   std::ostringstream output;
-  output << enumstr::to_string(tensor.type) << '[';
+  output << enumstr::to_string_view(tensor.type) << '[';
   for (std::size_t i = 0; i < tensor.extent.size(); ++i) {
     if (i != 0) output << ',';
     output << tensor.extent[i];
@@ -47,20 +47,21 @@ inline std::string log_tensor(const ConstTensorRef& tensor) {
          << (tensor.layout == Layout::ColumnMajor ? "column" : "row")
          << " alignment=" << tensor.alignment;
   if (tensor.op != UnaryOp::Identity)
-    output << " op=" << enumstr::to_string(tensor.op);
+    output << " op=" << enumstr::to_string_view(tensor.op);
   return output.str();
 }
 
 inline std::string log_options(const PlanOptions& options) {
   std::ostringstream output;
-  output << "algo=" << enumstr::to_string(options.algo) << " compute="
-         << (options.compute ? enumstr::to_string(*options.compute)
+  output << "algo=" << enumstr::to_string_view(options.algo) << " compute="
+         << (options.compute ? enumstr::to_string_view(*options.compute)
                              : std::string_view("output"))
-         << " workspace_preference=" << enumstr::to_string(options.workspace)
+         << " workspace_preference="
+         << enumstr::to_string_view(options.workspace)
          << " workspace_limit=" << options.workspace_limit
          << " kernel_rank=" << options.kernel_rank.value_or(-1)
          << " jit=" << options.jit
-         << " precision=" << enumstr::to_string(options.precision);
+         << " precision=" << enumstr::to_string_view(options.precision);
   return output.str();
 }
 

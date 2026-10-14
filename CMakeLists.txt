@@ -38,13 +38,14 @@ find_package(cuTENSOR QUIET)
 # need it. An installed enumstr is used when found;
 # FETCHCONTENT_SOURCE_DIR_ENUMSTR points the fetch at a local copy.
 if((cuTENSOR_FOUND AND CUDAToolkit_FOUND) OR KATAL_BUILD_TESTS)
-  find_package(enumstr CONFIG QUIET)
+  find_package(enumstr 0.2 CONFIG QUIET)
   if(NOT enumstr_FOUND)
     include(FetchContent)
     FetchContent_Declare(
       enumstr
       GIT_REPOSITORY https://github.com/ajay-mk/enumstr.git
-      GIT_TAG 1b51bebd334af4ad02deff67f2593c91092e600d)
+      GIT_TAG v0.2.0
+      GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(enumstr)
   endif()
 endif()

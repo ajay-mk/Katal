@@ -345,14 +345,14 @@ class CutensorBackend final : public Backend {
                                const PlanOptions& options) const override {
     const int needed = util::min_compute_capability(operation.precision);
     if (compute_capability_ < needed)
-      throw Error(
-          Errc::UnsupportedPattern, operation.equation,
-          "precision " + std::string(enumstr::to_string(operation.precision)) +
-              " needs compute capability " + std::to_string(needed / 10) + "." +
-              std::to_string(needed % 10) + " or newer, but device " +
-              std::to_string(device_) + " has " +
-              std::to_string(compute_capability_ / 10) + "." +
-              std::to_string(compute_capability_ % 10));
+      throw Error(Errc::UnsupportedPattern, operation.equation,
+                  "precision " + enumstr::to_string(operation.precision) +
+                      " needs compute capability " +
+                      std::to_string(needed / 10) + "." +
+                      std::to_string(needed % 10) + " or newer, but device " +
+                      std::to_string(device_) + " has " +
+                      std::to_string(compute_capability_ / 10) + "." +
+                      std::to_string(compute_capability_ % 10));
     return std::make_unique<CutensorKernel>(handle_, device_, operation,
                                             options);
   }
