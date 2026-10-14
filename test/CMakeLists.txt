@@ -29,7 +29,8 @@ endif()
 foreach(src IN LISTS KATAL_TEST_SOURCES)
   cmake_path(GET src STEM name)
   add_executable(${name} ${src})
-  target_link_libraries(${name} PRIVATE Katal::katal Catch2::Catch2WithMain)
+  target_link_libraries(${name} PRIVATE Katal::katal Catch2::Catch2WithMain
+                                        enumstr::enumstr)
   katal_target_warnings(${name})
   if(name STREQUAL "test_backend")
     # Reaches past the public headers to swap in a recording backend.

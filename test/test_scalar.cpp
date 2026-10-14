@@ -1,6 +1,7 @@
 #include <complex>
 #include <cstring>
 
+#include "enum_names.hpp"
 #include <catch2/catch_test_macros.hpp>
 
 #include <katal/scalar.hpp>
