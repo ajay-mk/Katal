@@ -3,6 +3,7 @@
 #include <limits>
 #include <new>
 
+#include "enum_names.hpp"
 #include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cuda_runtime.h>

@@ -5,9 +5,9 @@
 Needs a C++20 compiler and CMake 3.24 or newer. Catch2 v3 is used for the
 tests; an installed copy is preferred and one is fetched if none is found.
 GPU execution also needs the CUDA Toolkit and cuTENSOR. The compiled GPU
-backend uses the header-only [enumstr](https://github.com/ajay-mk/enumstr) to
-name enums in diagnostics; it is fetched the same way when no installed copy is
-found. CUDA 12.6 is the
+backend and the tests use the header-only
+[enumstr](https://github.com/ajay-mk/enumstr) to name enums in diagnostics and
+test failures; it is fetched the same way when no installed copy is found. CUDA 12.6 is the
 toolkit used by the CUDA compile-check CI job. Without those dependencies,
 CMake builds only the host-side layers and omits the GPU tests and examples;
 a passing host-only test run does not validate GPU execution.

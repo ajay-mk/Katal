@@ -29,12 +29,12 @@ endif()
 foreach(src IN LISTS KATAL_TEST_SOURCES)
   cmake_path(GET src STEM name)
   add_executable(${name} ${src})
-  target_link_libraries(${name} PRIVATE Katal::katal Catch2::Catch2WithMain)
+  target_link_libraries(${name} PRIVATE Katal::katal Catch2::Catch2WithMain
+                                        enumstr::enumstr)
   katal_target_warnings(${name})
   if(name STREQUAL "test_backend")
     # Reaches past the public headers to swap in a recording backend.
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
-    target_link_libraries(${name} PRIVATE enumstr::enumstr)
   endif()
   if(name STREQUAL "test_gpu_logging" OR name STREQUAL "test_backend")
     target_compile_definitions(
