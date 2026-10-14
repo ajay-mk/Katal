@@ -16,12 +16,16 @@ import modal
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
 # The CI compile check uses CUDA 12.6 too. The devel image carries nvcc, which
-# FindCUDAToolkit uses to locate the toolkit, and the cudart headers.
+# FindCUDAToolkit uses to locate the toolkit, and the cudart headers. git and
+# ca-certificates let CMake fetch enumstr.
 image = (
     modal.Image.from_registry(
         "nvidia/cuda:12.6.3-devel-ubuntu24.04", add_python="3.12"
     )
-    .apt_install("cmake", "ninja-build", "g++", "catch2", "libcutensor-dev")
+    .apt_install(
+        "cmake", "ninja-build", "g++", "catch2", "libcutensor-dev",
+        "git", "ca-certificates",
+    )
     .add_local_dir(
         REPO,
         "/src",
