@@ -33,6 +33,7 @@ theme:
         name: Switch to light mode
 
 validation:
+  omitted_files: warn
   anchors: warn
   unrecognized_links: warn
 
@@ -56,8 +57,17 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Building and testing: building.md
-  - Equations: equations.md
-  - Errors: errors.md
-  - Tensor ownership and allocators: tensors.md
-  - Examples: examples.md
+  - Tutorial: tutorial/first-contraction.md
+  - How-to guides:
+      - Build, test and install: how-to/build.md
+      - Hoist a plan out of a loop: how-to/hoist-a-plan.md
+      - Bring your own memory: how-to/memory.md
+  - Reference:
+      - Equations: reference/equations.md
+      - Operations: reference/operations.md
+      - Configuration: reference/configuration.md
+      - Tensors: reference/tensors.md
+      - Errors: reference/errors.md
+      - Diagnostics: reference/diagnostics.md
+      - API reference: api/index.html
+  - Design: explanation/design.md

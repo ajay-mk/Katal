@@ -1,59 +1,59 @@
 # Katal
 
-A C++20 einsum frontend for GPU tensor libraries, currently NVIDIA
-cuTENSOR.
+A C++20 einsum frontend for GPU tensor libraries.
 
-Quantum chemistry methods like coupled cluster are built from tensor
-contractions over occupied and virtual orbital indices — hundreds of them in
-a full CCSD or CCSDT implementation, each needing its own cuTENSOR descriptor
-if written by hand. Katal parses an einsum equation such as `"ijab,ijab->"`
-and picks and caches the matching cuTENSOR kernel, so a contraction reads as
-the equation it computes instead of as descriptor-building boilerplate.
+Libraries like cuTENSOR run tensor contractions fast, but every one of them
+needs its own descriptors, plan and workspace written by hand, and a real
+application can have hundreds. With Katal you write the equation instead:
+
+```cpp
+katal::einsum("ijab,abcd->ijcd", 0.5, t2, v, 1.0, r);
+```
+
+Katal parses the equation, builds the matching plan for the backend and
+caches it by equation and shape, so the code reads like the math it computes
+and a hot loop pays for setup once. NVIDIA cuTENSOR is the backend today.
 
 !!! note "Work in progress"
-    Equation parsing, mode classification, and the cuTENSOR backend for
-    contraction, permutation, reduction, and copy are implemented and
-    tested. There is no stable API yet — expect breaking changes.
+    The operations described here are implemented and tested, but the API
+    is not stable yet. Expect breaking changes.
 
 <div class="grid cards" markdown>
 
--   __Equation parsing__
+-   __Tutorial__
 
     ---
 
-    Einstein notation in, a `Classification` out: batch, contracted, and free
-    modes per operand.
+    New to Katal? Build a program against it and run your first
+    contraction.
 
--   __cuTENSOR backend__
+    [Your first contraction](tutorial/first-contraction.md)
 
-    ---
-
-    Contraction, permutation, reduction, and copy all lower to cuTENSOR
-    kernels.
-
--   __Plan caching__
+-   __How-to guides__
 
     ---
 
-    `cached_plan` reuses a built plan by equation and shape; `einsum` uses it
-    under the hood.
+    Building and installing, hoisting plans out of loops, and bringing your
+    own memory.
 
--   __Pluggable workspace__
+    [Build, test and install](how-to/build.md)
 
-    ---
-
-    Bring your own device allocator, or let Katal manage scratch with
-    `cudaMallocAsync`.
-
--   __Tensor storage__
+-   __Reference__
 
     ---
 
-    `Tensor<Allocator>` owns shared, column-major storage; `TensorRef` borrows
-    it. Choose pooled device or managed allocation independently of execution
-    workspace. See [tensor ownership and allocators](tensors.md).
+    The notation, every operation, configuration, tensors, errors and log
+    output, plus the [API reference](api/index.html).
+
+    [Equations](reference/equations.md)
+
+-   __Design__
+
+    ---
+
+    How a call becomes a kernel, why the API looks the way it does, and the
+    ownership rules behind it.
+
+    [Design](explanation/design.md)
 
 </div>
-
-[Getting started](building.md){ .md-button }
-[API reference](api/index.html){ .md-button }
