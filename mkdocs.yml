@@ -1,5 +1,5 @@
 site_name: Katal
-site_description: A C++20 einsum front-end for GPU tensor libraries
+site_description: A C++20 einsum frontend for GPU tensor libraries
 docs_dir: docs
 site_dir: docs-build/site
 

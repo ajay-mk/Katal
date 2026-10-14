@@ -68,7 +68,7 @@ class Context {
   /// is tied to that device.
   int device() const noexcept;
 
-  /// Internal. Public only so the compiled front end can reach the backend
+  /// Internal. Public only so the compiled frontend can reach the backend
   /// and plan cache, and so tests can build a context around their own
   /// backend, without putting any library header in this one.
   class Impl;

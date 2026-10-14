@@ -1,6 +1,6 @@
 # Katal
 
-A C++20 einsum front-end for GPU tensor libraries, currently NVIDIA
+A C++20 einsum frontend for GPU tensor libraries, currently NVIDIA
 cuTENSOR.
 
 Quantum chemistry methods like coupled cluster are built from tensor

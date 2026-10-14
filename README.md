@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-A C++20 einsum front-end for GPU tensor libraries, currently NVIDIA
+A C++20 einsum frontend for GPU tensor libraries, currently NVIDIA
 cuTENSOR.
 
 **Work in progress.** Equation parsing, mode classification, and the cuTENSOR

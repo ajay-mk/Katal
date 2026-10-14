@@ -20,7 +20,7 @@ namespace katal {
 /// Shared between the context and plan translation units; never visible to a
 /// caller. It owns the backend and the plan cache. cuTENSOR is the default
 /// backend, named only through make_cutensor_backend, which keeps <cutensor.h>
-/// out of the public headers and out of the front end.
+/// out of the public headers and out of the frontend.
 class Context::Impl {
  public:
   explicit Impl(Config config)
@@ -31,7 +31,7 @@ class Context::Impl {
       : config_(std::move(config)), backend_(non_null(std::move(backend))) {}
 
   /// A context that plans and runs through `backend` instead of cuTENSOR,
-  /// which is how the host tests watch what the front end lowers.
+  /// which is how the host tests watch what the frontend lowers.
   static Context with_backend(std::unique_ptr<backend::Backend> backend,
                               Config config = {}) {
     return Context(
