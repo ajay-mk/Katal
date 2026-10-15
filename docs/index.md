@@ -1,4 +1,9 @@
-# Katal
+# Katal { .visually-hidden }
+
+<p align="center" markdown>
+![Katal](assets/katal-logo-light.svg#only-light){ width="360" }
+![Katal](assets/katal-logo-dark.svg#only-dark){ width="360" }
+</p>
 
 A C++20 einsum frontend for GPU tensor libraries.
 

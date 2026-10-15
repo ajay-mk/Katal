@@ -38,6 +38,7 @@ validation:
   unrecognized_links: warn
 
 extra_css:
+  - stylesheets/extra.css
   - stylesheets/diagrams.css
 
 plugins:
