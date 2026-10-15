@@ -89,20 +89,20 @@ struct PoolAllocator {
 This is the order of events for one call:
 
 <figure class="kd">
-<div class="kd-scroll">
+<div class="kd-scroll" tabindex="0" role="region" aria-label="Diagram: when a workspace can be reused">
 <div class="kd-time">
   <div class="kd-time__axis">time</div>
   <div class="kd-mark"></div>
 
   <div class="kd-lane" style="grid-row: 2">Host</div>
   <div class="kd-event" style="grid-row: 2; grid-column: 2"><code>allocate</code></div>
-  <div class="kd-event" style="grid-row: 2; grid-column: 3">queue the kernel</div>
+  <div class="kd-event" style="grid-row: 2; grid-column: 3">queue the kernels</div>
   <div class="kd-event" style="grid-row: 2; grid-column: 4"><code>deallocate</code></div>
   <div class="kd-event" style="grid-row: 2; grid-column: 5">call returns</div>
 
   <div class="kd-lane" style="grid-row: 3">Stream</div>
-  <div class="kd-span kd-span--idle" style="grid-row: 3; grid-column: 2 / 5">earlier work on the stream</div>
-  <div class="kd-span kd-span--busy" style="grid-row: 3; grid-column: 5 / 7">the kernel uses the workspace</div>
+  <div class="kd-span kd-span--idle" style="grid-row: 3; grid-column: 2 / 4">earlier work</div>
+  <div class="kd-span kd-span--busy" style="grid-row: 3; grid-column: 4 / 7">the kernels use the workspace</div>
 
   <div class="kd-lane" style="grid-row: 4">Workspace</div>
   <div class="kd-span kd-span--held" style="grid-row: 4; grid-column: 2 / 4">handed out</div>
@@ -110,7 +110,7 @@ This is the order of events for one call:
   <div class="kd-span kd-span--free" style="grid-row: 4; grid-column: 7 / 8">safe to reuse</div>
 </div>
 </div>
-<figcaption>One call with your allocator. <code>deallocate</code> runs before the kernel does, so the pool must wait until the stream reaches the dashed line before reusing the memory.</figcaption>
+<figcaption>One call with your allocator. <code>deallocate</code> can run before the kernels have finished, so the pool must wait until the stream reaches the dashed line before reusing the memory.</figcaption>
 </figure>
 
 ### Pass it to a call

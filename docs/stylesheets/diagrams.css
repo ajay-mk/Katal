@@ -1,14 +1,16 @@
 /* Diagrams drawn in HTML. Colors come from the Material palette, so they
    follow the light and dark schemes. */
 
-.kd {
+.md-typeset .kd {
   margin: 1.5em 0;
+  text-align: left;
   font-size: 0.7rem;
   line-height: 1.4;
 }
 
 .kd-scroll {
   overflow-x: auto;
+  border-radius: 0.2rem;
   padding-bottom: 0.4rem;
 }
 
@@ -113,10 +115,6 @@
   font-size: 0.85em;
   font-weight: 700;
   color: var(--md-default-fg-color);
-  background: color-mix(in srgb, #ff9100 30%, transparent);
-}
-
-.kd-tag--fast {
   background: color-mix(in srgb, #00c853 30%, transparent);
 }
 
@@ -183,6 +181,7 @@
 
 .kd-event {
   justify-self: start;
+  white-space: nowrap;
   border: 1px solid var(--md-default-fg-color--lighter);
   background: var(--md-default-bg-color);
 }

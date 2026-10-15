@@ -23,7 +23,7 @@ queues its kernels with this call's pointers and scales.
   the description.
 
 <figure class="kd">
-<div class="kd-scroll">
+<div class="kd-scroll" tabindex="0" role="region" aria-label="Diagram: from an equation to a kernel">
 <div class="kd-pipe">
   <div class="kd-skip kd-skip--katal" style="grid-column: 1 / 5">Skipped on a hit in Katal's plan cache, and by a <code>Plan</code> you hold</div>
   <div class="kd-skip kd-skip--backend" style="grid-column: 4 / 5">Skipped on a hit in cuTENSOR's plan cache</div>
@@ -51,9 +51,9 @@ queues its kernels with this call's pointers and scales.
     <span class="kd-stage__step">5 · Execute</span>
     <span class="kd-stage__title">Queue the kernels</span>
     <span class="kd-stage__body">With this call's pointers, scales and stream</span>
-    <span class="kd-tag kd-tag--fast">every call</span>
+    <span class="kd-tag">every call</span>
   </div>
-  <div class="kd-phase" style="grid-column: 1 / 5"><code>make_plan</code> builds a <code>Plan</code></div>
+  <div class="kd-phase" style="grid-column: 1 / 5"><code>Equation::parse</code> and <code>make_plan</code> build a <code>Plan</code></div>
   <div class="kd-phase" style="grid-column: 5 / 6"><code>Plan::execute</code></div>
 </div>
 </div>
