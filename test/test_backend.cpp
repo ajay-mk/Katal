@@ -12,6 +12,7 @@
 
 #include "backend.hpp"
 #include "context_impl.hpp"
+#include "enum_names.hpp"
 #include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 

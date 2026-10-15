@@ -1,13 +1,12 @@
 name: gpu
 
 # Runs the gpu-labelled tests on a Modal T4, the only CI job with a device.
-# Pushes to main, pull requests labelled `gpu`, and manual runs. Every other
-# job here only compiles the GPU code.
+# Pushes to main, every pull request, and manual runs. Every other job here
+# only compiles the GPU code.
 on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 concurrency:
@@ -16,9 +15,6 @@ concurrency:
 
 jobs:
   gpu-tests:
-    if: >-
-      github.event_name != 'pull_request' ||
-      contains(github.event.pull_request.labels.*.name, 'gpu')
     runs-on: ubuntu-latest
     env:
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}

@@ -10,6 +10,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "enum_names.hpp"
 #include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 

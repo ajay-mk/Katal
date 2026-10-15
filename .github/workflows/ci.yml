@@ -64,7 +64,8 @@ jobs:
   # that is not a developer's own. No GPU is involved: the library is plain C++
   # against cuTENSOR's C API, and nvcc is here only because FindCUDAToolkit
   # uses it to locate the toolkit root. The gpu-labelled cases need a device;
-  # gpu.yml runs them on Modal.
+  # gpu.yml runs them on Modal. Logging is on here so src/log.hpp is compiled
+  # somewhere; gpu.yml builds with it off, the default.
   cuda-build:
     runs-on: ubuntu-latest
     env:
@@ -106,6 +107,7 @@ jobs:
           -DCUDAToolkit_ROOT=${{ env.CUDA_ROOT }}
           -DKATAL_WARNINGS_AS_ERRORS=ON
           -DKATAL_BUILD_BENCHMARKS=ON
+          -DKATAL_ENABLE_LOGGING=ON
 
       # Guards against the whole point of this job being lost silently: if
       # cuTENSOR were not found, CMake falls back to an INTERFACE library and
