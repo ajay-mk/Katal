@@ -37,6 +37,9 @@ validation:
   anchors: warn
   unrecognized_links: warn
 
+extra_css:
+  - stylesheets/diagrams.css
+
 plugins:
   - search
 
@@ -51,11 +54,7 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
 

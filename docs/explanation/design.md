@@ -22,21 +22,45 @@ queues its kernels with this call's pointers and scales.
   descriptors themselves, so it saves the kernel search but not building
   the description.
 
-```mermaid
-flowchart TD
-  call["einsum or cached_plan"] --> hit{"In Katal's<br/>plan cache?"}
-  hit -- yes --> plan
-  hit -- no --> parse
-  subgraph build ["make_plan"]
-    parse["Parse and classify the equation"] --> lower["Lower to modes, extents,<br/>strides and types"]
-    lower --> desc["Build backend descriptors"] --> known{"In cuTENSOR's<br/>plan cache?"}
-    known -- no --> search["Kernel search"] --> size["Report workspace size"]
-    known -- yes --> size
-  end
-  size --> plan["Plan"]
-  held["A Plan you hold"] --> exec
-  plan --> exec["Plan::execute queues kernels<br/>with this call's pointers<br/>and scales"]
-```
+<figure class="kd">
+<div class="kd-scroll">
+<div class="kd-pipe">
+  <div class="kd-skip kd-skip--katal" style="grid-column: 1 / 5">Skipped on a hit in Katal's plan cache, and by a <code>Plan</code> you hold</div>
+  <div class="kd-skip kd-skip--backend" style="grid-column: 4 / 5">Skipped on a hit in cuTENSOR's plan cache</div>
+  <div class="kd-stage">
+    <span class="kd-stage__step">1 · Parse</span>
+    <span class="kd-stage__title">Read the equation</span>
+    <span class="kd-stage__body"><code>ijab,abcd-&gt;ijcd</code> is classified as a contraction</span>
+  </div>
+  <div class="kd-stage">
+    <span class="kd-stage__step">2 · Lower</span>
+    <span class="kd-stage__title">Describe the operation</span>
+    <span class="kd-stage__body">Modes, extents, strides and types, independent of any backend</span>
+  </div>
+  <div class="kd-stage">
+    <span class="kd-stage__step">3 · Describe</span>
+    <span class="kd-stage__title">Build descriptors</span>
+    <span class="kd-stage__body">The backend's own description of the operation</span>
+    <span class="kd-tag">expensive</span>
+  </div>
+  <div class="kd-stage">
+    <span class="kd-stage__step">4 · Search</span>
+    <span class="kd-stage__title">Pick a kernel</span>
+    <span class="kd-stage__body">Choose the kernel and report the workspace it needs</span>
+    <span class="kd-tag">expensive</span>
+  </div>
+  <div class="kd-stage kd-stage--run">
+    <span class="kd-stage__step">5 · Execute</span>
+    <span class="kd-stage__title">Queue the kernels</span>
+    <span class="kd-stage__body">With this call's pointers, scales and stream</span>
+    <span class="kd-tag kd-tag--fast">every call</span>
+  </div>
+  <div class="kd-phase" style="grid-column: 1 / 5"><code>make_plan</code> builds a <code>Plan</code></div>
+  <div class="kd-phase" style="grid-column: 5 / 6"><code>Plan::execute</code></div>
+</div>
+</div>
+<figcaption>What a call does, and which steps each cache saves. Steps 1 to 4 build the plan; step 5 runs it.</figcaption>
+</figure>
 
 A `Plan` you hold skips both, which is why hot loops should
 [hoist their plans](../how-to/hoist-a-plan.md).
