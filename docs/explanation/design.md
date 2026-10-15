@@ -41,13 +41,11 @@ queues its kernels with this call's pointers and scales.
     <span class="kd-stage__step">3 · Describe</span>
     <span class="kd-stage__title">Build descriptors</span>
     <span class="kd-stage__body">The backend's own description of the operation</span>
-    <span class="kd-tag">expensive</span>
   </div>
   <div class="kd-stage">
     <span class="kd-stage__step">4 · Search</span>
     <span class="kd-stage__title">Pick a kernel</span>
     <span class="kd-stage__body">Choose the kernel and report the workspace it needs</span>
-    <span class="kd-tag">expensive</span>
   </div>
   <div class="kd-stage kd-stage--run">
     <span class="kd-stage__step">5 · Execute</span>

@@ -197,27 +197,27 @@
 }
 
 .kd-span--busy {
-  border-color: var(--md-typeset-a-color);
-  background: color-mix(in srgb, var(--md-typeset-a-color) 15%, transparent);
+  border-color: #e11d48;
+  background: color-mix(in srgb, #e11d48 16%, transparent);
 }
 
 .kd-span--held {
-  border-color: var(--md-default-fg-color--lighter);
-  background: var(--md-code-bg-color);
+  border-color: #64748b;
+  background: color-mix(in srgb, #64748b 14%, transparent);
 }
 
 .kd-span--unsafe {
-  border-color: #ff9100;
+  border-color: #e11d48;
   background: repeating-linear-gradient(
     -45deg,
-    color-mix(in srgb, #ff9100 22%, transparent) 0 0.4rem,
-    color-mix(in srgb, #ff9100 8%, transparent) 0.4rem 0.8rem
+    color-mix(in srgb, #e11d48 18%, transparent) 0 0.4rem,
+    color-mix(in srgb, #e11d48 6%, transparent) 0.4rem 0.8rem
   );
 }
 
 .kd-span--free {
-  border-color: #00c853;
-  background: color-mix(in srgb, #00c853 15%, transparent);
+  border-color: #0d9488;
+  background: color-mix(in srgb, #0d9488 16%, transparent);
 }
 
 .kd-mark {
