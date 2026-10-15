@@ -1,6 +1,11 @@
-# Katal
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/katal-logo-dark.svg">
+    <img alt="Katal" src="docs/assets/katal-logo-light.svg" width="360">
+  </picture>
+</p>
 
-A C++20 einsum front-end for GPU tensor libraries, currently NVIDIA
+A C++20 einsum frontend for GPU tensor libraries, currently NVIDIA
 cuTENSOR.
 
 **Work in progress.** Equation parsing, mode classification, and the cuTENSOR

@@ -14,9 +14,9 @@
 #include <katal/scalar.hpp>
 #include <katal/tensor_ref.hpp>
 
-/// The seam between Katal's front end and the library that runs the work.
+/// The seam between Katal's frontend and the library that runs the work.
 ///
-/// The front end parses and classifies an equation, checks shapes, and
+/// The frontend parses and classifies an equation, checks shapes, and
 /// lowers it to an Operation: modes, extents, strides and types, in the terms
 /// every tensor library shares. A Backend turns an Operation into a Kernel
 /// and runs it. The Operation, Kernel and Backend types name no library, so a
@@ -61,7 +61,7 @@ struct Operation {
   /// A, and B for a contraction.
   std::vector<Operand> inputs;
   Operand output;
-  /// The accumulation type the front end chose.
+  /// The accumulation type the frontend chose.
   Dtype compute = Dtype::F64;
   /// When not Native, the backend computes in this mode instead of `compute`.
   Precision precision = Precision::Native;
@@ -87,7 +87,7 @@ class Kernel {
   /// Queues the work on `stream`. `scalars` holds the operation's factors in
   /// the order OpKind writes them: alpha and beta, alpha, beta and gamma for
   /// an elementwise one, or alpha alone for a permutation. `inputs` holds one
-  /// device pointer per Operation input, in the same order. The front end has
+  /// device pointer per Operation input, in the same order. The frontend has
   /// already checked the device, the alignments and the workspace size.
   virtual void run(std::span<const Scalar> scalars,
                    std::span<const void* const> inputs, const void* c, void* d,

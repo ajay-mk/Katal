@@ -1,4 +1,4 @@
-// What the front end hands a backend, checked on the host: a recording
+// What the frontend hands a backend, checked on the host: a recording
 // backend stands in for cuTENSOR, so no device is needed.
 
 #include <array>

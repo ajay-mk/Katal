@@ -187,7 +187,7 @@ std::uint64_t round_up(std::uint64_t bytes) {
 
 }  // namespace
 
-/// The front end of a plan: everything about an equation that does not depend
+/// The frontend of a plan: everything about an equation that does not depend
 /// on which library runs it. Shapes are checked and lowered to a
 /// backend::Operation here; the backend's Kernel holds the rest.
 class Plan::Impl {
@@ -559,7 +559,7 @@ class Plan::Impl {
 
   /// Unset follows the output, except that half-precision output accumulates
   /// in single precision: that is the pairing cuTENSOR supports for both. A
-  /// front-end policy, so that every backend gets the same default.
+  /// frontend policy, so that every backend gets the same default.
   static Dtype compute_type(const PlanOptions& options, Dtype output) {
     if (options.compute) return *options.compute;
     if (output == Dtype::F16 || output == Dtype::Bf16) return Dtype::F32;
