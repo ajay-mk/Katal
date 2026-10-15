@@ -22,6 +22,22 @@ queues its kernels with this call's pointers and scales.
   descriptors themselves, so it saves the kernel search but not building
   the description.
 
+```mermaid
+flowchart TD
+  call["einsum or cached_plan"] --> hit{"In Katal's<br/>plan cache?"}
+  hit -- yes --> plan
+  hit -- no --> parse
+  subgraph build ["make_plan"]
+    parse["Parse and classify the equation"] --> lower["Lower to modes, extents,<br/>strides and types"]
+    lower --> desc["Build backend descriptors"] --> known{"In cuTENSOR's<br/>plan cache?"}
+    known -- no --> search["Kernel search"] --> size["Report workspace size"]
+    known -- yes --> size
+  end
+  size --> plan["Plan"]
+  held["A Plan you hold"] --> exec
+  plan --> exec["Plan::execute queues kernels<br/>with this call's pointers<br/>and scales"]
+```
+
 A `Plan` you hold skips both, which is why hot loops should
 [hoist their plans](../how-to/hoist-a-plan.md).
 

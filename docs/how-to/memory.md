@@ -86,6 +86,22 @@ struct PoolAllocator {
 - A plan that sums a label out of one input before a contraction keeps that
   input in its workspace and needs it aligned to 256 bytes.
 
+This is the order of events for one call:
+
+```mermaid
+sequenceDiagram
+  participant H as Host
+  participant P as Your pool
+  participant S as Stream
+  H->>P: allocate(bytes, stream)
+  P-->>H: Workspace
+  H->>S: queue the kernel that uses the workspace
+  H->>P: deallocate(workspace, stream)
+  Note over H: the call returns
+  S->>S: the kernel runs and uses the workspace
+  Note over P,S: the pool may hand the memory out again<br/>only once the stream has reached this point
+```
+
 ### Pass it to a call
 
 The allocator is the last argument of every call:
