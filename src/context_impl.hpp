@@ -1,10 +1,12 @@
 #ifndef KATAL_SRC_CONTEXT_IMPL_HPP_
 #define KATAL_SRC_CONTEXT_IMPL_HPP_
 
+#include <cstdint>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -16,6 +18,14 @@
 #include <katal/plan.hpp>
 
 namespace katal {
+
+namespace detail {
+
+/// Sets the release threshold of `device`'s default memory pool; see
+/// Config::async_pool_release_threshold. Defined with the CUDA allocator.
+void set_async_pool_release_threshold(int device, std::uint64_t bytes);
+
+}  // namespace detail
 
 /// Shared between the context and plan translation units; never visible to a
 /// caller. It owns the backend and the plan cache. cuTENSOR is the default
@@ -54,7 +64,7 @@ class Context::Impl {
   /// still cached. When full, the least recently used plan is evicted;
   /// outstanding shared_ptrs keep any plan in use alive.
   template <class Make>
-  std::shared_ptr<const Plan> cached(const std::string& key, Make make) const {
+  std::shared_ptr<const Plan> cached(std::string key, Make make) const {
     // A hit skips planning, which is where a plan checks its device, so check
     // here too: a plan from this cache is no use on another device.
     check_device();
@@ -78,9 +88,9 @@ class Context::Impl {
 
     const std::lock_guard<std::mutex> lock(mutex_);
     if (auto raced = touch(key)) return raced;
-    plans_.emplace_front(key, plan);
+    plans_.emplace_front(std::move(key), plan);
     try {
-      index_.emplace(key, plans_.begin());
+      index_.emplace(plans_.front().first, plans_.begin());
     } catch (...) {
       plans_.pop_front();
       throw;
@@ -94,7 +104,8 @@ class Context::Impl {
       plans_.pop_back();
     }
     KATAL_LOG("cache.insert device="
-              << device() << " key=" << std::hash<std::string>{}(key)
+              << device()
+              << " key=" << std::hash<std::string>{}(plans_.front().first)
               << " equation=" << util::log_quote(plan->equation())
               << " entries=" << plans_.size());
     return plan;
@@ -114,7 +125,7 @@ class Context::Impl {
 
   /// The cached plan for `key`, moved to the front as the most recently used,
   /// or null. Requires the lock.
-  std::shared_ptr<const Plan> touch(const std::string& key) const {
+  std::shared_ptr<const Plan> touch(std::string_view key) const {
     const auto it = index_.find(key);
     if (it == index_.end()) return nullptr;
     plans_.splice(plans_.begin(), plans_, it->second);
@@ -129,7 +140,10 @@ class Context::Impl {
   mutable std::mutex mutex_;
   /// Most recently used first. Splicing keeps the iterators in `index_` valid.
   mutable std::list<Entry> plans_;
-  mutable std::unordered_map<std::string, std::list<Entry>::iterator> index_;
+  /// Keys view the strings owned by `plans_`, whose nodes never move, so an
+  /// entry is erased here before its node is popped.
+  mutable std::unordered_map<std::string_view, std::list<Entry>::iterator>
+      index_;
 };
 
 }  // namespace katal

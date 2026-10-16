@@ -1,5 +1,7 @@
+#include <cstdint>
 #include <new>
 
+#include "context_impl.hpp"
 #include "cuda_status.hpp"
 #include <cuda_runtime.h>
 
@@ -48,6 +50,16 @@ void deallocate_managed_bytes(void* data, StreamRef stream) noexcept {
     return;
   }
   util::check_release(cudaFree(data));
+}
+
+void set_async_pool_release_threshold(int device, std::uint64_t bytes) {
+  cudaMemPool_t pool = nullptr;
+  cudaError_t status = cudaDeviceGetDefaultMemPool(&pool, device);
+  if (status == cudaSuccess)
+    status =
+        cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &bytes);
+  if (status != cudaSuccess)
+    throw Error(Errc::CudaError, {}, cudaGetErrorString(status));
 }
 
 void copy_to_host(void* host, const void* device, std::size_t bytes,

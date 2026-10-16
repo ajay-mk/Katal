@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include <katal/options.hpp>
 #include <katal/scalar.hpp>
@@ -48,6 +49,17 @@ struct Config {
   /// `einsum` path benefits; a hoisted Plan already skips all of it. 0 disables
   /// it. When full, the least recently used plan is evicted.
   std::size_t plan_cache_entries = 128;
+
+  /// When set, the device's default CUDA memory pool keeps up to this many
+  /// freed bytes instead of returning them to the driver at every
+  /// synchronization. CUDA's default is 0, so a loop that synchronizes each
+  /// iteration remaps the einsum scratch and pooled Tensor memory every time;
+  /// `UINT64_MAX` keeps it all. Applied when the Context is constructed.
+  ///
+  /// The pool belongs to the device, not to Katal: this changes it for every
+  /// `cudaMallocAsync` in the process, and memory the pool holds is not
+  /// available to `cudaMalloc`. Unset leaves the pool as it is.
+  std::optional<std::uint64_t> async_pool_release_threshold;
 };
 
 /// Owns a backend, cuTENSOR by default, and the plan cache. Move-only;
