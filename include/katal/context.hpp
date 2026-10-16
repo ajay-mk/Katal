@@ -58,7 +58,8 @@ struct Config {
   ///
   /// The pool belongs to the device, not to Katal: this changes it for every
   /// `cudaMallocAsync` in the process, and memory the pool holds is not
-  /// available to `cudaMalloc`. Unset leaves the pool as it is.
+  /// available to `cudaMalloc`. Unset leaves the pool as it is. Constructing
+  /// the Context throws `Errc::CudaError` if the device has no default pool.
   std::optional<std::uint64_t> async_pool_release_threshold;
 };
 

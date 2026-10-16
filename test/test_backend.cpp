@@ -592,3 +592,31 @@ TEST_CASE("the precision splits the cache for contractions only", "[backend]") {
         katal::cached_plan(context, "ij,jk->ik", r, r, r, tf32_f64));
   CHECK(record->operations.size() == 6);
 }
+
+// The index views the keys its list owns, so eviction must drop the view
+// before the string; one entry is the tightest case. Run under ASan to catch
+// a dangling view.
+TEST_CASE("a one-entry plan cache keeps only the latest plan", "[backend]") {
+  auto record = std::make_shared<Record>();
+  katal::Config config;
+  config.plan_cache_entries = 1;
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record), config);
+  const std::array<std::int64_t, 2> e{2, 2};
+  const auto r = katal::make_ref(nullptr, katal::Dtype::F64, e);
+
+  const auto first = katal::cached_plan(context, "ij,jk->ik", r, r, r);
+  CHECK(katal::cached_plan(context, "ij,jk->ik", r, r, r) == first);
+  CHECK(record->operations.size() == 1);
+
+  const auto second = katal::cached_plan(context, "ij,kj->ik", r, r, r);
+  CHECK(second != first);
+  CHECK(katal::cached_plan(context, "ij,kj->ik", r, r, r) == second);
+  CHECK(record->operations.size() == 2);
+
+  // The first was evicted, so asking again plans anew and evicts the second.
+  CHECK(katal::cached_plan(context, "ij,jk->ik", r, r, r) != first);
+  CHECK(record->operations.size() == 3);
+  CHECK(katal::cached_plan(context, "ij,kj->ik", r, r, r) != second);
+  CHECK(record->operations.size() == 4);
+}

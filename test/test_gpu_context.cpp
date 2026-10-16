@@ -82,6 +82,44 @@ TEST_CASE("a full plan cache evicts the least recently used plan", "[gpu]") {
   REQUIRE(katal::cached_plan(context, "ij,kj->ik", t, t, t) != second);
 }
 
+TEST_CASE("a context sets the pool release threshold only when asked",
+          "[gpu]") {
+  if (device_count() == 0) SKIP("no CUDA device");
+  int device = 0;
+  REQUIRE(cudaGetDevice(&device) == cudaSuccess);
+  int pools = 0;
+  REQUIRE(cudaDeviceGetAttribute(&pools, cudaDevAttrMemoryPoolsSupported,
+                                 device) == cudaSuccess);
+  if (pools == 0) SKIP("the device has no memory pools");
+  cudaMemPool_t pool = nullptr;
+  REQUIRE(cudaDeviceGetDefaultMemPool(&pool, device) == cudaSuccess);
+  const auto threshold = [&] {
+    std::uint64_t bytes = 0;
+    REQUIRE(cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReleaseThreshold,
+                                    &bytes) == cudaSuccess);
+    return bytes;
+  };
+  const std::uint64_t before = threshold();
+
+  katal::Config config;
+  config.async_pool_release_threshold = before + (std::uint64_t{1} << 20);
+  {
+    const katal::Context context(config);
+    CHECK(threshold() == *config.async_pool_release_threshold);
+  }
+  // The pool belongs to the device, so the setting outlives the context.
+  CHECK(threshold() == *config.async_pool_release_threshold);
+  {
+    const katal::Context untouched;
+    CHECK(threshold() == *config.async_pool_release_threshold);
+  }
+  config.async_pool_release_threshold = before;
+  {
+    const katal::Context restore(config);
+  }
+  CHECK(threshold() == before);
+}
+
 TEST_CASE("initialize after the default context exists throws", "[gpu]") {
   if (device_count() == 0) SKIP("no CUDA device");
   katal::finalize();

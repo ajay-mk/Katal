@@ -143,8 +143,8 @@ void synchronized_calls(const std::string& equation) {
     const auto rb = katal::make_ref(b.get(), katal::Dtype::F64, s.b);
     const auto rd = katal::make_ref(d.get(), katal::Dtype::F64, s.d);
 
-    // Measured in this order because the threshold belongs to the device:
-    // the last context leaves it at 0 again for the next point.
+    // The threshold belongs to the device, so it outlives each context; it
+    // is put back to CUDA's default of 0 after the point.
     double ms[2] = {};
     std::uint64_t scratch = 0;
     for (const std::uint64_t threshold :
@@ -159,9 +159,13 @@ void synchronized_calls(const std::string& equation) {
         example::check(cudaDeviceSynchronize());
       });
     }
-    katal::Config reset;
-    reset.async_pool_release_threshold = 0;
-    const katal::Context restore(reset);
+    int device = 0;
+    example::check(cudaGetDevice(&device));
+    cudaMemPool_t pool = nullptr;
+    example::check(cudaDeviceGetDefaultMemPool(&pool, device));
+    std::uint64_t release_all = 0;
+    example::check(cudaMemPoolSetAttribute(
+        pool, cudaMemPoolAttrReleaseThreshold, &release_all));
 
     std::printf("  %4lld %5lld %12.2f %12.4f %12.4f\n", (long long)o,
                 (long long)v, static_cast<double>(scratch) / (1 << 20), ms[0],
