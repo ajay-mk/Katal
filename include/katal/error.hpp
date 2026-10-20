@@ -42,7 +42,8 @@ enum class Errc {
   CudaError,
   /// The process-wide context was misused: a second `initialize`, a `Runtime`
   /// while the default context exists, or `finalize` while a `Runtime` owns
-  /// it.
+  /// it. Also a failed `KATAL_ASSERT` when Katal was configured to throw on
+  /// one, such as a moved-from Context or Plan being used.
   InvalidState,
 };
 

@@ -1,12 +1,12 @@
 #ifndef KATAL_CONTEXT_HPP_
 #define KATAL_CONTEXT_HPP_
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 
+#include <katal/assert.hpp>
 #include <katal/options.hpp>
 #include <katal/scalar.hpp>
 #include <katal/tensor_ref.hpp>
@@ -79,14 +79,14 @@ class Context {
 
   /// The CUDA device this context's backend was created on. A plan built here
   /// is tied to that device.
-  int device() const noexcept;
+  int device() const;
 
   /// Internal. Public only so the compiled frontend can reach the backend
   /// and plan cache, and so tests can build a context around their own
   /// backend, without putting any library header in this one.
   class Impl;
-  const Impl& impl() const noexcept {
-    assert(impl_ != nullptr && "katal: use of a moved-from Context");
+  const Impl& impl() const {
+    KATAL_ASSERT(impl_ != nullptr, "use of a moved-from Context");
     return *impl_;
   }
 

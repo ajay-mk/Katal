@@ -29,7 +29,7 @@ try {
 | `WorkspaceTooSmall`  | `execute` got less workspace than `Plan::workspace_size()`, or cuTENSOR reported too little. |
 | `CutensorError`      | cuTENSOR failed; the message carries its text.                          |
 | `CudaError`          | A CUDA call failed, or a plan ran with another device current.          |
-| `InvalidState`       | The process-wide context was misused: a second `initialize()`, a `Runtime` when a context exists, or `finalize()` while a `Runtime` owns it. |
+| `InvalidState`       | The process-wide context was misused: a second `initialize()`, a `Runtime` when a context exists, or `finalize()` while a `Runtime` owns it. Also a failed [assertion](#assertions) in a build that throws on one. |
 
 ### UnsupportedPattern
 
@@ -48,6 +48,28 @@ run:
 - an `execute` overload that does not match the plan;
 - a workspace under 256-byte alignment for a plan that keeps a reduced input
   in it.
+
+## Assertions
+
+Katal checks two kinds of condition, with two macros from
+`<katal/assert.hpp>`:
+
+- **`KATAL_ENFORCE`** checks what a caller passed in, such as an `execute`
+  pointer's alignment or the workspace size. It is never compiled out, and a
+  failure always throws `katal::Error` with the code documented for it.
+- **`KATAL_ASSERT`** checks what Katal itself guarantees, or misuse the API
+  calls undefined, such as using a moved-from `Context` or `Plan`. A failure
+  is a bug, so what it does is fixed when Katal is configured, by
+  `KATAL_ASSERT_BEHAVIOR`:
+
+| Behavior | A failed `KATAL_ASSERT` |
+| --- | --- |
+| `THROW` | throws `katal::Error` with `Errc::InvalidState`; the message names the check and its source location |
+| `ABORT` | prints the same to stderr and calls `std::abort` |
+| `IGNORE` | is compiled out; the condition is not evaluated |
+
+The default is `IGNORE` for `Release` and `MinSizeRel` builds and `ABORT`
+otherwise. `katal::assert_behavior` says which one a build has.
 
 ## Scalars
 

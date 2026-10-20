@@ -102,11 +102,11 @@ class Plan {
   /// Bytes of scratch `execute` needs. Exact rather than estimated: what the
   /// selected kernels were planned against, plus room for any input summed
   /// ahead of a contraction. Often zero.
-  uint64_t workspace_size() const noexcept;
+  uint64_t workspace_size() const;
 
   /// The equation this plan came from, for diagnostics. The view is valid only
   /// while the plan is.
-  std::string_view equation() const noexcept;
+  std::string_view equation() const;
 
   /// Computes `d = alpha * <equation over a and b> + beta * c`.
   ///
@@ -152,7 +152,7 @@ class Plan {
 
  private:
   explicit Plan(std::unique_ptr<Impl> impl);
-  const Impl& impl() const noexcept;
+  const Impl& impl() const;
   friend Plan make_plan(const Context&, const Equation&, const ConstTensorRef&,
                         const ConstTensorRef&, const ConstTensorRef&,
                         PlanOptions);

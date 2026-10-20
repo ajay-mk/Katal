@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +14,7 @@
 #include "context_impl.hpp"
 #include "log.hpp"
 
+#include <katal/assert.hpp>
 #include <katal/plan.hpp>
 
 #if KATAL_ENABLE_LOGGING
@@ -90,7 +90,7 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   append(key, &rank, sizeof(rank));
   append(key, &jit, sizeof(jit));
   for (const ConstTensorRef* t : tensors) append_tensor(key, *t);
-  assert(key.size() == size && "plan_key: tensor_key_size is out of date");
+  KATAL_ASSERT(key.size() == size, "plan_key: tensor_key_size is out of date");
   return key;
 }
 
@@ -669,15 +669,13 @@ Plan::Plan(Plan&&) noexcept = default;
 Plan& Plan::operator=(Plan&&) noexcept = default;
 Plan::~Plan() = default;
 
-const Plan::Impl& Plan::impl() const noexcept {
-  assert(impl_ != nullptr && "katal: use of a moved-from Plan");
+const Plan::Impl& Plan::impl() const {
+  KATAL_ASSERT(impl_ != nullptr, "use of a moved-from Plan");
   return *impl_;
 }
 
-uint64_t Plan::workspace_size() const noexcept {
-  return impl().workspace_size();
-}
-std::string_view Plan::equation() const noexcept { return impl().equation(); }
+uint64_t Plan::workspace_size() const { return impl().workspace_size(); }
+std::string_view Plan::equation() const { return impl().equation(); }
 
 void Plan::execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                    const void* c, void* d, Workspace workspace,

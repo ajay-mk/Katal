@@ -9,6 +9,13 @@
 /// still declared, but nothing defines them, so using one fails to link.
 #cmakedefine01 KATAL_HAVE_CUTENSOR
 
+/// What a failed KATAL_ASSERT does; see katal/assert.hpp. Generated, like
+/// max_rank, so that inline code in a consumer agrees with the library.
+#define KATAL_ASSERT_THROW 1
+#define KATAL_ASSERT_ABORT 2
+#define KATAL_ASSERT_IGNORE 3
+#define KATAL_ASSERT_BEHAVIOR KATAL_ASSERT_@katal_assert_behavior@
+
 namespace katal {
 
 /// Largest tensor rank Katal can describe, and so the inline capacity of an
