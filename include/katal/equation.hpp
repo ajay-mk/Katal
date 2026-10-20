@@ -119,13 +119,6 @@ class Equation {
     return c;
   }
 
-  static bool has_repeated_label(const util::Index& i) {
-    for (std::size_t x = 0; x < i.rank(); ++x)
-      for (std::size_t y = x + 1; y < i.rank(); ++y)
-        if (i[x] == i[y]) return true;
-    return false;
-  }
-
   std::string text_;
   std::vector<util::Index> operands_;
   util::Index result_;
@@ -252,7 +245,7 @@ inline void Equation::check_result() const {
   if (operands_.empty())
     throw Error(Errc::ParseError, text_, "the equation has no operands");
 
-  if (has_repeated_label(result_))
+  if (repeated(result_).rank() > 0)
     throw Error(Errc::UnsupportedPattern, text_,
                 "the result " + quoted(result_) +
                     " repeats a label; writing a diagonal is not expressible");
