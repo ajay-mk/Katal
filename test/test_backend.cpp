@@ -16,6 +16,7 @@
 #include "thrown.hpp"
 #include <catch2/catch_test_macros.hpp>
 
+#include <katal/assert.hpp>
 #include <katal/context.hpp>
 #include <katal/plan.hpp>
 #include <katal/tensor_ref.hpp>
@@ -396,6 +397,68 @@ TEST_CASE("a permutation refuses an input overlapping its output",
                 context, katal::Equation::parse("ij->ji"), a, d);
           }) == katal::Errc::ExtentMismatch);
   }
+}
+
+TEST_CASE("an output that addresses an element twice is refused", "[backend]") {
+  auto record = std::make_shared<Record>();
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const std::array<std::int64_t, 2> e{2, 2};
+  const auto f64 = katal::Dtype::F64;
+  const auto a = katal::make_ref(nullptr, f64, e);
+  const auto code = [&](std::array<std::int64_t, 2> stride,
+                        std::array<std::int64_t, 2> extent) {
+    const katal::ConstTensorRef d{nullptr, f64, extent, stride};
+    return katal::test::thrown_code([&] {
+      (void)katal::make_plan(context, katal::Equation::parse("ij->ij"), a, d);
+    });
+  };
+
+  CHECK(code({0, 1}, e) == katal::Errc::UnsupportedPattern);
+  CHECK(code({1, 1}, e) == katal::Errc::UnsupportedPattern);
+  CHECK(code({1, -1}, e) == katal::Errc::UnsupportedPattern);
+  constexpr std::int64_t lowest = std::numeric_limits<std::int64_t>::min();
+  CHECK(code({lowest, lowest}, e) == katal::Errc::UnsupportedPattern);
+  CHECK_FALSE(record->operation);
+  // A mode of length one is never stepped along, so its stride is free.
+  const std::array<std::int64_t, 2> row{1, 2};
+  const std::array<std::int64_t, 2> free_stride{0, 1};
+  const katal::ConstTensorRef d{nullptr, f64, row, free_stride};
+  CHECK(katal::test::thrown_code([&] {
+          (void)katal::make_plan(context, katal::Equation::parse("ij->ij"),
+                                 katal::make_ref(nullptr, f64, row), d);
+        }) == std::nullopt);
+  CHECK(code({4, 1}, e) == std::nullopt);
+  CHECK(code({1, 2}, e) == std::nullopt);
+}
+
+TEST_CASE("using a moved-from context or plan follows the assert behavior",
+          "[backend]") {
+  // Not SKIP: an older catch_discover_tests reads a skipped case as failed.
+  if constexpr (katal::assert_behavior != katal::AssertBehavior::Throw) {
+    SUCCEED("only a build that throws on a failed assertion can test this");
+    return;
+  }
+  auto record = std::make_shared<Record>();
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const std::array<std::int64_t, 2> e{2, 2};
+  const auto f64 = katal::Dtype::F64;
+  auto plan = katal::make_plan(context, katal::Equation::parse("ij->ji"),
+                               katal::make_ref(nullptr, f64, e),
+                               katal::make_ref(nullptr, f64, e));
+  const katal::Plan kept = std::move(plan);
+  CHECK(kept.workspace_size() == 0);
+  // NOLINTNEXTLINE(bugprone-use-after-move): the misuse under test
+  CHECK(katal::test::thrown_code([&] { (void)plan.workspace_size(); }) ==
+        katal::Errc::InvalidState);
+
+  auto moved = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const katal::Context owner = std::move(moved);
+  // NOLINTNEXTLINE(bugprone-use-after-move): the misuse under test
+  CHECK(katal::test::thrown_code([&] { (void)moved.device(); }) ==
+        katal::Errc::InvalidState);
 }
 
 TEST_CASE("a label in one input is summed out of it first", "[backend]") {

@@ -8,6 +8,7 @@
 | `KATAL_BUILD_BENCHMARKS` | `OFF` | build the GPU timing drivers in `bench/` |
 | `KATAL_ENABLE_LOGGING` | `OFF` | compile cache and planning [diagnostics](diagnostics.md) into the GPU backend |
 | `KATAL_MAX_RANK` | `12` | largest describable tensor rank |
+| `KATAL_ASSERT_BEHAVIOR` | empty | what a failed internal [assertion](errors.md#assertions) does: `THROW`, `ABORT` or `IGNORE`; empty picks `IGNORE` for `Release` and `MinSizeRel` and `ABORT` otherwise |
 | `KATAL_WARNINGS_AS_ERRORS` | `OFF` | treat compiler warnings in Katal's own targets as errors; CI turns it on |
 | `KATAL_CUTENSOR_ROOT` | empty | cuTENSOR install root; `$CUTENSOR_ROOT` and an NVHPC tree under `$NVHPC` are also searched |
 

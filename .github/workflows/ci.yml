@@ -66,7 +66,9 @@ jobs:
   # against cuTENSOR's C API, and nvcc is here only because FindCUDAToolkit
   # uses it to locate the toolkit root. The gpu-labelled cases need a device;
   # gpu.yml runs them on Modal. Logging is on here so src/log.hpp is compiled
-  # somewhere; gpu.yml builds with it off, the default.
+  # somewhere; gpu.yml builds with it off, the default. KATAL_ASSERT throws
+  # here, so the tests can check a failed assertion, which aborts in the other
+  # jobs.
   cuda-build:
     runs-on: ubuntu-latest
     env:
@@ -117,6 +119,7 @@ jobs:
           -DKATAL_WARNINGS_AS_ERRORS=ON
           -DKATAL_BUILD_BENCHMARKS=ON
           -DKATAL_ENABLE_LOGGING=ON
+          -DKATAL_ASSERT_BEHAVIOR=THROW
 
       # Guards against the whole point of this job being lost silently: if
       # cuTENSOR were not found, CMake falls back to an INTERFACE library and

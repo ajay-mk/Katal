@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +14,7 @@
 #include "context_impl.hpp"
 #include "log.hpp"
 
+#include <katal/assert.hpp>
 #include <katal/plan.hpp>
 
 #if KATAL_ENABLE_LOGGING
@@ -90,7 +90,7 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   append(key, &rank, sizeof(rank));
   append(key, &jit, sizeof(jit));
   for (const ConstTensorRef* t : tensors) append_tensor(key, *t);
-  assert(key.size() == size && "plan_key: tensor_key_size is out of date");
+  KATAL_ASSERT(key.size() == size, "plan_key: tensor_key_size is out of date");
   return key;
 }
 
@@ -187,6 +187,26 @@ bool overlaps(const void* x, ByteSpan xs, const void* y, ByteSpan ys) {
            offset;
   };
   return at(x, xs.low) < at(y, ys.high) && at(y, ys.low) < at(x, xs.high);
+}
+
+/// Whether a tensor's strides send two coordinates to the same element: a zero
+/// stride, or two modes whose strides have the same magnitude, along modes
+/// longer than one. An output like that would be written twice at once. Other
+/// aliasing layouts exist, but these two are certain and cheap to spot.
+bool addresses_twice(const backend::Operand& t) {
+  // Unsigned, since negating INT64_MIN overflows.
+  const auto magnitude = [](std::int64_t s) {
+    const auto bits = static_cast<std::uint64_t>(s);
+    return s < 0 ? std::uint64_t{0} - bits : bits;
+  };
+  for (std::size_t i = 0; i < t.extent.size(); ++i) {
+    if (t.extent[i] == 1) continue;
+    if (t.stride[i] == 0) return true;
+    for (std::size_t j = i + 1; j < t.extent.size(); ++j)
+      if (t.extent[j] != 1 && magnitude(t.stride[j]) == magnitude(t.stride[i]))
+        return true;
+  }
+  return false;
 }
 
 /// What cuTENSOR assumes of every base pointer it is given without being told
@@ -327,8 +347,8 @@ class Plan::Impl {
     std::array<const void*, 2> inputs{a, b};
     Workspace scratch = workspace;
     if (scratch_offset_ > 0) {
-      if (alignment_of(workspace.ptr) < scratch_alignment)
-        throw Error(Errc::UnsupportedPattern, equation_,
+      KATAL_ENFORCE(alignment_of(workspace.ptr) >= scratch_alignment,
+                    Errc::UnsupportedPattern, equation_,
                     "the workspace is aligned to " +
                         std::to_string(alignment_of(workspace.ptr)) +
                         " bytes but this plan keeps reduced inputs in it and "
@@ -364,15 +384,14 @@ class Plan::Impl {
 
   void permute(Scalar alpha, const void* a, Scalar beta, void* d,
                Workspace workspace, StreamRef stream) const {
-    if (beta.value() != 0.0)
-      throw Error(Errc::UnsupportedPattern, equation_,
+    KATAL_ENFORCE(beta.value() == 0.0, Errc::UnsupportedPattern, equation_,
                   "a permutation plan writes d = alpha * a and cannot add "
                   "beta * c; use einsum for that");
     backend_->check_device(equation_, "plan");
     // cuTENSOR requires the elements read from a not to overlap those written
     // to d, so a pointer into the same buffer is refused, not only d itself.
-    if (overlaps(a, span_a_, d, span_d_))
-      throw Error(Errc::UnsupportedPattern, equation_,
+    KATAL_ENFORCE(!overlaps(a, span_a_, d, span_d_), Errc::UnsupportedPattern,
+                  equation_,
                   "pointer a overlaps the output; a permutation runs out of "
                   "place");
     check_alignment("a", a, alignment_[0]);
@@ -389,8 +408,7 @@ class Plan::Impl {
     backend_->check_device(equation_, "plan");
     // cuTENSOR requires the inputs not to overlap the output. Only the exact
     // alias is cheap to spot; it is also the likely mistake.
-    if (a == d || b == d)
-      throw Error(Errc::UnsupportedPattern, equation_,
+    KATAL_ENFORCE(a != d && b != d, Errc::UnsupportedPattern, equation_,
                   std::string("pointer ") + (a == d ? "a" : "b") +
                       " is also the output; an elementwise input must not "
                       "overlap d");
@@ -405,11 +423,12 @@ class Plan::Impl {
       return static_cast<float>(v.real()) == 0.0F &&
              static_cast<float>(v.imag()) == 0.0F;
     };
-    if (binary_ != BinaryOp::Add && (is_zero(alpha) || is_zero(beta)))
-      throw Error(Errc::UnsupportedPattern, equation_,
-                  std::string(is_zero(alpha) ? "alpha" : "beta") +
-                      " is zero, which drops that input instead of using "
-                      "zeros; only Add allows a zero scale");
+    KATAL_ENFORCE(
+        binary_ == BinaryOp::Add || (!is_zero(alpha) && !is_zero(beta)),
+        Errc::UnsupportedPattern, equation_,
+        std::string(is_zero(alpha) ? "alpha" : "beta") +
+            " is zero, which drops that input instead of using "
+            "zeros; only Add allows a zero scale");
     check_alignment("a", a, alignment_[0]);
     check_alignment("b", b, alignment_[1]);
     check_alignment("c", c, alignment_[2]);
@@ -470,6 +489,9 @@ class Plan::Impl {
     if (d.op != UnaryOp::Identity)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "the output carries a unary operator; only inputs can");
+    KATAL_ENFORCE(!addresses_twice(op.output), Errc::UnsupportedPattern,
+                  equation_,
+                  "the output's strides address one element more than once");
     op.compute = compute_type(options, d.type);
     compute_ = op.compute;
     // The tensor-core modes exist only in cuTENSOR's contraction table, so a
@@ -600,20 +622,18 @@ class Plan::Impl {
   /// aligned pointer would make it read or write misaligned, so refuse it.
   void check_alignment(const char* name, const void* ptr,
                        std::uint32_t planned) const {
-    if (alignment_of(ptr) < planned)
-      throw Error(Errc::UnsupportedPattern, equation_,
-                  std::string("pointer ") + name + " is aligned to " +
-                      std::to_string(alignment_of(ptr)) +
-                      " bytes but this plan was built for " +
-                      std::to_string(planned));
+    KATAL_ENFORCE(
+        alignment_of(ptr) >= planned, Errc::UnsupportedPattern, equation_,
+        std::string("pointer ") + name + " is aligned to " +
+            std::to_string(alignment_of(ptr)) +
+            " bytes but this plan was built for " + std::to_string(planned));
   }
 
   void check_workspace(Workspace workspace) const {
-    if (workspace.size < workspace_size())
-      throw Error(Errc::WorkspaceTooSmall, equation_,
-                  "the workspace has " + std::to_string(workspace.size) +
-                      " bytes but this plan needs " +
-                      std::to_string(workspace_size()));
+    KATAL_ENFORCE(
+        workspace.size >= workspace_size(), Errc::WorkspaceTooSmall, equation_,
+        "the workspace has " + std::to_string(workspace.size) +
+            " bytes but this plan needs " + std::to_string(workspace_size()));
   }
 
   /// One input summed into scratch before the contraction runs.
@@ -669,22 +689,20 @@ Plan::Plan(Plan&&) noexcept = default;
 Plan& Plan::operator=(Plan&&) noexcept = default;
 Plan::~Plan() = default;
 
-const Plan::Impl& Plan::impl() const noexcept {
-  assert(impl_ != nullptr && "katal: use of a moved-from Plan");
+const Plan::Impl& Plan::impl() const {
+  KATAL_ASSERT(impl_ != nullptr, "use of a moved-from Plan");
   return *impl_;
 }
 
-uint64_t Plan::workspace_size() const noexcept {
-  return impl().workspace_size();
-}
-std::string_view Plan::equation() const noexcept { return impl().equation(); }
+uint64_t Plan::workspace_size() const { return impl().workspace_size(); }
+std::string_view Plan::equation() const { return impl().equation(); }
 
 void Plan::execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                    const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
   const Impl& plan = impl();
-  if (plan.form() != Impl::Form::Contraction)
-    throw Error(Errc::UnsupportedPattern, plan.equation(),
+  KATAL_ENFORCE(plan.form() == Impl::Form::Contraction,
+                Errc::UnsupportedPattern, plan.equation(),
                 "this plan is not a contraction; use the " +
                     form_name(plan.form()) + " execute");
   plan.contract(alpha, a, b, beta, c, d, workspace, stream);
@@ -695,8 +713,8 @@ void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
   const Impl& plan = impl();
   if (plan.form() == Impl::Form::Permutation)
     return plan.permute(alpha, a, beta, d, workspace, stream);
-  if (plan.form() != Impl::Form::OneOperand)
-    throw Error(Errc::UnsupportedPattern, plan.equation(),
+  KATAL_ENFORCE(plan.form() == Impl::Form::OneOperand, Errc::UnsupportedPattern,
+                plan.equation(),
                 "this plan takes two operands; use the " +
                     form_name(plan.form()) + " execute");
   plan.reduce(alpha, a, beta, c, d, workspace, stream);
@@ -706,8 +724,8 @@ void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* b,
                    Scalar gamma, const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
   const Impl& plan = impl();
-  if (plan.form() != Impl::Form::Elementwise)
-    throw Error(Errc::UnsupportedPattern, plan.equation(),
+  KATAL_ENFORCE(plan.form() == Impl::Form::Elementwise,
+                Errc::UnsupportedPattern, plan.equation(),
                 "this plan is not elementwise; use the " +
                     form_name(plan.form()) + " execute");
   plan.combine(alpha, a, beta, b, gamma, c, d, workspace, stream);

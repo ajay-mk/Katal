@@ -28,6 +28,36 @@ set(KATAL_MAX_RANK
       STRING
       "Largest tensor rank Katal can describe; the inline capacity of an index")
 
+# KATAL_ASSERT checks invariants and documented misuse; KATAL_ENFORCE checks
+# caller input and is never compiled out. Left empty, the behavior follows the
+# build type on every configure, so switching an existing build directory to
+# Release does not keep a stale cached ABORT. As in SeQuant, assertions are off
+# only in the optimized, non-debuggable build types. A multi-config generator
+# leaves CMAKE_BUILD_TYPE empty and so gets ABORT, the safer direction.
+set(KATAL_ASSERT_BEHAVIOR
+    ""
+    CACHE
+      STRING
+      "What a failed KATAL_ASSERT does: THROW, ABORT or IGNORE; empty picks IGNORE for Release and MinSizeRel and ABORT otherwise"
+)
+set_property(CACHE KATAL_ASSERT_BEHAVIOR PROPERTY STRINGS "" THROW ABORT IGNORE)
+string(TOUPPER "${CMAKE_BUILD_TYPE}" katal_build_type)
+if(NOT KATAL_ASSERT_BEHAVIOR STREQUAL "")
+  set(katal_assert_behavior "${KATAL_ASSERT_BEHAVIOR}")
+elseif(katal_build_type STREQUAL "RELEASE" OR katal_build_type STREQUAL
+                                              "MINSIZEREL")
+  set(katal_assert_behavior IGNORE)
+else()
+  set(katal_assert_behavior ABORT)
+endif()
+if(NOT katal_assert_behavior MATCHES "^(THROW|ABORT|IGNORE)$")
+  message(
+    FATAL_ERROR
+      "KATAL_ASSERT_BEHAVIOR is ${KATAL_ASSERT_BEHAVIOR}; use THROW, ABORT or IGNORE"
+  )
+endif()
+message(STATUS "Katal: a failed KATAL_ASSERT does ${katal_assert_behavior}")
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(KatalWarnings)
 find_package(CUDAToolkit QUIET)

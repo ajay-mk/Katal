@@ -19,7 +19,7 @@ Context::Context(Context&&) noexcept = default;
 Context& Context::operator=(Context&&) noexcept = default;
 Context::~Context() = default;
 
-int Context::device() const noexcept { return impl().device(); }
+int Context::device() const { return impl().device(); }
 
 namespace {
 
