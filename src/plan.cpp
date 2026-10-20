@@ -209,9 +209,6 @@ std::uint64_t round_up(std::uint64_t bytes) {
 /// backend::Operation here; the backend's Kernel holds the rest.
 class Plan::Impl {
  public:
-  /// Which execute overload a plan answers to.
-  enum class Form { Contraction, OneOperand, Elementwise, Permutation };
-
   /// Selects the permutation constructor, whose arguments match the
   /// one-operand einsum's.
   struct PermutationTag {};
@@ -219,7 +216,7 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation,
        const ConstTensorRef& a, const ConstTensorRef& b,
        const ConstTensorRef& d, const PlanOptions& options)
-      : Impl(context, equation, Form::Contraction) {
+      : Impl(context, equation) {
     const Classification classification = equation.classify();
     if (classification.kind != Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
@@ -253,7 +250,7 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation, BinaryOp reduce,
        const ConstTensorRef& a, const ConstTensorRef& d,
        const PlanOptions& options)
-      : Impl(context, equation, Form::OneOperand) {
+      : Impl(context, equation) {
     if (equation.classify().kind == Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "this equation has two operands; use the two-operand form");
@@ -273,7 +270,7 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation, BinaryOp binary,
        const ConstTensorRef& a, const ConstTensorRef& b,
        const ConstTensorRef& d, const PlanOptions& options)
-      : Impl(context, equation, Form::Elementwise) {
+      : Impl(context, equation) {
     equation.classify_elementwise();
 
     backend::Operation op;
@@ -294,7 +291,7 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation, PermutationTag,
        const ConstTensorRef& a, const ConstTensorRef& d,
        const PlanOptions& options)
-      : Impl(context, equation, Form::Permutation) {
+      : Impl(context, equation) {
     equation.classify_permutation();
 
     backend::Operation op;
@@ -317,7 +314,9 @@ class Plan::Impl {
   uint64_t workspace_size() const noexcept { return workspace_size_; }
   std::string_view equation() const noexcept { return equation_; }
 
-  Form form() const noexcept { return form_; }
+  /// Which execute overload this plan answers to: Reduction is the
+  /// one-operand form.
+  backend::OpKind kind() const noexcept { return kind_; }
 
   void contract(Scalar alpha, const void* a, const void* b, Scalar beta,
                 const void* c, void* d, Workspace workspace,
@@ -424,10 +423,8 @@ class Plan::Impl {
   }
 
  private:
-  Impl(const Context& context, const Equation& equation, Form form)
-      : backend_(&context.impl().backend()),
-        equation_(equation.text()),
-        form_(form) {
+  Impl(const Context& context, const Equation& equation)
+      : backend_(&context.impl().backend()), equation_(equation.text()) {
     backend_->check_device(equation_, "plan");
   }
 
@@ -478,6 +475,7 @@ class Plan::Impl {
                   "the output's strides address one element more than once");
     op.compute = compute_type(options, d.type);
     compute_ = op.compute;
+    kind_ = op.kind;
     // The tensor-core modes exist only in cuTENSOR's contraction table, so a
     // Context-wide default must not break the other kinds of operation.
     if (op.kind == backend::OpKind::Contraction)
@@ -640,7 +638,7 @@ class Plan::Impl {
   /// Planned alignment of a, b and d, which c shares; b is unused by reduce.
   std::array<std::uint32_t, 3> alignment_{};
   std::string equation_;
-  Form form_ = Form::Contraction;
+  backend::OpKind kind_ = backend::OpKind::Contraction;
   /// The elementwise operator; unused by the other forms.
   BinaryOp binary_ = BinaryOp::Add;
   /// The accumulation type, whose precision alpha and beta are narrowed to.
@@ -652,15 +650,15 @@ class Plan::Impl {
 
 namespace {
 
-std::string form_name(Plan::Impl::Form form) {
-  switch (form) {
-    case Plan::Impl::Form::Contraction:
+std::string form_name(backend::OpKind kind) {
+  switch (kind) {
+    case backend::OpKind::Contraction:
       return "two-operand";
-    case Plan::Impl::Form::OneOperand:
+    case backend::OpKind::Reduction:
       return "one-operand";
-    case Plan::Impl::Form::Elementwise:
+    case backend::OpKind::Elementwise:
       return "elementwise";
-    case Plan::Impl::Form::Permutation:
+    case backend::OpKind::Permutation:
       return "one-operand";
   }
   return "matching";
@@ -740,22 +738,22 @@ void Plan::execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                    const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
   const Impl& plan = impl();
-  KATAL_ENFORCE(plan.form() == Impl::Form::Contraction,
+  KATAL_ENFORCE(plan.kind() == backend::OpKind::Contraction,
                 Errc::UnsupportedPattern, plan.equation(),
                 "this plan is not a contraction; use the " +
-                    form_name(plan.form()) + " execute");
+                    form_name(plan.kind()) + " execute");
   plan.contract(alpha, a, b, beta, c, d, workspace, stream);
 }
 
 void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
                    void* d, Workspace workspace, StreamRef stream) const {
   const Impl& plan = impl();
-  if (plan.form() == Impl::Form::Permutation)
+  if (plan.kind() == backend::OpKind::Permutation)
     return plan.permute(alpha, a, beta, d, workspace, stream);
-  KATAL_ENFORCE(plan.form() == Impl::Form::OneOperand, Errc::UnsupportedPattern,
-                plan.equation(),
+  KATAL_ENFORCE(plan.kind() == backend::OpKind::Reduction,
+                Errc::UnsupportedPattern, plan.equation(),
                 "this plan takes two operands; use the " +
-                    form_name(plan.form()) + " execute");
+                    form_name(plan.kind()) + " execute");
   plan.reduce(alpha, a, beta, c, d, workspace, stream);
 }
 
@@ -763,10 +761,10 @@ void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* b,
                    Scalar gamma, const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
   const Impl& plan = impl();
-  KATAL_ENFORCE(plan.form() == Impl::Form::Elementwise,
+  KATAL_ENFORCE(plan.kind() == backend::OpKind::Elementwise,
                 Errc::UnsupportedPattern, plan.equation(),
                 "this plan is not elementwise; use the " +
-                    form_name(plan.form()) + " execute");
+                    form_name(plan.kind()) + " execute");
   plan.combine(alpha, a, beta, b, gamma, c, d, workspace, stream);
 }
 
