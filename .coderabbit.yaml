@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+
+reviews:
+  # chill: fewer, higher-confidence comments.
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  # Put the summary in CodeRabbit's own comment, not the PR description.
+  high_level_summary_in_walkthrough: true
+  # Cut the extras so the review is mostly the line comments.
+  poem: false
+  in_progress_fortune: false
+  sequence_diagrams: false
+  collapse_walkthrough: true
+  review_status: true
+  # Labels come from .github/labeler.yml.
+  suggested_labels: false
+  suggested_reviewers: false
+  auto_review:
+    enabled: true
+    drafts: false
+    # Review once when a PR opens; ask with `@coderabbitai review` after that.
+    auto_incremental_review: false
+    # Spelled out because CodeRabbit didn't detect main as the default branch.
+    base_branches:
+      - "^main$"
+  path_instructions:
+    - path: "include/katal/**"
+      instructions: >-
+        Public API. Flag changes that break source compatibility, missing or
+        stale doc comments, and anything that throws an exception other than
+        katal::Error (or std::bad_alloc).
+    - path: "src/**"
+      instructions: >-
+        Check that every CUDA and cuTENSOR call has its status checked, that
+        device memory and handles are released on every path, and that
+        lifecycle misuse reports Errc::InvalidState.
+    - path: "test/**"
+      instructions: >-
+        Tests use Catch2. Only F32, F64, C32 and C64 are the tested dtypes.
+
+chat:
+  auto_reply: true
+
+# PRs only: no automatic comments, plans or labels on issues.
+issue_enrichment:
+  auto_enrich:
+    enabled: false
+  planning:
+    enabled: false
+    auto_planning:
+      enabled: false
