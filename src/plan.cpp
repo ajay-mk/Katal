@@ -3,9 +3,11 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <new>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -64,10 +66,10 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   key.append(equation);
   key.push_back('\0');
   append(key, &op, sizeof(op));
-  // Only the two-operand einsum contracts; every other form ignores the
-  // precision, so it must not split the cache. A tensor-core mode replaces
-  // the compute type, which then must not split it either.
-  if (op != -1 || tensors.size() != 3) options.precision = Precision::Native;
+  // Only the two- and three-operand einsums contract; every other form
+  // ignores the precision, so it must not split the cache. A tensor-core mode
+  // replaces the compute type, which then must not split it either.
+  if (op != -1 || tensors.size() < 3) options.precision = Precision::Native;
   if (options.precision != Precision::Native) options.compute.reset();
   const int32_t compute =
       options.compute ? static_cast<int32_t>(*options.compute) : -1;
@@ -211,26 +213,33 @@ class Plan::Impl {
        const ConstTensorRef& d, const PlanOptions& options)
       : Impl(context, equation) {
     const Classification classification = equation.classify();
+    if (classification.kind == Lowering::ContractTrinary)
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  "this equation has three operands; use the three-operand "
+                  "form");
     if (classification.kind != Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
-                  "only binary contraction is implemented so far");
+                  "this equation has one operand; use the one-operand form");
+    lower_contraction(equation, {&a, &b},
+                      {classification.reduced_a, classification.reduced_b}, d,
+                      options);
+  }
 
-    backend::Operation op;
-    op.kind = backend::OpKind::Contraction;
-    op.inputs = {operand(equation.operand(0), a),
-                 operand(equation.operand(1), b)};
-    op.output = operand(equation.result(), d);
-    check_extents(equation, {{&equation.operand(0), &a},
-                             {&equation.operand(1), &b},
-                             {&equation.result(), &d}});
-    // A label in one input alone is summed out of it first, into scratch,
-    // since a contraction kernel only sums labels both inputs share.
-    prereduce(0, op.inputs[0], classification.reduced_a);
-    prereduce(1, op.inputs[1], classification.reduced_b);
-    const PlanOptions kernel_options = scratch_budget(options);
-    plan_prereductions(kernel_options);
-    finish(std::move(op), d, kernel_options);
-    alignment_ = {a.alignment, b.alignment, d.alignment};
+  /// The three-operand form, contracted in one kernel.
+  Impl(const Context& context, const Equation& equation,
+       const ConstTensorRef& a, const ConstTensorRef& b,
+       const ConstTensorRef& c, const ConstTensorRef& e,
+       const PlanOptions& options)
+      : Impl(context, equation) {
+    if (equation.n_operands() != 3)
+      throw Error(Errc::UnsupportedPattern, equation_,
+                  "this equation has " + std::to_string(equation.n_operands()) +
+                      " operand(s); the three-operand form takes three");
+    const Classification classification = equation.classify();
+    lower_contraction(equation, {&a, &b, &c},
+                      {classification.reduced_a, classification.reduced_b,
+                       classification.reduced_c},
+                      e, options);
   }
 
   /// The one-operand form: a permutation, a reduction or a copy.
@@ -244,9 +253,13 @@ class Plan::Impl {
        const ConstTensorRef& a, const ConstTensorRef& d,
        const PlanOptions& options)
       : Impl(context, equation) {
-    if (equation.classify().kind == Lowering::Contract)
+    equation.classify();
+    if (equation.n_operands() != 1)
       throw Error(Errc::UnsupportedPattern, equation_,
-                  "this equation has two operands; use the two-operand form");
+                  "this equation has " + std::to_string(equation.n_operands()) +
+                      " operands; use the " +
+                      (equation.n_operands() == 2 ? "two" : "three") +
+                      "-operand form");
 
     backend::Operation op;
     op.kind = backend::OpKind::Reduction;
@@ -256,7 +269,8 @@ class Plan::Impl {
     check_extents(equation,
                   {{&equation.operand(0), &a}, {&equation.result(), &d}});
     finish(std::move(op), d, options);
-    alignment_ = {a.alignment, 0, d.alignment};
+    input_alignment_ = {a.alignment};
+    output_alignment_ = d.alignment;
   }
 
   /// The elementwise form.
@@ -277,7 +291,8 @@ class Plan::Impl {
                              {&equation.operand(1), &b},
                              {&equation.result(), &d}});
     finish(std::move(op), d, options);
-    alignment_ = {a.alignment, b.alignment, d.alignment};
+    input_alignment_ = {a.alignment, b.alignment};
+    output_alignment_ = d.alignment;
   }
 
   /// A dedicated permutation, `d = alpha * a`.
@@ -298,7 +313,8 @@ class Plan::Impl {
     PlanOptions widened = options;
     if (!widened.compute) widened.compute = conversion_compute(a.type, d.type);
     finish(std::move(op), d, widened);
-    alignment_ = {a.alignment, 0, d.alignment};
+    input_alignment_ = {a.alignment};
+    output_alignment_ = d.alignment;
   }
 
   Impl(const Impl&) = delete;
@@ -311,16 +327,25 @@ class Plan::Impl {
   /// one-operand form.
   backend::OpKind kind() const noexcept { return kind_; }
 
-  void contract(Scalar alpha, const void* a, const void* b, Scalar beta,
-                const void* c, void* d, Workspace workspace,
-                StreamRef stream) const {
+  /// Inputs to a contraction, two or three; zero for every other kind.
+  std::size_t n_inputs() const noexcept { return n_inputs_; }
+
+  /// Runs a two- or three-operand contraction, `d = alpha * <inputs> + beta *
+  /// c`. `added` and `result` name c and d in diagnostics, since the
+  /// three-operand form calls them d and e.
+  void contract(Scalar alpha, std::span<const void* const> in, Scalar beta,
+                const void* c, void* d, const char* added, const char* result,
+                Workspace workspace, StreamRef stream) const {
+    KATAL_ASSERT(in.size() == n_inputs_, "contract: wrong number of inputs");
     backend_->check_device(equation_, "plan");
-    check_alignment("a", a, alignment_[0]);
-    check_alignment("b", b, alignment_[1]);
-    check_alignment("c", c, alignment_[2]);
-    check_alignment("d", d, alignment_[2]);
+    constexpr std::array<const char*, 3> names{"a", "b", "c"};
+    for (std::size_t k = 0; k < in.size(); ++k)
+      check_alignment(names[k], in[k], input_alignment_[k]);
+    check_alignment(added, c, output_alignment_);
+    check_alignment(result, d, output_alignment_);
     check_workspace(workspace);
-    std::array<const void*, 2> inputs{a, b};
+    std::array<const void*, 3> inputs{};
+    std::copy(in.begin(), in.end(), inputs.begin());
     Workspace scratch = workspace;
     if (scratch_offset_ > 0) {
       KATAL_ENFORCE(alignment_of(workspace.ptr) >= scratch_alignment,
@@ -333,7 +358,7 @@ class Plan::Impl {
       auto* base = static_cast<std::byte*>(workspace.ptr);
       scratch = {base + scratch_offset_, workspace.size - scratch_offset_};
       const std::array<Scalar, 2> overwrite{1.0, 0.0};
-      for (std::size_t k = 0; k < pre_.size(); ++k) {
+      for (std::size_t k = 0; k < in.size(); ++k) {
         if (pre_[k].kernel == nullptr) continue;
         void* reduced = base + pre_[k].offset;
         const std::array<const void*, 1> input{inputs[k]};
@@ -343,15 +368,16 @@ class Plan::Impl {
       }
     }
     const std::array<Scalar, 2> scalars{alpha, beta};
-    kernel_->run(scalars, inputs, c, d, scratch, stream);
+    kernel_->run(scalars, std::span(inputs).first(in.size()), c, d, scratch,
+                 stream);
   }
 
   void reduce(Scalar alpha, const void* a, Scalar beta, const void* c, void* d,
               Workspace workspace, StreamRef stream) const {
     backend_->check_device(equation_, "plan");
-    check_alignment("a", a, alignment_[0]);
-    check_alignment("c", c, alignment_[2]);
-    check_alignment("d", d, alignment_[2]);
+    check_alignment("a", a, input_alignment_[0]);
+    check_alignment("c", c, output_alignment_);
+    check_alignment("d", d, output_alignment_);
     check_workspace(workspace);
     const std::array<Scalar, 2> scalars{alpha, beta};
     const std::array<const void*, 1> inputs{a};
@@ -370,8 +396,8 @@ class Plan::Impl {
                   equation_,
                   "pointer a overlaps the output; a permutation runs out of "
                   "place");
-    check_alignment("a", a, alignment_[0]);
-    check_alignment("d", d, alignment_[2]);
+    check_alignment("a", a, input_alignment_[0]);
+    check_alignment("d", d, output_alignment_);
     check_workspace(workspace);
     const std::array<Scalar, 1> scalars{alpha};
     const std::array<const void*, 1> inputs{a};
@@ -405,10 +431,10 @@ class Plan::Impl {
         std::string(is_zero(alpha) ? "alpha" : "beta") +
             " is zero, which drops that input instead of using "
             "zeros; only Add allows a zero scale");
-    check_alignment("a", a, alignment_[0]);
-    check_alignment("b", b, alignment_[1]);
-    check_alignment("c", c, alignment_[2]);
-    check_alignment("d", d, alignment_[2]);
+    check_alignment("a", a, input_alignment_[0]);
+    check_alignment("b", b, input_alignment_[1]);
+    check_alignment("c", c, output_alignment_);
+    check_alignment("d", d, output_alignment_);
     check_workspace(workspace);
     const std::array<Scalar, 3> scalars{alpha, beta, gamma};
     const std::array<const void*, 2> inputs{a, b};
@@ -456,6 +482,45 @@ class Plan::Impl {
     result.alignment = tensor.alignment;
     result.op = tensor.op;
     return result;
+  }
+
+  /// Lowers a two- or three-operand contraction. `reduced` holds, per input,
+  /// the labels in it alone that the result drops.
+  void lower_contraction(const Equation& equation,
+                         std::initializer_list<const ConstTensorRef*> inputs,
+                         std::initializer_list<util::Index> reduced,
+                         const ConstTensorRef& d, const PlanOptions& options) {
+    KATAL_ASSERT(inputs.size() == reduced.size() && inputs.size() <= 3,
+                 "lower_contraction: one reduced set per input");
+    backend::Operation op;
+    op.kind = backend::OpKind::Contraction;
+    std::size_t k = 0;
+    for (const ConstTensorRef* t : inputs)
+      op.inputs.push_back(operand(equation.operand(k++), *t));
+    op.output = operand(equation.result(), d);
+    if (inputs.size() == 2)
+      check_extents(equation, {{&equation.operand(0), inputs.begin()[0]},
+                               {&equation.operand(1), inputs.begin()[1]},
+                               {&equation.result(), &d}});
+    else
+      check_extents(equation, {{&equation.operand(0), inputs.begin()[0]},
+                               {&equation.operand(1), inputs.begin()[1]},
+                               {&equation.operand(2), inputs.begin()[2]},
+                               {&equation.result(), &d}});
+    // A label in one input alone is summed out of it first, into scratch,
+    // since a contraction kernel only sums labels two inputs share.
+    k = 0;
+    for (const util::Index& labels : reduced) {
+      prereduce(k, op.inputs[k], labels);
+      ++k;
+    }
+    const PlanOptions kernel_options = scratch_budget(options);
+    plan_prereductions(kernel_options);
+    finish(std::move(op), d, kernel_options);
+    k = 0;
+    for (const ConstTensorRef* t : inputs) input_alignment_[k++] = t->alignment;
+    output_alignment_ = d.alignment;
+    n_inputs_ = inputs.size();
   }
 
   void finish(backend::Operation op, const ConstTensorRef& d,
@@ -622,14 +687,18 @@ class Plan::Impl {
 
   const backend::Backend* backend_ = nullptr;
   std::unique_ptr<backend::Kernel> kernel_;
-  /// For a and b; empty unless the contraction has a label in one input
-  /// alone.
-  std::array<Prereduction, 2> pre_;
+  /// One per contraction input; empty unless that input has a label of its
+  /// own that the result drops.
+  std::array<Prereduction, 3> pre_;
   /// Where the kernels' own scratch starts, after any reduced inputs.
   std::uint64_t scratch_offset_ = 0;
   std::uint64_t workspace_size_ = 0;
-  /// Planned alignment of a, b and d, which c shares; b is unused by reduce.
-  std::array<std::uint32_t, 3> alignment_{};
+  /// Planned alignment of each input, zero past the plan's last one.
+  std::array<std::uint32_t, 3> input_alignment_{};
+  /// Planned alignment of the output, which the tensor added in shares.
+  std::uint32_t output_alignment_ = 0;
+  /// Inputs to a contraction: two or three.
+  std::size_t n_inputs_ = 0;
   std::string equation_;
   backend::OpKind kind_ = backend::OpKind::Contraction;
   /// The elementwise operator; unused by the other forms.
@@ -643,10 +712,10 @@ class Plan::Impl {
 
 namespace {
 
-std::string form_name(backend::OpKind kind) {
-  switch (kind) {
+std::string form_name(const Plan::Impl& plan) {
+  switch (plan.kind()) {
     case backend::OpKind::Contraction:
-      return "two-operand";
+      return plan.n_inputs() == 3 ? "three-operand" : "two-operand";
     case backend::OpKind::Reduction:
       return "one-operand";
     case backend::OpKind::Elementwise:
@@ -731,11 +800,26 @@ void Plan::execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                    const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
   const Impl& plan = impl();
-  KATAL_ENFORCE(plan.kind() == backend::OpKind::Contraction,
-                Errc::UnsupportedPattern, plan.equation(),
-                "this plan is not a contraction; use the " +
-                    form_name(plan.kind()) + " execute");
-  plan.contract(alpha, a, b, beta, c, d, workspace, stream);
+  KATAL_ENFORCE(
+      plan.kind() == backend::OpKind::Contraction && plan.n_inputs() == 2,
+      Errc::UnsupportedPattern, plan.equation(),
+      "this plan is not a two-operand contraction; use the " + form_name(plan) +
+          " execute");
+  const std::array<const void*, 2> inputs{a, b};
+  plan.contract(alpha, inputs, beta, c, d, "c", "d", workspace, stream);
+}
+
+void Plan::execute(Scalar alpha, const void* a, const void* b, const void* c,
+                   Scalar beta, const void* d, void* e, Workspace workspace,
+                   StreamRef stream) const {
+  const Impl& plan = impl();
+  KATAL_ENFORCE(
+      plan.kind() == backend::OpKind::Contraction && plan.n_inputs() == 3,
+      Errc::UnsupportedPattern, plan.equation(),
+      "this plan is not a three-operand contraction; use the " +
+          form_name(plan) + " execute");
+  const std::array<const void*, 3> inputs{a, b, c};
+  plan.contract(alpha, inputs, beta, d, e, "d", "e", workspace, stream);
 }
 
 void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
@@ -745,8 +829,8 @@ void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
     return plan.permute(alpha, a, beta, d, workspace, stream);
   KATAL_ENFORCE(plan.kind() == backend::OpKind::Reduction,
                 Errc::UnsupportedPattern, plan.equation(),
-                "this plan takes two operands; use the " +
-                    form_name(plan.kind()) + " execute");
+                "this plan is not a one-operand plan; use the " +
+                    form_name(plan) + " execute");
   plan.reduce(alpha, a, beta, c, d, workspace, stream);
 }
 
@@ -754,10 +838,10 @@ void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* b,
                    Scalar gamma, const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
   const Impl& plan = impl();
-  KATAL_ENFORCE(plan.kind() == backend::OpKind::Elementwise,
-                Errc::UnsupportedPattern, plan.equation(),
-                "this plan is not elementwise; use the " +
-                    form_name(plan.kind()) + " execute");
+  KATAL_ENFORCE(
+      plan.kind() == backend::OpKind::Elementwise, Errc::UnsupportedPattern,
+      plan.equation(),
+      "this plan is not elementwise; use the " + form_name(plan) + " execute");
   plan.combine(alpha, a, beta, b, gamma, c, d, workspace, stream);
 }
 
@@ -771,6 +855,19 @@ Plan make_plan(const Context& context, const Equation& equation,
       },
       context, equation, nullptr, {}, {{"a", a}, {"b", b}, {"output", d}},
       options);
+}
+
+Plan make_plan(const Context& context, const Equation& equation,
+               const ConstTensorRef& a, const ConstTensorRef& b,
+               const ConstTensorRef& c, const ConstTensorRef& e,
+               PlanOptions options) {
+  return logged(
+      [&] {
+        return Plan(std::make_unique<Plan::Impl>(context, equation, a, b, c, e,
+                                                 options));
+      },
+      context, equation, nullptr, {},
+      {{"a", a}, {"b", b}, {"c", c}, {"output", e}}, options);
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
@@ -827,6 +924,16 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
   return cached(context, equation, options, {&a, &b, &d}, -1,
                 [&](const Equation& parsed, const PlanOptions& resolved) {
                   return make_plan(context, parsed, a, b, d, resolved);
+                });
+}
+
+std::shared_ptr<const Plan> cached_plan(
+    const Context& context, std::string_view equation, const ConstTensorRef& a,
+    const ConstTensorRef& b, const ConstTensorRef& c, const ConstTensorRef& e,
+    std::optional<PlanOptions> options) {
+  return cached(context, equation, options, {&a, &b, &c, &e}, -1,
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_plan(context, parsed, a, b, c, e, resolved);
                 });
 }
 

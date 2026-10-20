@@ -9,6 +9,7 @@ without waiting for it.
 | Call | Computes |
 | --- | --- |
 | `einsum(eq, alpha, a, b, beta, d)` | `d = alpha * contract(a, b) + beta * d` |
+| `einsum(eq, alpha, a, b, c, beta, e)` | `e = alpha * contract(a, b, c) + beta * e`, in one kernel |
 | `einsum(eq, alpha, a, beta, d)` | `d = alpha * reduce_or_permute(a) + beta * d` |
 | `reduce(eq, op, alpha, a, beta, d)` | the one-operand einsum, combining with `op` instead of a sum |
 | `permute(eq, alpha, a, d)` | `d = alpha * a`, permuted, broadcast or converted |
@@ -35,10 +36,11 @@ with every call and `make_plan` overload, and plans with different
 operators are cached apart. An output must not carry one.
 
 Which operators an operation accepts for a type is up to cuTENSOR.
-Contractions (two-operand einsum) take only `Identity` and `Conj`; the
-elementwise calls, reductions and permutations take the rest. cuTENSOR
-refuses an operator it does not support when the plan is built, which Katal
-reports as `UnsupportedPattern` or, for some refusals, `CutensorError`.
+Contractions (two- and three-operand einsum) take only `Identity` and
+`Conj`; the elementwise calls, reductions and permutations take the rest.
+cuTENSOR refuses an operator it does not support when the plan is built,
+which Katal reports as `UnsupportedPattern` or, for some refusals,
+`CutensorError`.
 
 ## Elementwise operations
 

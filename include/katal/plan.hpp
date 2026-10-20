@@ -127,6 +127,15 @@ class Plan {
                const void* c, void* d, Workspace workspace,
                StreamRef stream = {}) const;
 
+  /// The three-operand form: `e = alpha * <equation over a, b and c> + beta *
+  /// d`, contracted in one kernel. Named as cuTENSOR names it, with d the
+  /// tensor added in and e the result; `d` and `e` may be the same pointer,
+  /// which is how to accumulate. Throws if this plan was not built from three
+  /// operands. Otherwise as the two-operand form.
+  void execute(Scalar alpha, const void* a, const void* b, const void* c,
+               Scalar beta, const void* d, void* e, Workspace workspace,
+               StreamRef stream = {}) const;
+
   /// The one-operand form, for a permutation, a reduction or a copy. Throws
   /// if this plan was built from two operands. A plan from
   /// `make_permutation_plan` computes `d = alpha * a`, ignores `c`, and
@@ -157,6 +166,9 @@ class Plan {
                         const ConstTensorRef&, const ConstTensorRef&,
                         PlanOptions);
   friend Plan make_plan(const Context&, const Equation&, const ConstTensorRef&,
+                        const ConstTensorRef&, const ConstTensorRef&,
+                        const ConstTensorRef&, PlanOptions);
+  friend Plan make_plan(const Context&, const Equation&, const ConstTensorRef&,
                         const ConstTensorRef&, PlanOptions);
   friend Plan make_plan(const Context&, const Equation&, BinaryOp,
                         const ConstTensorRef&, const ConstTensorRef&,
@@ -184,6 +196,18 @@ class Plan {
 Plan make_plan(const Context& context, const Equation& equation,
                const ConstTensorRef& a, const ConstTensorRef& b,
                const ConstTensorRef& d, PlanOptions options = {});
+
+/// The three-operand form, `e = alpha * A.B.C + beta * d`, as one kernel
+/// through cuTENSOR's trinary contraction rather than two pairwise ones, so no
+/// intermediate is stored. `"ij,jk,kl->il"` is a chain of two matrix
+/// products. A label in one input alone is summed out of it first, as in the
+/// two-operand form. A pattern or type cuTENSOR's trinary contraction does not
+/// support throws `Errc::UnsupportedPattern`; Katal does not fall back to
+/// pairwise contractions.
+Plan make_plan(const Context& context, const Equation& equation,
+               const ConstTensorRef& a, const ConstTensorRef& b,
+               const ConstTensorRef& c, const ConstTensorRef& e,
+               PlanOptions options = {});
 
 /// The one-operand form. Permutation, reduction and copy all go through
 /// cuTENSOR's reduction, its only unary entry point that accepts beta.
@@ -226,6 +250,12 @@ std::shared_ptr<const Plan> cached_plan(
     const ConstTensorRef& b, const ConstTensorRef& d,
     std::optional<PlanOptions> options = {});
 
+/// The three-operand form.
+std::shared_ptr<const Plan> cached_plan(
+    const Context& context, std::string_view equation, const ConstTensorRef& a,
+    const ConstTensorRef& b, const ConstTensorRef& c, const ConstTensorRef& e,
+    std::optional<PlanOptions> options = {});
+
 /// The one-operand form.
 std::shared_ptr<const Plan> cached_plan(
     const Context& context, std::string_view equation, const ConstTensorRef& a,
@@ -264,6 +294,22 @@ void einsum(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
                                          stream);
   plan->execute(alpha, a.data, b.data, beta, d.data, d.data, scratch.get(),
                 stream);
+}
+
+/// The three-operand form: `e = alpha * A.B.C + beta * e` in one kernel, as
+/// in `einsum("ij,jk,kl->il", 1.0, a, b, c, 0.0, e)`.
+template <WorkspaceAllocator A = CudaAsyncAllocator>
+void einsum(std::string_view equation, Scalar alpha, const ConstTensorRef& a,
+            const ConstTensorRef& b, const ConstTensorRef& c, Scalar beta,
+            const TensorRef& e, std::optional<PlanOptions> options = {},
+            StreamRef stream = {}, const Context& context = default_context(),
+            A allocator = {}) {
+  const std::shared_ptr<const Plan> plan =
+      cached_plan(context, equation, a, b, c, e, options);
+  const util::ScopedWorkspace<A> scratch(allocator, plan->workspace_size(),
+                                         stream);
+  plan->execute(alpha, a.data, b.data, c.data, beta, e.data, e.data,
+                scratch.get(), stream);
 }
 
 /// The one-operand form: a permutation, a reduction, or a copy.

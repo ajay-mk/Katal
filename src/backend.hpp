@@ -27,7 +27,8 @@ namespace katal::backend {
 
 /// What an Operation computes:
 /// - Contraction, `d = alpha * A.B + beta * c`, summing the shared modes the
-///   output drops.
+///   output drops. With three inputs it is `d = alpha * A.B.C + beta * c`, in
+///   one kernel; a backend that cannot do that throws UnsupportedPattern.
 /// - Reduction, `d = alpha * reduce(A) + beta * c` over the modes the output
 ///   drops, reducing with `Operation::binary`. A reduction over no modes is a
 ///   permutation or a copy.
@@ -58,7 +59,8 @@ struct Operand {
 /// output in place.
 struct Operation {
   OpKind kind = OpKind::Contraction;
-  /// A, and B for a contraction.
+  /// A; B for a contraction or an elementwise operation; and C for a
+  /// three-operand contraction.
   std::vector<Operand> inputs;
   Operand output;
   /// The accumulation type the frontend chose.

@@ -261,6 +261,150 @@ TEST_CASE("execute checks its arguments before the kernel runs", "[backend]") {
   }
 }
 
+TEST_CASE("three operands lower to one contraction", "[backend]") {
+  auto record = std::make_shared<Record>();
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const std::array<std::int64_t, 2> ea{2, 3}, eb{3, 4}, ec{4, 5}, ee{2, 5};
+  const auto f64 = katal::Dtype::F64;
+  const auto ref = [&](std::span<const std::int64_t> extent) {
+    return katal::make_ref(nullptr, f64, extent, katal::Layout::ColumnMajor);
+  };
+
+  SECTION("each input in descriptor order") {
+    katal::make_plan(context, katal::Equation::parse("ij,jk,kl->il"), ref(ea),
+                     ref(eb), ref(ec), ref(ee));
+    REQUIRE(record->operations.size() == 1);
+    const Operation& op = *record->operation;
+    CHECK(op.kind == OpKind::Contraction);
+    REQUIRE(op.inputs.size() == 3);
+    CHECK(op.inputs[0].modes == ids("ij"));
+    CHECK(op.inputs[1].modes == ids("jk"));
+    CHECK(op.inputs[2].modes == ids("kl"));
+    CHECK(list(op.inputs[2].extent) == std::vector<std::int64_t>{4, 5});
+    CHECK(op.output.modes == ids("il"));
+  }
+
+  SECTION("a shared label with two extents is refused") {
+    const std::array<std::int64_t, 2> wrong{3, 5};
+    CHECK(katal::test::thrown_code([&] {
+            katal::make_plan(context, katal::Equation::parse("ij,jk,kl->il"),
+                             ref(ea), ref(eb), ref(wrong), ref(ee));
+          }) == katal::Errc::ExtentMismatch);
+  }
+
+  SECTION("a three-operand equation is refused by the other forms") {
+    const auto eq = katal::Equation::parse("ij,jk,kl->il");
+    CHECK(katal::test::thrown_code([&] {
+            katal::make_plan(context, eq, ref(ea), ref(eb), ref(ee));
+          }) == katal::Errc::UnsupportedPattern);
+    CHECK(katal::test::thrown_code([&] {
+            katal::make_plan(context, eq, ref(ea), ref(ee));
+          }) == katal::Errc::UnsupportedPattern);
+    CHECK(record->operations.empty());
+  }
+
+  SECTION("the three-operand form refuses other operand counts") {
+    CHECK(katal::test::thrown_code([&] {
+            katal::make_plan(context, katal::Equation::parse("ij,jl->il"),
+                             ref(ea), ref(eb), ref(ec), ref(ee));
+          }) == katal::Errc::UnsupportedPattern);
+    CHECK(record->operations.empty());
+  }
+
+  SECTION("a label in one input alone is summed out of it first") {
+    // z is in c alone. Summed out, c is k by l: 20 doubles, padded to 256.
+    record->workspace = 512;
+    const std::array<std::int64_t, 3> ecz{4, 5, 2};
+    const auto plan =
+        katal::make_plan(context, katal::Equation::parse("ij,jk,klz->il"),
+                         ref(ea), ref(eb), ref(ecz), ref(ee));
+    REQUIRE(record->operations.size() == 2);
+    CHECK(record->operations[0].kind == OpKind::Reduction);
+    CHECK(record->operations[0].output.modes == ids("kl"));
+    const Operation& contract = record->operations[1];
+    CHECK(contract.inputs[2].modes == ids("kl"));
+    CHECK(contract.inputs[2].alignment == 256);
+    CHECK(plan.workspace_size() == 256 + 512);
+
+    const katal::Workspace workspace{scratch.data(), scratch.size()};
+    plan.execute(1.0, buffer_a.data(), buffer_b.data(), buffer_c.data(), 0.0,
+                 buffer_d.data(), buffer_d.data(), workspace);
+    REQUIRE(record->runs.size() == 2);
+    CHECK(record->runs[0].inputs == std::vector<const void*>{buffer_c.data()});
+    CHECK(record->runs[0].d == scratch.data());
+    CHECK(record->runs[1].inputs == std::vector<const void*>{buffer_a.data(),
+                                                             buffer_b.data(),
+                                                             scratch.data()});
+    CHECK(record->runs[1].workspace.ptr == scratch.data() + 256);
+  }
+}
+
+TEST_CASE("the three-operand execute passes d apart from e", "[backend]") {
+  auto record = std::make_shared<Record>();
+  record->workspace = 512;
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const std::array<std::int64_t, 2> e{2, 2};
+  const auto f64 = katal::Dtype::F64;
+  const auto ref = katal::make_ref(nullptr, f64, e);
+  const auto plan = katal::make_plan(
+      context, katal::Equation::parse("ij,jk,kl->il"), ref, ref, ref, ref);
+  const katal::Workspace enough{scratch.data(), scratch.size()};
+  alignas(256) static std::array<double, 64> buffer_e{};
+
+  SECTION("inputs, d and e reach the kernel in order") {
+    plan.execute(2.0, buffer_a.data(), buffer_b.data(), buffer_c.data(), 0.5,
+                 buffer_d.data(), buffer_e.data(), enough);
+    REQUIRE(record->runs.size() == 1);
+    const Run& run = record->runs[0];
+    REQUIRE(run.scalars.size() == 2);
+    CHECK(run.scalars[0].value() == 2.0);
+    CHECK(run.scalars[1].value() == 0.5);
+    CHECK(run.inputs == std::vector<const void*>{
+                            buffer_a.data(), buffer_b.data(), buffer_c.data()});
+    CHECK(run.c == buffer_d.data());
+    CHECK(run.d == buffer_e.data());
+  }
+
+  SECTION("a pointer less aligned than planned is refused") {
+    CHECK(katal::test::thrown_code([&] {
+            plan.execute(1.0, buffer_a.data(), buffer_b.data(),
+                         buffer_c.data() + 1, 0.0, buffer_d.data(),
+                         buffer_d.data(), enough);
+          }) == katal::Errc::UnsupportedPattern);
+    CHECK(record->runs.empty());
+  }
+
+  SECTION("a small workspace is refused") {
+    CHECK(katal::test::thrown_code([&] {
+            plan.execute(1.0, buffer_a.data(), buffer_b.data(), buffer_c.data(),
+                         0.0, buffer_d.data(), buffer_d.data(),
+                         {scratch.data(), 100});
+          }) == katal::Errc::WorkspaceTooSmall);
+    CHECK(record->runs.empty());
+  }
+
+  SECTION("the two-operand execute is refused") {
+    CHECK(katal::test::thrown_code([&] {
+            plan.execute(1.0, buffer_a.data(), buffer_b.data(), 0.0,
+                         buffer_d.data(), buffer_d.data(), enough);
+          }) == katal::Errc::UnsupportedPattern);
+    CHECK(record->runs.empty());
+  }
+
+  SECTION("a two-operand plan refuses the three-operand execute") {
+    const auto binary = katal::make_plan(
+        context, katal::Equation::parse("ij,jk->ik"), ref, ref, ref);
+    CHECK(katal::test::thrown_code([&] {
+            binary.execute(1.0, buffer_a.data(), buffer_b.data(),
+                           buffer_c.data(), 0.0, buffer_d.data(),
+                           buffer_d.data(), enough);
+          }) == katal::Errc::UnsupportedPattern);
+    CHECK(record->runs.empty());
+  }
+}
+
 TEST_CASE("an elementwise plan passes c apart from d", "[backend]") {
   auto record = std::make_shared<Record>();
   const auto context = katal::Context::Impl::with_backend(
@@ -617,6 +761,10 @@ TEST_CASE("a precision mode reaches contractions only", "[backend]") {
   REQUIRE(record->operations.size() == 2);
   CHECK(record->operations[0].precision == Precision::Native);
   CHECK(record->operations[1].precision == Precision::Tf32);
+
+  katal::make_plan(context, parse("ij,jk,kl->il"), ref(e), ref(e), ref(e),
+                   ref(e), options);
+  CHECK(record->operation->precision == Precision::Tf32);
 }
 
 TEST_CASE("the precision splits the cache for contractions only", "[backend]") {
@@ -648,12 +796,16 @@ TEST_CASE("the precision splits the cache for contractions only", "[backend]") {
         katal::cached_plan(context, "ij,jk->ik", r, r, r, tf32));
   CHECK(record->operations.size() == 6);
 
+  CHECK(katal::cached_plan(context, "ij,jk,kl->il", r, r, r, r, native) !=
+        katal::cached_plan(context, "ij,jk,kl->il", r, r, r, r, tf32));
+  CHECK(record->operations.size() == 8);
+
   // A tensor-core mode replaces the compute type, so that no longer splits it.
   katal::PlanOptions tf32_f64 = tf32;
   tf32_f64.compute = katal::Dtype::F64;
   CHECK(katal::cached_plan(context, "ij,jk->ik", r, r, r, tf32) ==
         katal::cached_plan(context, "ij,jk->ik", r, r, r, tf32_f64));
-  CHECK(record->operations.size() == 6);
+  CHECK(record->operations.size() == 8);
 }
 
 // The index views the keys its list owns, so eviction must drop the view

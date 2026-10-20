@@ -173,6 +173,32 @@ TEST_CASE("classification picks the kernel", "[equation]") {
     REQUIRE(Equation::parse("ij->").classify().kind == Lowering::Reduce);
   }
 
+  SECTION("three operands contract in one kernel") {
+    const Classification c = Equation::parse("ij,jk,kl->il").classify();
+    REQUIRE(c.kind == Lowering::ContractTrinary);
+    REQUIRE(c.batch.rank() == 0);
+    REQUIRE(c.contracted == katal::util::Index("jk"));
+    REQUIRE(c.reduced_a.rank() == 0);
+    REQUIRE(c.reduced_b.rank() == 0);
+    REQUIRE(c.reduced_c.rank() == 0);
+  }
+
+  SECTION("three operands: batch, a label shared by all, and own labels") {
+    const Classification c = Equation::parse("bijx,bjky,bikz->bk").classify();
+    REQUIRE(c.kind == Lowering::ContractTrinary);
+    REQUIRE(c.batch == katal::util::Index("b"));
+    REQUIRE(c.contracted == katal::util::Index("ji"));
+    REQUIRE(c.reduced_a == katal::util::Index("x"));
+    REQUIRE(c.reduced_b == katal::util::Index("y"));
+    REQUIRE(c.reduced_c == katal::util::Index("z"));
+  }
+
+  SECTION("three operands with an implicit result") {
+    const Equation eq = Equation::parse("ij,jk,kl");
+    REQUIRE(eq.result() == katal::util::Index("il"));
+    REQUIRE(eq.classify().kind == Lowering::ContractTrinary);
+  }
+
   SECTION("identity is a copy, not a permutation") {
     REQUIRE(Equation::parse("ijkl->ijkl").classify().kind == Lowering::Copy);
   }
@@ -194,8 +220,27 @@ TEST_CASE("classification rejections name the offending labels", "[equation]") {
     REQUIRE(code_of("ij,jk->ii") == Errc::UnsupportedPattern);
   }
 
-  SECTION("more than two operands") {
-    REQUIRE(code_of("ij,jk,kl->il") == Errc::UnsupportedPattern);
+  SECTION("more than three operands") {
+    REQUIRE(code_of("ij,jk,kl,lm->im") == Errc::UnsupportedPattern);
+  }
+
+  SECTION("three operands broadcasting a label that appears in no input") {
+    const Equation eq = Equation::parse("ij,jk,kl->ilm");
+    try {
+      eq.classify();
+      FAIL("expected a rejection");
+    } catch (const katal::Error& e) {
+      REQUIRE(e.code() == Errc::UnsupportedPattern);
+      REQUIRE(mentions(e, "\"m\""));
+    }
+  }
+
+  SECTION("three operands summing more labels than an index holds") {
+    if (katal::max_rank != 12) SKIP("written for rank twelve");
+    // Each input shares six labels with each other input, and the result
+    // keeps none of them: eighteen summed labels.
+    REQUIRE(code_of("abcdefghijkl,abcdefmnopqr,ghijklmnopqr->") ==
+            Errc::UnsupportedPattern);
   }
 }
 

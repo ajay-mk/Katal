@@ -37,6 +37,7 @@ inferred differently from what is written.
 
 | Operands | Pattern                                   | Classification |
 |----------|-------------------------------------------|----------------|
+| three    | labels shared by two or three inputs      | three-operand contraction |
 | two      | contracted, batch and free labels         | contraction   |
 | one      | result drops labels                       | reduction     |
 | one      | result reorders labels                    | permutation   |
@@ -52,13 +53,13 @@ extents.
 
 ## Labels summed out of one input
 
-With two operands, a label in one input alone (neither in the other nor in
-the result) is summed out of that input first: `"ijk,kl->il"` sums `j` out
-of the first input, then contracts `k`.
+With two or three operands, a label in one input alone (in no other input
+and not in the result) is summed out of that input first: `"ijk,kl->il"`
+sums `j` out of the first input, then contracts `k`.
 
 - The plan runs one reduction per affected input before the contraction:
   two kernels, or three when both inputs have such labels, as in
-  `"ijk,kml->il"`.
+  `"ijk,kml->il"`, and up to four with three operands.
 - The summed input is kept in the plan's workspace, so `workspace_size()` is
   nonzero and the workspace must be aligned to 256 bytes, which
   `cudaMallocAsync` and the default allocator give.
@@ -78,5 +79,14 @@ Katal rejects these with `UnsupportedPattern`, naming the labels responsible:
   [elementwise operations](operations.md#elementwise-operations) or
   [permute](operations.md#permutations) for that).
 
-Three or more operands are also `UnsupportedPattern`, since they would need
-a contraction path.
+## Three operands
+
+Three operands, as in `"ij,jk,kl->il"`, run as one cuTENSOR trinary
+contraction, `e = alpha * A.B.C + beta * d`, with no intermediate tensor in
+memory. Katal does not choose a pairwise order or fall back to two
+contractions: a pattern or type the trinary kernel does not support is
+`UnsupportedPattern` when the plan is built, as is an equation that sums
+more than `katal::max_rank` labels across the three inputs.
+
+Four or more operands are `UnsupportedPattern`, since they would need a
+contraction path.

@@ -13,22 +13,35 @@
 namespace katal {
 
 /// The kernel an equation lowers to.
-enum class Lowering { Contract, Permute, Reduce, Copy, Elementwise };
+enum class Lowering {
+  Contract,
+  Permute,
+  Reduce,
+  Copy,
+  Elementwise,
+  /// Three inputs contracted in one kernel, `e = alpha * A.B.C + beta * d`.
+  ContractTrinary,
+};
 
 /// How each mode of an equation participates. The sets are named from the
-/// contraction's point of view; only the ones the chosen lowering needs are
-/// populated.
+/// binary contraction's point of view; only the ones the chosen lowering needs
+/// are populated. A three-operand contraction fills `batch`, `contracted`,
+/// `reduced_a`, `reduced_b`, `reduced_c` and `diagonal`.
 struct Classification {
   Lowering kind = Lowering::Contract;
-  util::Index batch;       ///< in A, B and the result
-  util::Index contracted;  ///< in A and B, summed away
-  util::Index free_a;      ///< in A and the result only
-  util::Index free_b;      ///< in B and the result only
+  util::Index batch;  ///< in every input and the result
+  /// In two or more inputs (A and B for a binary contraction), summed away.
+  util::Index contracted;
+  util::Index free_a;   ///< in A and the result only
+  util::Index free_b;   ///< in B and the result only
   util::Index reduced;  ///< unary only: present in A, dropped from the result
   /// Binary only: in A alone, summed out of A before the contraction.
   util::Index reduced_a;
   /// Binary only: in B alone, summed out of B before the contraction.
   util::Index reduced_b;
+  /// Three operands only: in C alone, summed out of C before the contraction.
+  /// `reduced_a` and `reduced_b` hold A's and B's such labels there too.
+  util::Index reduced_c;
   /// Repeated within an input, which is read along that diagonal: `"ii->"`
   /// is a trace, `"ii->i"` a diagonal.
   util::Index diagonal;
@@ -87,6 +100,7 @@ class Equation {
   util::Index implicit_result() const;
   Classification classify_unary() const;
   Classification classify_binary() const;
+  Classification classify_trinary() const;
   void check_result() const;
 
   /// Renders an index for a diagnostic, in quotes.
@@ -221,6 +235,37 @@ inline Classification Equation::classify_binary() const {
   return with_diagonal(c);
 }
 
+inline Classification Equation::classify_trinary() const {
+  const util::Index a = unique(operands_[0]), b = unique(operands_[1]),
+                    c = unique(operands_[2]);
+  const util::Index& d = result_;
+
+  if (const util::Index broadcast = ((d - a) - b) - c; broadcast.rank() > 0)
+    throw Error(Errc::UnsupportedPattern, text_,
+                "label(s) " + quoted(broadcast) +
+                    " appear in the result but in no input; broadcasting is "
+                    "not expressible");
+
+  Classification r;
+  r.kind = Lowering::ContractTrinary;
+  r.batch = a & b & c & d;
+  // Each pair's shared labels, minus those the result keeps. Unlike a binary
+  // contraction's, these need not fit in one input, so they can outgrow an
+  // index.
+  try {
+    r.contracted = ((a & b) - d) | ((a & c) - d) | ((b & c) - d);
+  } catch (const Error&) {
+    throw Error(Errc::UnsupportedPattern, text_,
+                "more than " + std::to_string(max_rank) +
+                    " labels are summed across the three inputs");
+  }
+  // Kept per input, as in classify_binary.
+  r.reduced_a = ((a - b) - c) - d;
+  r.reduced_b = ((b - a) - c) - d;
+  r.reduced_c = ((c - a) - b) - d;
+  return with_diagonal(r);
+}
+
 inline Classification Equation::classify_unary() const {
   const util::Index a = unique(operands_[0]);
   const util::Index& d = result_;
@@ -255,8 +300,9 @@ inline Classification Equation::classify() const {
 
   if (operands_.size() == 1) return classify_unary();
   if (operands_.size() == 2) return classify_binary();
+  if (operands_.size() == 3) return classify_trinary();
   throw Error(Errc::UnsupportedPattern, text_,
-              "more than two operands requires a contraction path");
+              "more than three operands requires a contraction path");
 }
 
 inline Classification Equation::classify_elementwise() const {
