@@ -189,6 +189,26 @@ bool overlaps(const void* x, ByteSpan xs, const void* y, ByteSpan ys) {
   return at(x, xs.low) < at(y, ys.high) && at(y, ys.low) < at(x, xs.high);
 }
 
+/// Whether a tensor's strides send two coordinates to the same element: a zero
+/// stride, or two modes whose strides have the same magnitude, along modes
+/// longer than one. An output like that would be written twice at once. Other
+/// aliasing layouts exist, but these two are certain and cheap to spot.
+bool addresses_twice(const backend::Operand& t) {
+  // Unsigned, since negating INT64_MIN overflows.
+  const auto magnitude = [](std::int64_t s) {
+    const auto bits = static_cast<std::uint64_t>(s);
+    return s < 0 ? std::uint64_t{0} - bits : bits;
+  };
+  for (std::size_t i = 0; i < t.extent.size(); ++i) {
+    if (t.extent[i] == 1) continue;
+    if (t.stride[i] == 0) return true;
+    for (std::size_t j = i + 1; j < t.extent.size(); ++j)
+      if (t.extent[j] != 1 && magnitude(t.stride[j]) == magnitude(t.stride[i]))
+        return true;
+  }
+  return false;
+}
+
 /// What cuTENSOR assumes of every base pointer it is given without being told
 /// otherwise, and so where each scratch tensor in a workspace starts.
 constexpr std::uint64_t scratch_alignment = 256;
@@ -469,6 +489,9 @@ class Plan::Impl {
     if (d.op != UnaryOp::Identity)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "the output carries a unary operator; only inputs can");
+    KATAL_ENFORCE(!addresses_twice(op.output), Errc::UnsupportedPattern,
+                  equation_,
+                  "the output's strides address one element more than once");
     op.compute = compute_type(options, d.type);
     compute_ = op.compute;
     // The tensor-core modes exist only in cuTENSOR's contraction table, so a

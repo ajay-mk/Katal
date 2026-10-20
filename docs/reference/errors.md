@@ -45,6 +45,8 @@ run:
 - a zero scale on an elementwise operator other than `Add`;
 - a permutation given a beta;
 - an output carrying a unary operator;
+- an output whose strides address one element twice: a zero stride, or two
+  modes with strides of the same magnitude, along modes longer than one;
 - an `execute` overload that does not match the plan;
 - a workspace under 256-byte alignment for a plan that keeps a reduced input
   in it.

@@ -399,6 +399,39 @@ TEST_CASE("a permutation refuses an input overlapping its output",
   }
 }
 
+TEST_CASE("an output that addresses an element twice is refused", "[backend]") {
+  auto record = std::make_shared<Record>();
+  const auto context = katal::Context::Impl::with_backend(
+      std::make_unique<RecordingBackend>(record));
+  const std::array<std::int64_t, 2> e{2, 2};
+  const auto f64 = katal::Dtype::F64;
+  const auto a = katal::make_ref(nullptr, f64, e);
+  const auto code = [&](std::array<std::int64_t, 2> stride,
+                        std::array<std::int64_t, 2> extent) {
+    const katal::ConstTensorRef d{nullptr, f64, extent, stride};
+    return katal::test::thrown_code([&] {
+      (void)katal::make_plan(context, katal::Equation::parse("ij->ij"), a, d);
+    });
+  };
+
+  CHECK(code({0, 1}, e) == katal::Errc::UnsupportedPattern);
+  CHECK(code({1, 1}, e) == katal::Errc::UnsupportedPattern);
+  CHECK(code({1, -1}, e) == katal::Errc::UnsupportedPattern);
+  constexpr std::int64_t lowest = std::numeric_limits<std::int64_t>::min();
+  CHECK(code({lowest, lowest}, e) == katal::Errc::UnsupportedPattern);
+  CHECK_FALSE(record->operation);
+  // A mode of length one is never stepped along, so its stride is free.
+  const std::array<std::int64_t, 2> row{1, 2};
+  const std::array<std::int64_t, 2> free_stride{0, 1};
+  const katal::ConstTensorRef d{nullptr, f64, row, free_stride};
+  CHECK(katal::test::thrown_code([&] {
+          (void)katal::make_plan(context, katal::Equation::parse("ij->ij"),
+                                 katal::make_ref(nullptr, f64, row), d);
+        }) == std::nullopt);
+  CHECK(code({4, 1}, e) == std::nullopt);
+  CHECK(code({1, 2}, e) == std::nullopt);
+}
+
 TEST_CASE("using a moved-from context or plan follows the assert behavior",
           "[backend]") {
   // Not SKIP: an older catch_discover_tests reads a skipped case as failed.

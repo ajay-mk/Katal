@@ -26,9 +26,10 @@ enum class Errc {
   /// reported as not supported. Also a pointer handed to `Plan::execute` that
   /// is less aligned than the plan was built for, an elementwise or
   /// permutation input passed as the output, a permutation given a beta, an
-  /// output carrying a unary operator, an execute overload that does not
-  /// match the plan, or a workspace less than 256-byte aligned for a plan
-  /// that keeps a reduced input in it.
+  /// output carrying a unary operator, an output whose strides address one
+  /// element twice, an execute overload that does not match the plan, or a
+  /// workspace less than 256-byte aligned for a plan that keeps a reduced
+  /// input in it.
   UnsupportedPattern,
   /// An operand or scalar representation is unsupported. Scalar narrowing and
   /// discarding an imaginary part for real computation do not raise this error.
