@@ -89,8 +89,7 @@ class Equation {
   Classification classify_binary() const;
   void check_result() const;
 
-  /// Renders an index for a diagnostic. Multi-character labels come back
-  /// space separated, which is how they were written.
+  /// Renders an index for a diagnostic, in quotes.
   static std::string quoted(const util::Index& i) {
     return "\"" + std::string(i) + "\"";
   }
