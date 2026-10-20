@@ -14,9 +14,30 @@ reviews:
   sequence_diagrams: false
   collapse_walkthrough: true
   review_status: true
-  # Labels come from .github/labeler.yml.
-  suggested_labels: false
-  suggested_reviewers: false
+  # One label for the main kind of change, plus api/core for what it touches.
+  suggested_labels: true
+  auto_apply_labels: true
+  labeling_instructions:
+    - label: feature
+      instructions: Mainly adds new functionality.
+    - label: fix
+      instructions: Mainly fixes a bug.
+    - label: perf
+      instructions: Mainly improves performance.
+    - label: refactor
+      instructions: Mainly restructures code without changing behavior.
+    - label: tests
+      instructions: Only adds or changes tests.
+    - label: docs
+      instructions: Only changes documentation.
+    - label: build
+      instructions: Only changes the build or packaging.
+    - label: ci
+      instructions: Only changes CI or repo automation.
+    - label: api
+      instructions: Changes the public headers in include/katal/.
+    - label: core
+      instructions: Changes the library code in src/.
   auto_review:
     enabled: true
     drafts: false
