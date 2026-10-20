@@ -17,35 +17,51 @@ try {
 }
 ```
 
+## Error codes
+
 | `Errc`               | Meaning                                                                 |
 |----------------------|-------------------------------------------------------------------------|
 | `ParseError`         | The equation is malformed: an empty operand, a stray arrow, or a separator inside a label. |
 | `RankMismatch`       | Labels and extents disagree in count, or a rank exceeds `max_rank`.     |
 | `ExtentMismatch`     | A label has two extents, an extent is not positive, or a shape overflows. |
-| `UnsupportedPattern` | Well formed but not lowered; cuTENSOR's NOT_SUPPORTED; `execute` got a pointer less aligned than the plan, an elementwise input that is the output, a permutation input that overlaps the output, a zero scale on an elementwise operator other than Add, a permutation given a beta, an output with a unary operator, an overload that does not match the plan, or a workspace under 256-byte alignment for a plan that keeps a reduced input in it. |
+| `UnsupportedPattern` | Well formed but not lowered, or a call that does not fit its plan; see [below](#unsupportedpattern). |
 | `DtypeMismatch`      | An operand or scalar representation is unsupported.               |
 | `WorkspaceTooSmall`  | `execute` got less workspace than `Plan::workspace_size()`, or cuTENSOR reported too little. |
 | `CutensorError`      | cuTENSOR failed; the message carries its text.                          |
 | `CudaError`          | A CUDA call failed, or a plan ran with another device current.          |
 | `InvalidState`       | The process-wide context was misused: a second `initialize()`, a `Runtime` when a context exists, or `finalize()` while a `Runtime` owns it. |
 
+### UnsupportedPattern
+
+The code covers both equations Katal cannot lower and calls it refuses to
+run:
+
+- an equation Katal does not lower, with the labels responsible in the
+  message (see [what is rejected](equations.md#what-is-rejected)), or
+  cuTENSOR's `NOT_SUPPORTED`;
+- an `execute` pointer less aligned than the plan was built for;
+- an elementwise input that is the output, or a permutation input that
+  overlaps it;
+- a zero scale on an elementwise operator other than `Add`;
+- a permutation given a beta;
+- an output carrying a unary operator;
+- an `execute` overload that does not match the plan;
+- a workspace under 256-byte alignment for a plan that keeps a reduced input
+  in it.
+
+## Scalars
+
 Scalars are converted to the backend's compute type. This conversion can narrow
 precision, and a complex scalar's imaginary part is discarded for real compute
 types; `DtypeMismatch` does not diagnose these losses.
 
-## Without exceptions in hand
+## Non-throwing overloads
 
 `Equation::parse` and `Equation::classify` also have overloads that report
 through a `std::error_code` and never throw. The code compares equal to the
-`Errc` the throwing overload would have raised; any other exception, such as
+`Errc` the throwing overload would have raised. Any other exception, such as
 `std::bad_alloc`, comes back as `ParseError` from `parse` and
-`UnsupportedPattern` from `classify`:
-
-```cpp
-std::error_code ec;
-const auto eq = katal::Equation::parse(text, ec);
-if (ec == katal::Errc::RankMismatch) { /* ... */ }
-```
+`UnsupportedPattern` from `classify`.
 
 ## Cleanup
 
@@ -58,5 +74,6 @@ unwinding, including explicit cleanup after catching a fault, it terminates.
 
 Cleanup can detect active unwinding, but cannot identify the exception. If an
 unrelated exception is unwinding when the context is lost, cleanup also
-suppresses that device fault. Check asynchronous CUDA errors explicitly before
-leaving the scope when they must be reported separately.
+suppresses that device fault. When a device fault must be reported on its own,
+check for it, for example with `cudaStreamSynchronize`, before leaving the
+scope that owns the tensors and plans.

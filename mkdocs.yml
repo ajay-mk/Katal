@@ -1,5 +1,8 @@
 site_name: Katal
 site_description: A C++20 einsum frontend for GPU tensor libraries
+repo_url: https://github.com/ajay-mk/Katal
+repo_name: ajay-mk/Katal
+edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: docs-build/site
 
@@ -7,6 +10,16 @@ theme:
   name: material
   logo: assets/katal-mark-dark.svg
   favicon: assets/katal-mark-light.svg
+  features:
+    - content.code.copy
+    - content.tabs.link
+    - navigation.footer
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.suggest
+    - toc.follow
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -19,15 +32,46 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
+validation:
+  omitted_files: warn
+  anchors: warn
+  unrecognized_links: warn
+
+extra_css:
+  - stylesheets/extra.css
+  - stylesheets/diagrams.css
+
+plugins:
+  - search
+
 markdown_extensions:
   - admonition
   - attr_list
   - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
 
 nav:
   - Home: index.md
-  - Building and testing: building.md
-  - Equations: equations.md
-  - Errors: errors.md
-  - Tensor ownership and allocators: tensors.md
-  - Examples: examples.md
+  - Tutorial: tutorial/first-contraction.md
+  - How-to guides:
+      - Build, test and install: how-to/build.md
+      - Hoist a plan out of a loop: how-to/hoist-a-plan.md
+      - Bring your own memory: how-to/memory.md
+  - Reference:
+      - Equations: reference/equations.md
+      - Operations: reference/operations.md
+      - Configuration: reference/configuration.md
+      - Tensors: reference/tensors.md
+      - Errors: reference/errors.md
+      - Diagnostics: reference/diagnostics.md
+      - API reference: api/index.html
+  - Design: explanation/design.md
