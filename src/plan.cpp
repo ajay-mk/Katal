@@ -30,11 +30,6 @@ void append(std::string& key, const void* bytes, std::size_t n) {
   if (n != 0) key.append(static_cast<const char*>(bytes), n);
 }
 
-/// The bytes append_tensor writes, so plan_key can allocate once.
-std::size_t tensor_key_size(const ConstTensorRef& t) {
-  return 6 * sizeof(int32_t) + t.extent.size_bytes() + t.stride.size_bytes();
-}
-
 void append_tensor(std::string& key, const ConstTensorRef& t) {
   const auto type = static_cast<int32_t>(t.type);
   const auto layout = static_cast<int32_t>(t.layout);
@@ -60,13 +55,12 @@ constexpr int32_t permutation_key = 1000;
 std::string plan_key(std::string_view equation, PlanOptions options,
                      std::initializer_list<const ConstTensorRef*> tensors,
                      int32_t op = -1) {
-  // Built on every einsum call, hit or miss, so size it up front rather than
-  // let the appends reallocate several times.
-  std::size_t size = equation.size() + 1 + 7 * sizeof(int32_t) +
-                     sizeof(options.workspace_limit);
-  for (const ConstTensorRef* t : tensors) size += tensor_key_size(*t);
+  // Built on every einsum call, hit or miss, so reserve rather than let the
+  // appends reallocate several times. ponytail: a fixed guess, enough for
+  // three dense tensors at the default maximum rank; strided or more tensors
+  // can reallocate once.
   std::string key;
-  key.reserve(size);
+  key.reserve(512);
   key.append(equation);
   key.push_back('\0');
   append(key, &op, sizeof(op));
@@ -90,7 +84,6 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   append(key, &rank, sizeof(rank));
   append(key, &jit, sizeof(jit));
   for (const ConstTensorRef* t : tensors) append_tensor(key, *t);
-  KATAL_ASSERT(key.size() == size, "plan_key: tensor_key_size is out of date");
   return key;
 }
 
