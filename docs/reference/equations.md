@@ -87,7 +87,7 @@ contraction (cuTENSOR 2.2 or newer; older versions refuse it with
 memory. Katal does not choose a pairwise order or fall back to two
 contractions: a pattern or type the trinary kernel does not support is
 `UnsupportedPattern` when the plan is built, as is an equation that sums
-more than `katal::max_rank` labels across the three inputs.
+or repeats more than `katal::max_rank` labels across the three inputs.
 
 Four or more operands are `UnsupportedPattern`, since they would need a
 contraction path.

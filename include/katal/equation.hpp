@@ -263,7 +263,15 @@ inline Classification Equation::classify_trinary() const {
   r.reduced_a = ((a - b) - c) - d;
   r.reduced_b = ((b - a) - c) - d;
   r.reduced_c = ((c - a) - b) - d;
-  return with_diagonal(r);
+  // Likewise, three inputs can repeat more labels between them than an index
+  // holds, though no one input can.
+  try {
+    return with_diagonal(r);
+  } catch (const Error&) {
+    throw Error(Errc::UnsupportedPattern, text_,
+                "more than " + std::to_string(max_rank) +
+                    " labels are repeated across the three inputs");
+  }
 }
 
 inline Classification Equation::classify_unary() const {

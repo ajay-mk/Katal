@@ -242,6 +242,13 @@ TEST_CASE("classification rejections name the offending labels", "[equation]") {
     REQUIRE(code_of("abcdefghijkl,abcdefmnopqr,ghijklmnopqr->") ==
             Errc::UnsupportedPattern);
   }
+
+  SECTION("three operands repeating more labels than an index holds") {
+    if (katal::max_rank != 12) SKIP("written for rank twelve");
+    // Five diagonals per input: fifteen repeated labels in all.
+    REQUIRE(code_of("iaabbccddee,iffgghhjjkk,illmmnnoopp->i") ==
+            Errc::UnsupportedPattern);
+  }
 }
 
 TEST_CASE("elementwise classification", "[equation]") {
