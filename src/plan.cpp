@@ -135,22 +135,6 @@ struct ByteSpan {
   std::int64_t high = 0;
 };
 
-std::int64_t element_bytes(Dtype type) {
-  switch (type) {
-    case Dtype::F16:
-    case Dtype::Bf16:
-      return 2;
-    case Dtype::F32:
-      return 4;
-    case Dtype::F64:
-    case Dtype::C32:
-      return 8;
-    case Dtype::C64:
-      return 16;
-  }
-  return 16;
-}
-
 /// Extents are positive by now; see check_extents. A view whose reach does
 /// not fit std::int64_t cannot be compared, so it is refused.
 ByteSpan byte_span(const backend::Operand& t, std::string_view equation) {
@@ -159,7 +143,7 @@ ByteSpan byte_span(const backend::Operand& t, std::string_view equation) {
     return Error(Errc::ExtentMismatch, equation,
                  "a tensor's byte span overflows std::int64_t");
   };
-  const std::int64_t bytes = element_bytes(t.type);
+  const auto bytes = static_cast<std::int64_t>(util::size_of(t.type));
   ByteSpan span{0, bytes};
   for (std::size_t i = 0; i < t.extent.size(); ++i) {
     const std::int64_t steps = t.extent[i] - 1;
@@ -535,7 +519,7 @@ class Plan::Impl {
                     "a reduced input is too large to address");
       elements *= e;
     }
-    const std::int64_t size = element_bytes(reduced.type);
+    const auto size = static_cast<std::int64_t>(util::size_of(reduced.type));
     if (elements > max / size)
       throw Error(Errc::ExtentMismatch, equation_,
                   "a reduced input is too large to address");
