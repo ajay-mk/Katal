@@ -93,12 +93,13 @@ jobs:
             "cuda-nvcc-${CUDA_VERSION}" "cuda-cudart-dev-${CUDA_VERSION}" \
             "libcublas-dev-${CUDA_VERSION}"
 
-      # FindcuTENSOR reads CUTENSOR_ROOT, so tools/test-install.sh's consumer
-      # build below finds the same copy.
+      # find_path and find_library search CMAKE_PREFIX_PATH, so
+      # tools/test-install.sh's consumer build below finds the same copy. Not
+      # CUTENSOR_ROOT: CMake warns about that name under policy CMP0144.
       - name: Install cuTENSOR
         run: |
           root="$(tools/install-cutensor.sh "${RUNNER_TEMP}/cutensor")"
-          echo "CUTENSOR_ROOT=${root}" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=${root}" >> "$GITHUB_ENV"
 
       - name: Cache compiler output
         uses: actions/cache@v6
@@ -124,7 +125,7 @@ jobs:
       # path must also be the pinned copy, not some other one on the runner.
       - name: Confirm cuTENSOR was found
         run: |
-          if ! grep -qF "cuTENSOR_LIBRARY:FILEPATH=${CUTENSOR_ROOT}/" build/CMakeCache.txt; then
+          if ! grep -qF "cuTENSOR_LIBRARY:FILEPATH=${CMAKE_PREFIX_PATH}/" build/CMakeCache.txt; then
             echo "the pinned cuTENSOR was not found; this job would not test it" >&2
             grep -i cutensor build/CMakeCache.txt || true
             exit 1

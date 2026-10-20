@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Installs the pinned cuTENSOR into <prefix> for CI and the Modal GPU image,
-# and prints the root to pass as CUTENSOR_ROOT or -DKATAL_CUTENSOR_ROOT.
+# and prints the root to add to CMAKE_PREFIX_PATH or pass as
+# -DKATAL_CUTENSOR_ROOT.
 #
 #     tools/install-cutensor.sh <prefix>
 #
