@@ -9,8 +9,8 @@ foreach(benchmark grid overhead shapes)
 endforeach()
 target_link_libraries(shapes PRIVATE CUDA::cublas)
 
-# Calls cuTENSOR directly as well as through Katal, so it links both.
+# Calls cuTENSOR and cuBLAS directly as well as Katal, so it links all three.
 add_executable(vs_cutensor vs_cutensor.cpp)
 target_link_libraries(vs_cutensor PRIVATE Katal::katal Katal::cutensor
-                                          CUDA::cudart)
+                                          CUDA::cudart CUDA::cublas)
 katal_target_warnings(vs_cutensor)

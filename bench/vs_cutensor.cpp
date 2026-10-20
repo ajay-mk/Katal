@@ -10,13 +10,16 @@
 // column-major, no explicit strides, with the modes listed fastest first. A
 // row-major tensor with its modes reversed is the same memory, so all four
 // paths should select the same kernel, and any difference is what Katal
-// costs on top. Times are GPU-event wall time per call, best of three
-// batches, after warm-up. Tensors hold a constant nonzero byte pattern.
+// costs on top. cuBLAS runs the same product as one GEMM, as a ceiling.
+// Times are GPU-event wall time per call, best of five batches with the
+// paths taking turns, after warm-up. Host time per call is only measured
+// for kernels under 1 ms. Tensors hold a constant nonzero byte pattern.
 //
 //   vs_cutensor [f64|f32 ...]     default: f64 f32
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -26,6 +29,7 @@
 #include <vector>
 
 #include "util.hpp"
+#include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <cutensor.h>
 
@@ -37,6 +41,12 @@ void check(cutensorStatus_t status) {
   if (status != CUTENSOR_STATUS_SUCCESS)
     throw katal::Error(katal::Errc::CudaError, "",
                        cutensorGetErrorString(status));
+}
+
+void check(cublasStatus_t status) {
+  if (status != CUBLAS_STATUS_SUCCESS)
+    throw katal::Error(katal::Errc::CudaError, "",
+                       "cuBLAS status " + std::to_string(int(status)));
 }
 
 struct Problem {
@@ -75,31 +85,40 @@ class Device {
   void* ptr_ = nullptr;
 };
 
-/// Best per-call milliseconds over three batches, each long enough (about
-/// 100 ms) that event resolution and launch jitter do not matter.
-double time_ms(const std::function<void()>& run) {
-  for (int i = 0; i < 3; ++i) run();
-  example::check(cudaDeviceSynchronize());
-  double probe = 0;
-  {
-    example::Timer t;
-    run();
-    probe = t.seconds() * 1e3;
+/// Per-call milliseconds of one batch, after a warm-up. A batch lasts about
+/// 100 ms, or at least three calls, so event resolution does not matter.
+double batch_ms(const std::function<void()>& run, int calls) {
+  example::Timer t;
+  for (int i = 0; i < calls; ++i) run();
+  return t.seconds() * 1e3 / calls;
+}
+
+/// Best per-call milliseconds for each path. The paths take turns, round by
+/// round, so clock or thermal drift during a case affects them all alike
+/// instead of whichever ran last.
+std::vector<double> time_paths(
+    const std::vector<std::function<void()>>& paths) {
+  std::vector<int> calls;
+  for (const auto& run : paths) {
+    for (int i = 0; i < 2; ++i) run();
+    example::check(cudaDeviceSynchronize());
+    const double probe = batch_ms(run, 1);
+    calls.push_back(
+        std::clamp(static_cast<int>(100.0 / std::max(probe, 1e-3)), 3, 2000));
   }
-  const int calls =
-      std::clamp(static_cast<int>(100.0 / std::max(probe, 1e-3)), 3, 2000);
-  double best = 1e30;
-  for (int repeat = 0; repeat < 3; ++repeat) {
-    example::Timer t;
-    for (int i = 0; i < calls; ++i) run();
-    best = std::min(best, t.seconds() * 1e3 / calls);
-  }
+  std::vector<double> best(paths.size(), 1e30);
+  for (int round = 0; round < 5; ++round)
+    for (std::size_t k = 0; k < paths.size(); ++k)
+      best[k] = std::min(best[k], batch_ms(paths[k], calls[k]));
   return best;
 }
 
 /// CPU time to enqueue one call, in microseconds. Few enough calls that the
-/// launch queue never fills and blocks the host.
-double host_us(const std::function<void()>& run) {
+/// launch queue never fills and blocks the host. Only meaningful when the
+/// kernel is short; longer ones are skipped (NaN), since timing them just
+/// waits on the GPU.
+double host_us(const std::function<void()>& run, double kernel_ms) {
+  if (kernel_ms > 1.0) return std::nan("");
   run();
   example::check(cudaDeviceSynchronize());
   constexpr int calls = 100;
@@ -167,8 +186,9 @@ struct RawPlan {
   std::vector<int32_t> mode_a, mode_b, mode_d;
 };
 
-void run_problem(cutensorHandle_t handle, const Problem& p, katal::Dtype dtype,
-                 const katal::Context& cached, const katal::Context& uncached) {
+void run_problem(cutensorHandle_t handle, cublasHandle_t blas, const Problem& p,
+                 katal::Dtype dtype, const katal::Context& cached,
+                 const katal::Context& uncached) {
   const auto arrow = p.equation.find("->");
   const auto comma = p.equation.find(',');
   const std::string ma = p.equation.substr(0, comma);
@@ -238,23 +258,59 @@ void run_problem(cutensorHandle_t handle, const Problem& p, katal::Dtype dtype,
     katal::einsum(p.equation, 1.0, ra, rb, 0.0, rd, {}, {}, uncached);
   };
 
-  const double t_raw = time_ms(raw_call);
-  const double t_hoisted = time_ms(hoisted_call);
-  const double t_einsum = time_ms(einsum_call);
-  const double t_uncached = time_ms(uncached_call);
-  const double h_raw = host_us(raw_call);
-  const double h_einsum = host_us(einsum_call);
-  const double h_uncached = host_us(uncached_call);
+  // cuBLAS on the same buffers, as the ceiling for what the hardware does
+  // with this matrix product. Both problems are one GEMM over row-major
+  // data: ij,jk->ik is D = A B, and abcd,ijcd->ijab is D = B A^T with
+  // (ij), (ab) and (cd) as the matrix dimensions. cuBLAS is column-major, so
+  // it computes D^T.
+  const bool ppl = p.equation == "abcd,ijcd->ijab";
+  const int gm = static_cast<int>(ppl ? ed[0] * ed[1] : ed[0]);  // rows of D
+  const int gn = static_cast<int>(ppl ? ed[2] * ed[3] : ed[1]);  // cols of D
+  const int gk = static_cast<int>(ppl ? ea[2] * ea[3] : ea[1]);  // contracted
+  auto blas_call = [&] {
+    if (f64) {
+      if (ppl)
+        check(cublasDgemm(blas, CUBLAS_OP_T, CUBLAS_OP_N, gn, gm, gk, &one,
+                          static_cast<const double*>(a.get()), gk,
+                          static_cast<const double*>(b.get()), gk, &zero,
+                          static_cast<double*>(d.get()), gn));
+      else
+        check(cublasDgemm(blas, CUBLAS_OP_N, CUBLAS_OP_N, gn, gm, gk, &one,
+                          static_cast<const double*>(b.get()), gn,
+                          static_cast<const double*>(a.get()), gk, &zero,
+                          static_cast<double*>(d.get()), gn));
+    } else {
+      if (ppl)
+        check(cublasSgemm(blas, CUBLAS_OP_T, CUBLAS_OP_N, gn, gm, gk, &onef,
+                          static_cast<const float*>(a.get()), gk,
+                          static_cast<const float*>(b.get()), gk, &zerof,
+                          static_cast<float*>(d.get()), gn));
+      else
+        check(cublasSgemm(blas, CUBLAS_OP_N, CUBLAS_OP_N, gn, gm, gk, &onef,
+                          static_cast<const float*>(b.get()), gn,
+                          static_cast<const float*>(a.get()), gk, &zerof,
+                          static_cast<float*>(d.get()), gn));
+    }
+  };
+
+  const auto t = time_paths(
+      {raw_call, hoisted_call, einsum_call, uncached_call, blas_call});
+  const double t_raw = t[0], t_hoisted = t[1], t_einsum = t[2],
+               t_uncached = t[3], t_blas = t[4];
+  const double h_raw = host_us(raw_call, t_raw);
+  const double h_einsum = host_us(einsum_call, t_raw);
+  const double h_uncached = host_us(uncached_call, t_raw);
 
   auto tf = [&](double ms) { return flop / (ms * 1e-3) / 1e12; };
   std::printf(
       "%-18s %-22s %s %9.2f | %9.4f %7.2f | %9.4f %7.2f | %9.4f %7.2f | "
-      "%9.4f %7.2f | %6.3f | %7.1f %7.1f %8.1f | %8.2f %8.2f | %8.2f %8.2f\n",
+      "%9.4f %7.2f | %9.4f %7.2f | %6.3f | %7.1f %7.1f %8.1f | %8.2f %8.2f | "
+      "%8.2f %8.2f\n",
       p.equation.c_str(), p.label.c_str(), f64 ? "f64" : "f32", flop / 1e9,
       t_raw, tf(t_raw), t_hoisted, tf(t_hoisted), t_einsum, tf(t_einsum),
-      t_uncached, tf(t_uncached), t_einsum / t_raw, h_raw, h_einsum, h_uncached,
-      raw_plan_cold_ms, katal_plan_ms, raw.workspace / double(1 << 20),
-      plan.workspace_size() / double(1 << 20));
+      t_uncached, tf(t_uncached), t_blas, tf(t_blas), t_einsum / t_raw, h_raw,
+      h_einsum, h_uncached, raw_plan_cold_ms, katal_plan_ms,
+      raw.workspace / double(1 << 20), plan.workspace_size() / double(1 << 20));
   std::fflush(stdout);
 
   if (raw_ws) example::check(cudaFree(raw_ws));
@@ -302,11 +358,14 @@ int main(int argc, char** argv) {
         cutensorGetVersion());
     std::printf(
         "columns: GFLOP | cutensor ms TF/s | hoisted ms TF/s | einsum ms TF/s "
-        "| no-cache ms TF/s | einsum/cutensor | host us: cutensor einsum "
+        "| no-cache ms TF/s | cuBLAS ms TF/s | einsum/cutensor | host us: "
+        "cutensor einsum "
         "no-cache | plan ms: raw-cold katal | workspace MiB: raw katal\n");
 
     cutensorHandle_t handle{};
     check(cutensorCreate(&handle));
+    cublasHandle_t blas{};
+    check(cublasCreate(&blas));
     const katal::Context cached;
     katal::Config off;
     off.plan_cache_entries = 0;
@@ -315,12 +374,13 @@ int main(int argc, char** argv) {
     for (katal::Dtype t : types)
       for (const Problem& p : problems()) {
         try {
-          run_problem(handle, p, t, cached, uncached);
+          run_problem(handle, blas, p, t, cached, uncached);
         } catch (const std::exception& error) {
           std::printf("%-18s %-22s failed: %s\n", p.equation.c_str(),
                       p.label.c_str(), error.what());
         }
       }
+    cublasDestroy(blas);
     cutensorDestroy(handle);
     return 0;
   } catch (const std::exception& error) {
