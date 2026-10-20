@@ -35,7 +35,8 @@ class StreamRef {
 /// one moment configuration takes effect.
 struct Config {
   /// Entries in cuTENSOR's own plan cache, which stores kernel selections so a
-  /// repeated `make_plan` skips the search. cuTENSOR's own default is 64.
+  /// repeated `make_plan` skips the search. cuTENSOR's own default is 64; a
+  /// negative value leaves it, and 0 turns the cache off.
   int32_t plan_cache_capacity = 256;
 
   /// How cached_plan and einsum plan through this context, unless a call
