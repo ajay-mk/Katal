@@ -17,7 +17,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 200M
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # catch2 from apt so the tests do not rebuild it from source every run;
       # if the runner ships Catch2 v2, find_package falls through to
@@ -74,7 +74,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 200M
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # cuBLASLt is cuTENSOR's only library dependency, so linking anything
       # against libcutensor.so needs it present even though Katal never calls
@@ -148,7 +148,7 @@ jobs:
   host-sanitizers:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install toolchain
         run: |
