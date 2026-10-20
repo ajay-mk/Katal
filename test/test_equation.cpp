@@ -1,6 +1,6 @@
 #include <cstddef>
+#include <optional>
 #include <string>
-#include <system_error>
 
 #include "enum_names.hpp"
 #include "thrown.hpp"
@@ -22,12 +22,8 @@ bool mentions(const katal::Error& e, std::string_view labels) {
   return std::string(e.what()).find(labels) != std::string::npos;
 }
 
-Errc code_of(std::string_view text) {
-  std::error_code ec;
-  const Equation eq = Equation::parse(text, ec);
-  if (ec) return static_cast<Errc>(ec.value());
-  eq.classify(ec);
-  return static_cast<Errc>(ec.value());
+std::optional<Errc> code_of(std::string_view text) {
+  return thrown_code([&] { Equation::parse(text).classify(); });
 }
 
 // max_rank labels, none shared with another block. Bytes from 'A' upward
@@ -92,7 +88,7 @@ TEST_CASE("equation parsing", "[equation]") {
     REQUIRE(eq.operand(0) == katal::util::Index("ij"));
     REQUIRE(eq.operand(1) == katal::util::Index("jk"));
     REQUIRE(eq.result() == katal::util::Index("ik"));
-    REQUIRE(code_of("ij,\njk->ik") == Errc{});
+    REQUIRE(code_of("ij,\njk->ik") == std::nullopt);
   }
 }
 
@@ -203,26 +199,6 @@ TEST_CASE("classification rejections name the offending labels", "[equation]") {
   }
 }
 
-TEST_CASE("the error_code overloads agree with the throwing ones",
-          "[equation]") {
-  std::error_code ec;
-  const Equation bad = Equation::parse("ij,,jk->ik", ec);
-  REQUIRE(ec == katal::make_error_code(Errc::ParseError));
-  REQUIRE(bad.n_operands() == 0);
-  REQUIRE(ec.message() == "malformed equation");
-  REQUIRE(std::string(ec.category().name()) == "katal");
-
-  ec.clear();
-  const Equation good = Equation::parse("ij,jk->ik", ec);
-  REQUIRE_FALSE(ec);
-  good.classify(ec);
-  REQUIRE_FALSE(ec);
-
-  ec.clear();
-  Equation::parse("ij,jk->ikl").classify(ec);
-  REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
-}
-
 TEST_CASE("elementwise classification", "[equation]") {
   SECTION("matching labels in any order") {
     const Classification c =
@@ -264,11 +240,12 @@ TEST_CASE("elementwise classification", "[equation]") {
   }
 
   SECTION("one or three inputs") {
-    std::error_code ec;
-    Equation::parse("ij->ji").classify_elementwise(ec);
-    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
-    Equation::parse("ij,ij,ij->ij").classify_elementwise(ec);
-    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+    REQUIRE(thrown_code([] {
+              Equation::parse("ij->ji").classify_elementwise();
+            }) == Errc::UnsupportedPattern);
+    REQUIRE(thrown_code([] {
+              Equation::parse("ij,ij,ij->ij").classify_elementwise();
+            }) == Errc::UnsupportedPattern);
   }
 
   SECTION("a repeated input label reads the diagonal") {
@@ -276,12 +253,6 @@ TEST_CASE("elementwise classification", "[equation]") {
         Equation::parse("ii,ij->ij").classify_elementwise();
     REQUIRE(c.diagonal == katal::util::Index("i"));
     REQUIRE(c.batch == katal::util::Index("i"));
-  }
-
-  SECTION("the error_code overload clears on success") {
-    std::error_code ec = katal::make_error_code(Errc::ParseError);
-    Equation::parse("ij,j->ij").classify_elementwise(ec);
-    REQUIRE_FALSE(ec);
   }
 }
 
@@ -314,9 +285,9 @@ TEST_CASE("permutation classification", "[equation]") {
   }
 
   SECTION("two inputs") {
-    std::error_code ec;
-    Equation::parse("ij,jk->ik").classify_permutation(ec);
-    REQUIRE(ec == katal::make_error_code(Errc::UnsupportedPattern));
+    REQUIRE(thrown_code([] {
+              Equation::parse("ij,jk->ik").classify_permutation();
+            }) == Errc::UnsupportedPattern);
   }
 }
 

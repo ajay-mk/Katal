@@ -79,14 +79,6 @@ Scalars are converted to the backend's compute type. This conversion can narrow
 precision, and a complex scalar's imaginary part is discarded for real compute
 types; `DtypeMismatch` does not diagnose these losses.
 
-## Non-throwing overloads
-
-`Equation::parse` and `Equation::classify` also have overloads that report
-through a `std::error_code` and never throw. The code compares equal to the
-`Errc` the throwing overload would have raised. Any other exception, such as
-`std::bad_alloc`, comes back as `ParseError` from `parse` and
-`UnsupportedPattern` from `classify`.
-
 ## Cleanup
 
 Destructors and deallocators never throw. A CUDA failure while releasing
