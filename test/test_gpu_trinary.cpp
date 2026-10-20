@@ -117,11 +117,30 @@ void agrees_with_reference(std::string_view equation, const Shapes& s, T alpha,
     REQUIRE(double(std::abs(got[i] - want[i])) <= tolerance * scale);
 }
 
+/// Builds a small three-operand plan, and skips the case when Katal was built
+/// against a cuTENSOR older than 2.2, which has no trinary contraction.
+void require_trinary() {
+  const std::array<std::int64_t, 2> extent{2, 2};
+  const auto ref = katal::make_ref(nullptr, katal::Dtype::F64, extent);
+  try {
+    katal::make_plan(katal::default_context(),
+                     katal::Equation::parse("ij,jk,kl->il"), ref, ref, ref,
+                     ref);
+  } catch (const katal::Error& e) {
+    if (e.code() == katal::Errc::UnsupportedPattern &&
+        std::string_view(e.what()).find("cuTENSOR 2.2") !=
+            std::string_view::npos)
+      SKIP("cuTENSOR older than 2.2 has no trinary contraction");
+    throw;
+  }
+}
+
 }  // namespace
 
 TEST_CASE("gpu three-operand contraction matches the host reference",
           "[gpu][trinary]") {
   if (!have_gpu()) SKIP("no CUDA device");
+  require_trinary();
 
   SECTION("a chain of two matrix products") {
     const std::array<std::int64_t, 2> a{2, 3}, b{3, 4}, c{4, 5}, e{2, 5};
@@ -186,6 +205,7 @@ TEST_CASE("gpu three-operand contraction matches the host reference",
 
 TEST_CASE("a three-operand plan writes e apart from d", "[gpu][trinary]") {
   if (!have_gpu()) SKIP("no CUDA device");
+  require_trinary();
   // [[1, 2], [3, 4]] times the identity times [[1, 0], [0, 2]].
   DeviceBuffer<double> a(std::vector<double>{1, 2, 3, 4});
   DeviceBuffer<double> b(std::vector<double>{1, 0, 0, 1});

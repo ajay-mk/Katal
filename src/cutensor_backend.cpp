@@ -111,6 +111,13 @@ class CutensorKernel final : public Kernel {
         const Operand& b = operation.inputs[1];
         describe(&desc_b_, b);
         if (operation.inputs.size() == 3) {
+#if CUTENSOR_VERSION < 20200
+          throw Error(Errc::UnsupportedPattern, operation.equation,
+                      "a three-operand contraction needs cuTENSOR 2.2 or "
+                      "newer, but Katal was built against " +
+                          std::to_string(CUTENSOR_MAJOR) + "." +
+                          std::to_string(CUTENSOR_MINOR));
+#else
           const Operand& c = operation.inputs[2];
           describe(&desc_c_, c);
           // cuTENSOR requires E to share D's descriptor and modes for now,
@@ -124,6 +131,7 @@ class CutensorKernel final : public Kernel {
               equation_);
           trinary_ = true;
           break;
+#endif
         }
         // C and D share a descriptor: beta scales the output in place.
         KATAL_CHECK(cutensorCreateContraction(
@@ -208,11 +216,13 @@ class CutensorKernel final : public Kernel {
     switch (kind_) {
       case OpKind::Contraction:
         if (trinary_) {
+#if CUTENSOR_VERSION >= 20200
           KATAL_CHECK(cutensorContractTrinary(
                           handle_, plan_, alpha_bytes.data(), inputs[0],
                           inputs[1], inputs[2], beta_bytes.data(), c, d,
                           workspace.ptr, workspace.size, stream.get()),
                       equation_);
+#endif
           return;
         }
         KATAL_CHECK(

@@ -82,7 +82,8 @@ Katal rejects these with `UnsupportedPattern`, naming the labels responsible:
 ## Three operands
 
 Three operands, as in `"ij,jk,kl->il"`, run as one cuTENSOR trinary
-contraction, `e = alpha * A.B.C + beta * d`, with no intermediate tensor in
+contraction (cuTENSOR 2.2 or newer; older versions refuse it with
+`UnsupportedPattern`), `e = alpha * A.B.C + beta * d`, with no intermediate tensor in
 memory. Katal does not choose a pairwise order or fall back to two
 contractions: a pattern or type the trinary kernel does not support is
 `UnsupportedPattern` when the plan is built, as is an equation that sums
