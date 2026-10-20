@@ -37,7 +37,12 @@ ctest --test-dir build --output-on-failure
 
 On a CUDA GPU this runs the complete suite. On a build machine with CUDA but
 no GPU, add `--label-exclude gpu`; that checks compiling and linking, not
-device execution.
+device execution. It still checks numbers: `test_cpu_backend` runs einsum,
+reductions, elementwise operations and permutations through a reference
+backend of plain host loops in place of cuTENSOR. On a GPU,
+`test_gpu_cpu_backend` compares cuTENSOR's reductions, elementwise
+operations, permutations and unary operators with that backend's. It lives
+in `test/` and is not part of the installed library.
 
 ## Install and use from another project
 
