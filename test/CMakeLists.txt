@@ -20,10 +20,28 @@ file(GLOB KATAL_TEST_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp")
 
 # The GPU tests need a device to run on, not just cuTENSOR to link against.
-# test_backend needs neither, but tests the compiled library, which only exists
-# with cuTENSOR.
+# test_backend and test_cpu_backend need neither, but test the compiled library,
+# which only exists with cuTENSOR.
 if(NOT KATAL_HAVE_CUTENSOR)
-  list(FILTER KATAL_TEST_SOURCES EXCLUDE REGEX "test_gpu|test_backend")
+  list(FILTER KATAL_TEST_SOURCES EXCLUDE REGEX
+       "test_gpu|test_backend|test_cpu_backend")
+else()
+  # A reference backend of plain host loops, for checking numbers. It reaches
+  # past the public headers to implement the backend interface, and is never
+  # installed.
+  add_library(katal_cpu_backend STATIC cpu_backend.cpp)
+  target_link_libraries(
+    katal_cpu_backend
+    PUBLIC Katal::katal
+    PRIVATE enumstr::enumstr)
+  target_include_directories(
+    katal_cpu_backend PUBLIC ${PROJECT_SOURCE_DIR}/src
+                             ${CMAKE_CURRENT_SOURCE_DIR})
+  # It includes context_impl.hpp, whose inline logging must match the library's.
+  target_compile_definitions(
+    katal_cpu_backend
+    PRIVATE KATAL_ENABLE_LOGGING=$<BOOL:${KATAL_ENABLE_LOGGING}>)
+  katal_target_warnings(katal_cpu_backend)
 endif()
 
 foreach(src IN LISTS KATAL_TEST_SOURCES)
@@ -35,6 +53,9 @@ foreach(src IN LISTS KATAL_TEST_SOURCES)
   if(name STREQUAL "test_backend")
     # Reaches past the public headers to swap in a recording backend.
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  endif()
+  if(name MATCHES "cpu_backend")
+    target_link_libraries(${name} PRIVATE katal_cpu_backend)
   endif()
   if(name STREQUAL "test_gpu_logging" OR name STREQUAL "test_backend")
     target_compile_definitions(
