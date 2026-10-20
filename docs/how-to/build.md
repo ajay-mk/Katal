@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | C++20 compiler, CMake 3.24+, Ninja | everything | any CMake generator works; the commands below use Ninja |
 | CUDA Toolkit | the GPU backend | CI compile-checks against CUDA 12.6 |
-| cuTENSOR | the GPU backend | |
+| cuTENSOR | the GPU backend | 2.0 or newer; CI uses 2.8.1 |
 | [Catch2](https://github.com/catchorg/Catch2) v3 | tests | fetched if no installed copy is found |
 | [enumstr](https://github.com/ajay-mk/enumstr) | GPU backend and tests | header-only; fetched if no installed copy is found |
 

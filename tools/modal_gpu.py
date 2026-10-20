@@ -17,15 +17,22 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 
 # The CI compile check uses CUDA 12.6 too. The devel image carries nvcc, which
 # FindCUDAToolkit uses to locate the toolkit, and the cudart headers. git and
-# ca-certificates let CMake fetch enumstr.
+# ca-certificates let CMake fetch enumstr. cuTENSOR comes from the same script
+# and pin as the CI compile check; FindcuTENSOR reads CUTENSOR_ROOT.
 image = (
     modal.Image.from_registry(
         "nvidia/cuda:12.6.3-devel-ubuntu24.04", add_python="3.12"
     )
     .apt_install(
-        "cmake", "ninja-build", "g++", "catch2", "libcutensor-dev",
-        "git", "ca-certificates",
+        "cmake", "ninja-build", "g++", "catch2", "git", "ca-certificates",
     )
+    .add_local_file(
+        REPO / "tools" / "install-cutensor.sh",
+        "/opt/install-cutensor.sh",
+        copy=True,
+    )
+    .run_commands("bash /opt/install-cutensor.sh /opt")
+    .env({"CUTENSOR_ROOT": "/opt/cutensor"})
     .add_local_dir(
         REPO,
         "/src",
