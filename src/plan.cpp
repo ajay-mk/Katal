@@ -682,6 +682,61 @@ std::string form_name(Plan::Impl::Form form) {
   return "matching";
 }
 
+/// An operand as the plan.created log line names it.
+struct Named {
+  const char* name;
+  const ConstTensorRef& tensor;
+};
+
+/// Runs `build`, which makes the plan, and logs it as plan.created with the
+/// time planning took. `kind` and `op` name the form when it needs naming, as
+/// in "reduce=Max" or "permutation".
+template <class Build>
+Plan logged(Build build, [[maybe_unused]] const Context& context,
+            [[maybe_unused]] const Equation& equation,
+            [[maybe_unused]] const char* kind,
+            [[maybe_unused]] std::optional<BinaryOp> op,
+            [[maybe_unused]] std::initializer_list<Named> tensors,
+            [[maybe_unused]] const PlanOptions& options) {
+#if KATAL_ENABLE_LOGGING
+  const auto start = std::chrono::steady_clock::now();
+#endif
+  Plan plan = build();
+#if KATAL_ENABLE_LOGGING
+  const auto elapsed = std::chrono::duration<double, std::micro>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
+  util::log([&](auto& out) {
+    out << "plan.created device=" << context.device()
+        << " equation=" << util::log_quote(equation.text());
+    if (kind != nullptr) out << ' ' << kind;
+    if (op) out << '=' << enumstr::to_string_view(*op);
+    for (const Named& t : tensors)
+      out << ' ' << t.name << '=' << util::log_tensor(t.tensor);
+    out << ' ' << util::log_options(options)
+        << " workspace_bytes=" << plan.workspace_size()
+        << " host_plan_us=" << elapsed;
+  });
+#endif
+  return plan;
+}
+
+/// Looks a plan up under the key for these tensors and `op`, building it with
+/// `make` on a miss. An unset override takes the context's policy, which is
+/// where a program sets planning once instead of at every call site.
+template <class Make>
+std::shared_ptr<const Plan> cached(
+    const Context& context, std::string_view equation,
+    const std::optional<PlanOptions>& options,
+    std::initializer_list<const ConstTensorRef*> tensors, int32_t op,
+    Make make) {
+  const PlanOptions resolved =
+      options.value_or(context.impl().config().plan_options);
+  return context.impl().cached(plan_key(equation, resolved, tensors, op), [&] {
+    return make(Equation::parse(equation), resolved);
+  });
+}
+
 }  // namespace
 
 Plan::Plan(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -734,66 +789,58 @@ void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* b,
 Plan make_plan(const Context& context, const Equation& equation,
                const ConstTensorRef& a, const ConstTensorRef& b,
                const ConstTensorRef& d, PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(std::make_unique<Plan::Impl>(context, equation, a, b, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device() << " equation="
-            << util::log_quote(equation.text()) << " a=" << util::log_tensor(a)
-            << " b=" << util::log_tensor(b) << " output=" << util::log_tensor(d)
-            << ' ' << util::log_options(options) << " workspace_bytes="
-            << plan.workspace_size() << " host_plan_us=" << elapsed);
-  return plan;
+  return logged(
+      [&] {
+        return Plan(
+            std::make_unique<Plan::Impl>(context, equation, a, b, d, options));
+      },
+      context, equation, nullptr, {}, {{"a", a}, {"b", b}, {"output", d}},
+      options);
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
                const ConstTensorRef& a, const ConstTensorRef& d,
                PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(std::make_unique<Plan::Impl>(context, equation, a, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device()
-            << " equation=" << util::log_quote(equation.text())
-            << " a=" << util::log_tensor(a) << " output=" << util::log_tensor(d)
-            << ' ' << util::log_options(options) << " workspace_bytes="
-            << plan.workspace_size() << " host_plan_us=" << elapsed);
-  return plan;
+  return logged(
+      [&] {
+        return Plan(
+            std::make_unique<Plan::Impl>(context, equation, a, d, options));
+      },
+      context, equation, nullptr, {}, {{"a", a}, {"output", d}}, options);
 }
 
 Plan make_plan(const Context& context, const Equation& equation, BinaryOp op,
                const ConstTensorRef& a, const ConstTensorRef& b,
                const ConstTensorRef& d, PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(
-      std::make_unique<Plan::Impl>(context, equation, op, a, b, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device()
-            << " equation=" << util::log_quote(equation.text()) << " op="
-            << enumstr::to_string_view(op) << " a=" << util::log_tensor(a)
-            << " b=" << util::log_tensor(b) << " output=" << util::log_tensor(d)
-            << ' ' << util::log_options(options) << " workspace_bytes="
-            << plan.workspace_size() << " host_plan_us=" << elapsed);
-  return plan;
+  return logged(
+      [&] {
+        return Plan(std::make_unique<Plan::Impl>(context, equation, op, a, b, d,
+                                                 options));
+      },
+      context, equation, "op", op, {{"a", a}, {"b", b}, {"output", d}},
+      options);
+}
+
+Plan make_plan(const Context& context, const Equation& equation,
+               BinaryOp reduce, const ConstTensorRef& a,
+               const ConstTensorRef& d, PlanOptions options) {
+  return logged(
+      [&] {
+        return Plan(std::make_unique<Plan::Impl>(context, equation, reduce, a,
+                                                 d, options));
+      },
+      context, equation, "reduce", reduce, {{"a", a}, {"output", d}}, options);
+}
+
+Plan make_permutation_plan(const Context& context, const Equation& equation,
+                           const ConstTensorRef& a, const ConstTensorRef& d,
+                           PlanOptions options) {
+  return logged(
+      [&] {
+        return Plan(std::make_unique<Plan::Impl>(
+            context, equation, Plan::Impl::PermutationTag{}, a, d, options));
+      },
+      context, equation, "permutation", {}, {{"a", a}, {"output", d}}, options);
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
@@ -802,13 +849,10 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         const ConstTensorRef& b,
                                         const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
-  // An unset override takes the context's policy, which is where a program
-  // sets planning once instead of at every call site.
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(plan_key(equation, resolved, {&a, &b, &d}), [&] {
-    return make_plan(context, Equation::parse(equation), a, b, d, resolved);
-  });
+  return cached(context, equation, options, {&a, &b, &d}, -1,
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_plan(context, parsed, a, b, d, resolved);
+                });
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
@@ -816,11 +860,10 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         const ConstTensorRef& a,
                                         const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(plan_key(equation, resolved, {&a, &d}), [&] {
-    return make_plan(context, Equation::parse(equation), a, d, resolved);
-  });
+  return cached(context, equation, options, {&a, &d}, -1,
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_plan(context, parsed, a, d, resolved);
+                });
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
@@ -829,60 +872,11 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         const ConstTensorRef& b,
                                         const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(
-      plan_key(equation, resolved, {&a, &b, &d}, static_cast<int32_t>(op)),
-      [&] {
-        return make_plan(context, Equation::parse(equation), op, a, b, d,
-                         resolved);
-      });
-}
-
-Plan make_plan(const Context& context, const Equation& equation,
-               BinaryOp reduce, const ConstTensorRef& a,
-               const ConstTensorRef& d, PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(
-      std::make_unique<Plan::Impl>(context, equation, reduce, a, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device()
-            << " equation=" << util::log_quote(equation.text())
-            << " reduce=" << enumstr::to_string_view(reduce)
-            << " a=" << util::log_tensor(a) << " output=" << util::log_tensor(d)
-            << ' ' << util::log_options(options) << " workspace_bytes="
-            << plan.workspace_size() << " host_plan_us=" << elapsed);
-  return plan;
-}
-
-Plan make_permutation_plan(const Context& context, const Equation& equation,
-                           const ConstTensorRef& a, const ConstTensorRef& d,
-                           PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(std::make_unique<Plan::Impl>(
-      context, equation, Plan::Impl::PermutationTag{}, a, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device()
-            << " equation=" << util::log_quote(equation.text())
-            << " permutation a=" << util::log_tensor(a) << " output="
-            << util::log_tensor(d) << ' ' << util::log_options(options)
-            << " workspace_bytes=" << plan.workspace_size()
-            << " host_plan_us=" << elapsed);
-  return plan;
+  return cached(context, equation, options, {&a, &b, &d},
+                static_cast<int32_t>(op),
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_plan(context, parsed, op, a, b, d, resolved);
+                });
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
@@ -891,26 +885,20 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         const ConstTensorRef& a,
                                         const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(
-      plan_key(equation, resolved, {&a, &d}, static_cast<int32_t>(reduce)),
-      [&] {
-        return make_plan(context, Equation::parse(equation), reduce, a, d,
-                         resolved);
-      });
+  return cached(context, equation, options, {&a, &d},
+                static_cast<int32_t>(reduce),
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_plan(context, parsed, reduce, a, d, resolved);
+                });
 }
 
 std::shared_ptr<const Plan> cached_permutation_plan(
     const Context& context, std::string_view equation, const ConstTensorRef& a,
     const ConstTensorRef& d, std::optional<PlanOptions> options) {
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(
-      plan_key(equation, resolved, {&a, &d}, permutation_key), [&] {
-        return make_permutation_plan(context, Equation::parse(equation), a, d,
-                                     resolved);
-      });
+  return cached(context, equation, options, {&a, &d}, permutation_key,
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_permutation_plan(context, parsed, a, d, resolved);
+                });
 }
 
 }  // namespace katal
