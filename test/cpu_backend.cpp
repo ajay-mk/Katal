@@ -294,7 +294,9 @@ class CpuKernel final : public Kernel {
         T sum{};
         do {
           T term = read(0, inputs, index);
-          if (kind_ == OpKind::Contraction) term *= read(1, inputs, index);
+          if (kind_ == OpKind::Contraction)
+            for (std::size_t k = 1; k < inputs_.size(); ++k)
+              term *= read(k, inputs, index);
           sum = first ? term : combine_(sum, term);
           first = false;
         } while (advance_counter(inner, inner_extent));
@@ -384,10 +386,13 @@ class CpuBackend final : public backend::Backend {
   /// Refuses at plan time the shapes and types run could not handle. The
   /// kernel refuses the operators.
   static void check(const Operation& operation) {
-    const bool two = operation.kind == OpKind::Contraction ||
-                     operation.kind == OpKind::Elementwise;
-    if (operation.inputs.size() != (two ? 2U : 1U))
-      throw refuse(operation, "got the wrong number of inputs");
+    // A contraction takes two inputs or three, and multiplies them all.
+    const std::size_t n = operation.inputs.size();
+    const bool counted =
+        operation.kind == OpKind::Contraction
+            ? n == 2 || n == 3
+            : n == (operation.kind == OpKind::Elementwise ? 2U : 1U);
+    if (!counted) throw refuse(operation, "got the wrong number of inputs");
 
     std::vector<const Operand*> tensors;
     for (const Operand& input : operation.inputs) tensors.push_back(&input);

@@ -3,12 +3,14 @@
 // CPU backend, from the same data, and the results must agree. Sums of
 // products are checked against reference_einsum in test_gpu.cpp; this covers
 // what that reference cannot compute: other reductions, elementwise
-// operators, permutations and unary operators, in every tested type.
+// operators, permutations and unary operators, in every tested type, and
+// three-operand contractions, which cuTENSOR runs as one trinary kernel.
 
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -246,4 +248,44 @@ TEMPLATE_TEST_CASE("cuTENSOR and the CPU backend agree on unary operators",
     }
   }
   CHECK(refused == expected);
+}
+
+TEMPLATE_TEST_CASE(
+    "cuTENSOR and the CPU backend agree on three-operand "
+    "contractions",
+    "[cpu_backend][gpu][trinary]", float, double, std::complex<float>,
+    std::complex<double>) {
+  if (!have_gpu()) SKIP("no CUDA device");
+  using T = TestType;
+  // A chain with c's own label y summed out first, and a coupled-cluster
+  // shape with a permuted result.
+  const struct {
+    const char* equation;
+    std::vector<Input> inputs;
+    Shape out;
+  } cases[] = {
+      {"ij,jk,kly->li", {{{6, 7}}, {{7, 8}}, {{8, 5, 3}}}, {5, 6}},
+      {"ijab,abmn,mnkl->klij",
+       {{{3, 4, 5, 2}}, {{5, 2, 4, 3}}, {{4, 3, 2, 5}}},
+       {2, 5, 3, 4}},
+  };
+  for (const auto& c : cases) {
+    CAPTURE(c.equation);
+    try {
+      compare<T>(
+          c.inputs, c.out,
+          [&](const Context& context, auto allocator,
+              const std::vector<ConstTensorRef>& in, const TensorRef& d) {
+            einsum(c.equation, T(1.5), in[0], in[1], in[2], T(-0.5), d, {}, {},
+                   context, allocator);
+          });
+    } catch (const Error& e) {
+      // The CPU backend runs first and has no version limit, so this is a
+      // cuTENSOR older than 2.2.
+      if (std::string_view(e.what()).find("cuTENSOR 2.2") ==
+          std::string_view::npos)
+        throw;
+      SKIP("cuTENSOR older than 2.2 has no trinary contraction");
+    }
+  }
 }

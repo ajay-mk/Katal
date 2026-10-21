@@ -2,6 +2,7 @@
 // of cuTENSOR, so no device is needed. Each result is checked against the
 // brute-force reference_einsum or an explicit loop.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <complex>
@@ -62,6 +63,30 @@ void check_contraction(const char* equation, const Shape& sa, const Shape& sb,
   CHECK(close(got, want));
 }
 
+/// `e = alpha * <equation over a, b and c> + beta * e` through the
+/// three-operand einsum on the CPU backend, against reference_einsum.
+template <class T>
+void check_trinary(const char* equation, const Shape& sa, const Shape& sb,
+                   const Shape& sc, const Shape& se,
+                   Layout layout = Layout::RowMajor) {
+  CAPTURE(equation, layout);
+  const Context context = cpu_context();
+  std::vector<T> a = random_values<T>(count(sa), 1);
+  std::vector<T> b = random_values<T>(count(sb), 2);
+  std::vector<T> c = random_values<T>(count(sc), 3);
+  std::vector<T> got = random_values<T>(count(se), 4);
+  std::vector<T> want = got;
+  const T alpha(1.5), beta(-0.5);
+
+  const std::array<TensorRef, 3> in{ref(a, sa, layout), ref(b, sb, layout),
+                                    ref(c, sc, layout)};
+  reference_einsum<T>(Equation::parse(equation), alpha, in, beta,
+                      ref(want, se, layout));
+  einsum(equation, alpha, in[0], in[1], in[2], beta, ref(got, se, layout), {},
+         {}, context, HostAllocator{});
+  CHECK(close(got, want));
+}
+
 /// The one-operand einsum: a permutation, a sum over dropped labels, a
 /// trace or a copy.
 template <class T>
@@ -112,6 +137,57 @@ TEMPLATE_TEST_CASE("the CPU backend contracts as the reference does",
     check_contraction<T>("ijab,abkl->ijkl", {2, 3, 4, 2}, {4, 2, 3, 2},
                          {2, 3, 3, 2});
   }
+}
+
+TEMPLATE_TEST_CASE(
+    "the CPU backend contracts three operands as the "
+    "reference does",
+    "[cpu_backend][trinary]", float, double, std::complex<float>,
+    std::complex<double>) {
+  using T = TestType;
+  SECTION("a chain of two matrix products, in either layout") {
+    check_trinary<T>("ij,jk,kl->il", {2, 3}, {3, 4}, {4, 5}, {2, 5});
+    check_trinary<T>("ij,jk,kl->il", {2, 3}, {3, 4}, {4, 5}, {2, 5},
+                     Layout::ColumnMajor);
+  }
+  SECTION("a label shared by all three inputs is summed once") {
+    check_trinary<T>("ij,jk,jl->ikl", {2, 3}, {3, 4}, {3, 5}, {2, 4, 5});
+  }
+  SECTION("a batch label in every operand and a permuted result") {
+    check_trinary<T>("bij,bjk,bkl->lbi", {2, 3, 4}, {2, 4, 5}, {2, 5, 3},
+                     {3, 2, 3});
+  }
+  SECTION("a coupled-cluster shape") {
+    check_trinary<T>("ijab,abmn,mnkl->ijkl", {2, 3, 2, 3}, {2, 3, 3, 2},
+                     {3, 2, 2, 3}, {2, 3, 2, 3});
+  }
+  SECTION("a full contraction to a scalar") {
+    check_trinary<T>("ij,jk,ki->", {3, 4}, {4, 5}, {5, 3}, {});
+  }
+  SECTION("labels in one input alone are summed through the workspace") {
+    check_trinary<T>("izj,jk,kly->il", {2, 3, 4}, {4, 5}, {5, 3, 2}, {2, 3});
+  }
+  SECTION("a diagonal input") {
+    check_trinary<T>("ii,ij,jk->k", {4, 4}, {4, 3}, {3, 2}, {2});
+  }
+}
+
+TEST_CASE("the CPU backend runs a three-operand plan into e apart from d",
+          "[cpu_backend][trinary]") {
+  // [[1, 2], [3, 4]] times the identity times [[1, 0], [0, 2]], plus half
+  // of d, written to e with d left alone.
+  const Context context = cpu_context();
+  std::vector<double> a{1, 2, 3, 4}, b{1, 0, 0, 1}, c{1, 0, 0, 2};
+  std::vector<double> d{10, 20, 30, 40}, e(4, -1.0);
+  const Shape s{2, 2};
+  // d and e share the output's planned alignment, so plan for the lesser.
+  TensorRef out = ref(e, s);
+  out.alignment = std::min(out.alignment, ref(d, s).alignment);
+  const Plan plan = make_plan(context, Equation::parse("ij,jk,kl->il"),
+                              ref(a, s), ref(b, s), ref(c, s), out);
+  plan.execute(1.0, a.data(), b.data(), c.data(), 0.5, d.data(), e.data(), {});
+  CHECK(e == std::vector<double>{6, 14, 18, 28});
+  CHECK(d == std::vector<double>{10, 20, 30, 40});
 }
 
 TEMPLATE_TEST_CASE("the CPU backend runs the one-operand einsum",
