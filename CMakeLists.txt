@@ -36,25 +36,19 @@ set(KATAL_MAX_RANK
 # leaves CMAKE_BUILD_TYPE empty and so gets ABORT, the safer direction.
 set(KATAL_ASSERT_BEHAVIOR
     ""
-    CACHE
-      STRING
-      "What a failed KATAL_ASSERT does: THROW, ABORT or IGNORE; empty picks IGNORE for Release and MinSizeRel and ABORT otherwise"
-)
+    CACHE STRING "THROW, ABORT or IGNORE; empty follows CMAKE_BUILD_TYPE")
 set_property(CACHE KATAL_ASSERT_BEHAVIOR PROPERTY STRINGS "" THROW ABORT IGNORE)
 string(TOUPPER "${CMAKE_BUILD_TYPE}" katal_build_type)
 if(NOT KATAL_ASSERT_BEHAVIOR STREQUAL "")
   set(katal_assert_behavior "${KATAL_ASSERT_BEHAVIOR}")
-elseif(katal_build_type STREQUAL "RELEASE" OR katal_build_type STREQUAL
-                                              "MINSIZEREL")
+elseif(katal_build_type MATCHES "^(RELEASE|MINSIZEREL)$")
   set(katal_assert_behavior IGNORE)
 else()
   set(katal_assert_behavior ABORT)
 endif()
 if(NOT katal_assert_behavior MATCHES "^(THROW|ABORT|IGNORE)$")
-  message(
-    FATAL_ERROR
-      "KATAL_ASSERT_BEHAVIOR is ${KATAL_ASSERT_BEHAVIOR}; use THROW, ABORT or IGNORE"
-  )
+  message(FATAL_ERROR "KATAL_ASSERT_BEHAVIOR is ${KATAL_ASSERT_BEHAVIOR}; "
+                      "use THROW, ABORT or IGNORE")
 endif()
 message(STATUS "Katal: a failed KATAL_ASSERT does ${katal_assert_behavior}")
 
