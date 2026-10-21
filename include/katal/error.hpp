@@ -4,8 +4,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <system_error>
-#include <type_traits>
 
 namespace katal {
 
@@ -48,44 +46,6 @@ enum class Errc {
   InvalidState,
 };
 
-inline const std::error_category& error_category() noexcept {
-  class Category final : public std::error_category {
-   public:
-    const char* name() const noexcept override { return "katal"; }
-
-    std::string message(int value) const override {
-      switch (static_cast<Errc>(value)) {
-        case Errc::ParseError:
-          return "malformed equation";
-        case Errc::RankMismatch:
-          return "rank mismatch";
-        case Errc::ExtentMismatch:
-          return "extent mismatch";
-        case Errc::UnsupportedPattern:
-          return "unsupported contraction pattern";
-        case Errc::DtypeMismatch:
-          return "data type mismatch";
-        case Errc::WorkspaceTooSmall:
-          return "workspace too small";
-        case Errc::CutensorError:
-          return "cuTENSOR error";
-        case Errc::CudaError:
-          return "CUDA error";
-        case Errc::InvalidState:
-          return "invalid library state";
-      }
-      return "unrecognized Katal error";
-    }
-  };
-
-  static const Category instance;
-  return instance;
-}
-
-inline std::error_code make_error_code(Errc e) noexcept {
-  return {static_cast<int>(e), error_category()};
-}
-
 /// Carries the equation text alongside the failure, which is the most useful
 /// thing to have in hand when a contraction is rejected.
 class Error : public std::runtime_error {
@@ -120,8 +80,5 @@ class Error : public std::runtime_error {
 };
 
 }  // namespace katal
-
-template <>
-struct std::is_error_code_enum<katal::Errc> : std::true_type {};
 
 #endif  // KATAL_ERROR_HPP_

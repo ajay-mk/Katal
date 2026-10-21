@@ -30,11 +30,6 @@ void append(std::string& key, const void* bytes, std::size_t n) {
   if (n != 0) key.append(static_cast<const char*>(bytes), n);
 }
 
-/// The bytes append_tensor writes, so plan_key can allocate once.
-std::size_t tensor_key_size(const ConstTensorRef& t) {
-  return 6 * sizeof(int32_t) + t.extent.size_bytes() + t.stride.size_bytes();
-}
-
 void append_tensor(std::string& key, const ConstTensorRef& t) {
   const auto type = static_cast<int32_t>(t.type);
   const auto layout = static_cast<int32_t>(t.layout);
@@ -60,13 +55,12 @@ constexpr int32_t permutation_key = 1000;
 std::string plan_key(std::string_view equation, PlanOptions options,
                      std::initializer_list<const ConstTensorRef*> tensors,
                      int32_t op = -1) {
-  // Built on every einsum call, hit or miss, so size it up front rather than
-  // let the appends reallocate several times.
-  std::size_t size = equation.size() + 1 + 7 * sizeof(int32_t) +
-                     sizeof(options.workspace_limit);
-  for (const ConstTensorRef* t : tensors) size += tensor_key_size(*t);
+  // Built on every einsum call, hit or miss, so reserve rather than let the
+  // appends reallocate several times. ponytail: a fixed guess, enough for
+  // three dense tensors at the default maximum rank; strided or more tensors
+  // can reallocate once.
   std::string key;
-  key.reserve(size);
+  key.reserve(512);
   key.append(equation);
   key.push_back('\0');
   append(key, &op, sizeof(op));
@@ -90,7 +84,6 @@ std::string plan_key(std::string_view equation, PlanOptions options,
   append(key, &rank, sizeof(rank));
   append(key, &jit, sizeof(jit));
   for (const ConstTensorRef* t : tensors) append_tensor(key, *t);
-  KATAL_ASSERT(key.size() == size, "plan_key: tensor_key_size is out of date");
   return key;
 }
 
@@ -135,22 +128,6 @@ struct ByteSpan {
   std::int64_t high = 0;
 };
 
-std::int64_t element_bytes(Dtype type) {
-  switch (type) {
-    case Dtype::F16:
-    case Dtype::Bf16:
-      return 2;
-    case Dtype::F32:
-      return 4;
-    case Dtype::F64:
-    case Dtype::C32:
-      return 8;
-    case Dtype::C64:
-      return 16;
-  }
-  return 16;
-}
-
 /// Extents are positive by now; see check_extents. A view whose reach does
 /// not fit std::int64_t cannot be compared, so it is refused.
 ByteSpan byte_span(const backend::Operand& t, std::string_view equation) {
@@ -159,7 +136,7 @@ ByteSpan byte_span(const backend::Operand& t, std::string_view equation) {
     return Error(Errc::ExtentMismatch, equation,
                  "a tensor's byte span overflows std::int64_t");
   };
-  const std::int64_t bytes = element_bytes(t.type);
+  const auto bytes = static_cast<std::int64_t>(util::size_of(t.type));
   ByteSpan span{0, bytes};
   for (std::size_t i = 0; i < t.extent.size(); ++i) {
     const std::int64_t steps = t.extent[i] - 1;
@@ -225,9 +202,6 @@ std::uint64_t round_up(std::uint64_t bytes) {
 /// backend::Operation here; the backend's Kernel holds the rest.
 class Plan::Impl {
  public:
-  /// Which execute overload a plan answers to.
-  enum class Form { Contraction, OneOperand, Elementwise, Permutation };
-
   /// Selects the permutation constructor, whose arguments match the
   /// one-operand einsum's.
   struct PermutationTag {};
@@ -235,7 +209,7 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation,
        const ConstTensorRef& a, const ConstTensorRef& b,
        const ConstTensorRef& d, const PlanOptions& options)
-      : Impl(context, equation, Form::Contraction) {
+      : Impl(context, equation) {
     const Classification classification = equation.classify();
     if (classification.kind != Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
@@ -269,7 +243,7 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation, BinaryOp reduce,
        const ConstTensorRef& a, const ConstTensorRef& d,
        const PlanOptions& options)
-      : Impl(context, equation, Form::OneOperand) {
+      : Impl(context, equation) {
     if (equation.classify().kind == Lowering::Contract)
       throw Error(Errc::UnsupportedPattern, equation_,
                   "this equation has two operands; use the two-operand form");
@@ -289,7 +263,7 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation, BinaryOp binary,
        const ConstTensorRef& a, const ConstTensorRef& b,
        const ConstTensorRef& d, const PlanOptions& options)
-      : Impl(context, equation, Form::Elementwise) {
+      : Impl(context, equation) {
     equation.classify_elementwise();
 
     backend::Operation op;
@@ -310,7 +284,7 @@ class Plan::Impl {
   Impl(const Context& context, const Equation& equation, PermutationTag,
        const ConstTensorRef& a, const ConstTensorRef& d,
        const PlanOptions& options)
-      : Impl(context, equation, Form::Permutation) {
+      : Impl(context, equation) {
     equation.classify_permutation();
 
     backend::Operation op;
@@ -333,7 +307,9 @@ class Plan::Impl {
   uint64_t workspace_size() const noexcept { return workspace_size_; }
   std::string_view equation() const noexcept { return equation_; }
 
-  Form form() const noexcept { return form_; }
+  /// Which execute overload this plan answers to: Reduction is the
+  /// one-operand form.
+  backend::OpKind kind() const noexcept { return kind_; }
 
   void contract(Scalar alpha, const void* a, const void* b, Scalar beta,
                 const void* c, void* d, Workspace workspace,
@@ -440,10 +416,8 @@ class Plan::Impl {
   }
 
  private:
-  Impl(const Context& context, const Equation& equation, Form form)
-      : backend_(&context.impl().backend()),
-        equation_(equation.text()),
-        form_(form) {
+  Impl(const Context& context, const Equation& equation)
+      : backend_(&context.impl().backend()), equation_(equation.text()) {
     backend_->check_device(equation_, "plan");
   }
 
@@ -494,6 +468,7 @@ class Plan::Impl {
                   "the output's strides address one element more than once");
     op.compute = compute_type(options, d.type);
     compute_ = op.compute;
+    kind_ = op.kind;
     // The tensor-core modes exist only in cuTENSOR's contraction table, so a
     // Context-wide default must not break the other kinds of operation.
     if (op.kind == backend::OpKind::Contraction)
@@ -535,7 +510,7 @@ class Plan::Impl {
                     "a reduced input is too large to address");
       elements *= e;
     }
-    const std::int64_t size = element_bytes(reduced.type);
+    const auto size = static_cast<std::int64_t>(util::size_of(reduced.type));
     if (elements > max / size)
       throw Error(Errc::ExtentMismatch, equation_,
                   "a reduced input is too large to address");
@@ -656,7 +631,7 @@ class Plan::Impl {
   /// Planned alignment of a, b and d, which c shares; b is unused by reduce.
   std::array<std::uint32_t, 3> alignment_{};
   std::string equation_;
-  Form form_ = Form::Contraction;
+  backend::OpKind kind_ = backend::OpKind::Contraction;
   /// The elementwise operator; unused by the other forms.
   BinaryOp binary_ = BinaryOp::Add;
   /// The accumulation type, whose precision alpha and beta are narrowed to.
@@ -668,18 +643,73 @@ class Plan::Impl {
 
 namespace {
 
-std::string form_name(Plan::Impl::Form form) {
-  switch (form) {
-    case Plan::Impl::Form::Contraction:
+std::string form_name(backend::OpKind kind) {
+  switch (kind) {
+    case backend::OpKind::Contraction:
       return "two-operand";
-    case Plan::Impl::Form::OneOperand:
+    case backend::OpKind::Reduction:
       return "one-operand";
-    case Plan::Impl::Form::Elementwise:
+    case backend::OpKind::Elementwise:
       return "elementwise";
-    case Plan::Impl::Form::Permutation:
+    case backend::OpKind::Permutation:
       return "one-operand";
   }
   return "matching";
+}
+
+/// An operand as the plan.created log line names it.
+struct Named {
+  const char* name;
+  const ConstTensorRef& tensor;
+};
+
+/// Runs `build`, which makes the plan, and logs it as plan.created with the
+/// time planning took. `kind` and `op` name the form when it needs naming, as
+/// in "reduce=Max" or "permutation".
+template <class Build>
+Plan logged(Build build, [[maybe_unused]] const Context& context,
+            [[maybe_unused]] const Equation& equation,
+            [[maybe_unused]] const char* kind,
+            [[maybe_unused]] std::optional<BinaryOp> op,
+            [[maybe_unused]] std::initializer_list<Named> tensors,
+            [[maybe_unused]] const PlanOptions& options) {
+#if KATAL_ENABLE_LOGGING
+  const auto start = std::chrono::steady_clock::now();
+#endif
+  Plan plan = build();
+#if KATAL_ENABLE_LOGGING
+  const auto elapsed = std::chrono::duration<double, std::micro>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
+  util::log([&](auto& out) {
+    out << "plan.created device=" << context.device()
+        << " equation=" << util::log_quote(equation.text());
+    if (kind != nullptr) out << ' ' << kind;
+    if (op) out << '=' << enumstr::to_string_view(*op);
+    for (const Named& t : tensors)
+      out << ' ' << t.name << '=' << util::log_tensor(t.tensor);
+    out << ' ' << util::log_options(options)
+        << " workspace_bytes=" << plan.workspace_size()
+        << " host_plan_us=" << elapsed;
+  });
+#endif
+  return plan;
+}
+
+/// Looks a plan up under the key for these tensors and `op`, building it with
+/// `make` on a miss. An unset override takes the context's policy, which is
+/// where a program sets planning once instead of at every call site.
+template <class Make>
+std::shared_ptr<const Plan> cached(
+    const Context& context, std::string_view equation,
+    const std::optional<PlanOptions>& options,
+    std::initializer_list<const ConstTensorRef*> tensors, int32_t op,
+    Make make) {
+  const PlanOptions resolved =
+      options.value_or(context.impl().config().plan_options);
+  return context.impl().cached(plan_key(equation, resolved, tensors, op), [&] {
+    return make(Equation::parse(equation), resolved);
+  });
 }
 
 }  // namespace
@@ -701,22 +731,22 @@ void Plan::execute(Scalar alpha, const void* a, const void* b, Scalar beta,
                    const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
   const Impl& plan = impl();
-  KATAL_ENFORCE(plan.form() == Impl::Form::Contraction,
+  KATAL_ENFORCE(plan.kind() == backend::OpKind::Contraction,
                 Errc::UnsupportedPattern, plan.equation(),
                 "this plan is not a contraction; use the " +
-                    form_name(plan.form()) + " execute");
+                    form_name(plan.kind()) + " execute");
   plan.contract(alpha, a, b, beta, c, d, workspace, stream);
 }
 
 void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* c,
                    void* d, Workspace workspace, StreamRef stream) const {
   const Impl& plan = impl();
-  if (plan.form() == Impl::Form::Permutation)
+  if (plan.kind() == backend::OpKind::Permutation)
     return plan.permute(alpha, a, beta, d, workspace, stream);
-  KATAL_ENFORCE(plan.form() == Impl::Form::OneOperand, Errc::UnsupportedPattern,
-                plan.equation(),
+  KATAL_ENFORCE(plan.kind() == backend::OpKind::Reduction,
+                Errc::UnsupportedPattern, plan.equation(),
                 "this plan takes two operands; use the " +
-                    form_name(plan.form()) + " execute");
+                    form_name(plan.kind()) + " execute");
   plan.reduce(alpha, a, beta, c, d, workspace, stream);
 }
 
@@ -724,76 +754,68 @@ void Plan::execute(Scalar alpha, const void* a, Scalar beta, const void* b,
                    Scalar gamma, const void* c, void* d, Workspace workspace,
                    StreamRef stream) const {
   const Impl& plan = impl();
-  KATAL_ENFORCE(plan.form() == Impl::Form::Elementwise,
+  KATAL_ENFORCE(plan.kind() == backend::OpKind::Elementwise,
                 Errc::UnsupportedPattern, plan.equation(),
                 "this plan is not elementwise; use the " +
-                    form_name(plan.form()) + " execute");
+                    form_name(plan.kind()) + " execute");
   plan.combine(alpha, a, beta, b, gamma, c, d, workspace, stream);
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
                const ConstTensorRef& a, const ConstTensorRef& b,
                const ConstTensorRef& d, PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(std::make_unique<Plan::Impl>(context, equation, a, b, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device() << " equation="
-            << util::log_quote(equation.text()) << " a=" << util::log_tensor(a)
-            << " b=" << util::log_tensor(b) << " output=" << util::log_tensor(d)
-            << ' ' << util::log_options(options) << " workspace_bytes="
-            << plan.workspace_size() << " host_plan_us=" << elapsed);
-  return plan;
+  return logged(
+      [&] {
+        return Plan(
+            std::make_unique<Plan::Impl>(context, equation, a, b, d, options));
+      },
+      context, equation, nullptr, {}, {{"a", a}, {"b", b}, {"output", d}},
+      options);
 }
 
 Plan make_plan(const Context& context, const Equation& equation,
                const ConstTensorRef& a, const ConstTensorRef& d,
                PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(std::make_unique<Plan::Impl>(context, equation, a, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device()
-            << " equation=" << util::log_quote(equation.text())
-            << " a=" << util::log_tensor(a) << " output=" << util::log_tensor(d)
-            << ' ' << util::log_options(options) << " workspace_bytes="
-            << plan.workspace_size() << " host_plan_us=" << elapsed);
-  return plan;
+  return logged(
+      [&] {
+        return Plan(
+            std::make_unique<Plan::Impl>(context, equation, a, d, options));
+      },
+      context, equation, nullptr, {}, {{"a", a}, {"output", d}}, options);
 }
 
 Plan make_plan(const Context& context, const Equation& equation, BinaryOp op,
                const ConstTensorRef& a, const ConstTensorRef& b,
                const ConstTensorRef& d, PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(
-      std::make_unique<Plan::Impl>(context, equation, op, a, b, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device()
-            << " equation=" << util::log_quote(equation.text()) << " op="
-            << enumstr::to_string_view(op) << " a=" << util::log_tensor(a)
-            << " b=" << util::log_tensor(b) << " output=" << util::log_tensor(d)
-            << ' ' << util::log_options(options) << " workspace_bytes="
-            << plan.workspace_size() << " host_plan_us=" << elapsed);
-  return plan;
+  return logged(
+      [&] {
+        return Plan(std::make_unique<Plan::Impl>(context, equation, op, a, b, d,
+                                                 options));
+      },
+      context, equation, "op", op, {{"a", a}, {"b", b}, {"output", d}},
+      options);
+}
+
+Plan make_plan(const Context& context, const Equation& equation,
+               BinaryOp reduce, const ConstTensorRef& a,
+               const ConstTensorRef& d, PlanOptions options) {
+  return logged(
+      [&] {
+        return Plan(std::make_unique<Plan::Impl>(context, equation, reduce, a,
+                                                 d, options));
+      },
+      context, equation, "reduce", reduce, {{"a", a}, {"output", d}}, options);
+}
+
+Plan make_permutation_plan(const Context& context, const Equation& equation,
+                           const ConstTensorRef& a, const ConstTensorRef& d,
+                           PlanOptions options) {
+  return logged(
+      [&] {
+        return Plan(std::make_unique<Plan::Impl>(
+            context, equation, Plan::Impl::PermutationTag{}, a, d, options));
+      },
+      context, equation, "permutation", {}, {{"a", a}, {"output", d}}, options);
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
@@ -802,13 +824,10 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         const ConstTensorRef& b,
                                         const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
-  // An unset override takes the context's policy, which is where a program
-  // sets planning once instead of at every call site.
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(plan_key(equation, resolved, {&a, &b, &d}), [&] {
-    return make_plan(context, Equation::parse(equation), a, b, d, resolved);
-  });
+  return cached(context, equation, options, {&a, &b, &d}, -1,
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_plan(context, parsed, a, b, d, resolved);
+                });
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
@@ -816,11 +835,10 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         const ConstTensorRef& a,
                                         const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(plan_key(equation, resolved, {&a, &d}), [&] {
-    return make_plan(context, Equation::parse(equation), a, d, resolved);
-  });
+  return cached(context, equation, options, {&a, &d}, -1,
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_plan(context, parsed, a, d, resolved);
+                });
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
@@ -829,60 +847,11 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         const ConstTensorRef& b,
                                         const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(
-      plan_key(equation, resolved, {&a, &b, &d}, static_cast<int32_t>(op)),
-      [&] {
-        return make_plan(context, Equation::parse(equation), op, a, b, d,
-                         resolved);
-      });
-}
-
-Plan make_plan(const Context& context, const Equation& equation,
-               BinaryOp reduce, const ConstTensorRef& a,
-               const ConstTensorRef& d, PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(
-      std::make_unique<Plan::Impl>(context, equation, reduce, a, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device()
-            << " equation=" << util::log_quote(equation.text())
-            << " reduce=" << enumstr::to_string_view(reduce)
-            << " a=" << util::log_tensor(a) << " output=" << util::log_tensor(d)
-            << ' ' << util::log_options(options) << " workspace_bytes="
-            << plan.workspace_size() << " host_plan_us=" << elapsed);
-  return plan;
-}
-
-Plan make_permutation_plan(const Context& context, const Equation& equation,
-                           const ConstTensorRef& a, const ConstTensorRef& d,
-                           PlanOptions options) {
-#if KATAL_ENABLE_LOGGING
-  const auto start = std::chrono::steady_clock::now();
-#endif
-  Plan plan(std::make_unique<Plan::Impl>(
-      context, equation, Plan::Impl::PermutationTag{}, a, d, options));
-#if KATAL_ENABLE_LOGGING
-  const auto elapsed = std::chrono::duration<double, std::micro>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-#endif
-  KATAL_LOG("plan.created device="
-            << context.device()
-            << " equation=" << util::log_quote(equation.text())
-            << " permutation a=" << util::log_tensor(a) << " output="
-            << util::log_tensor(d) << ' ' << util::log_options(options)
-            << " workspace_bytes=" << plan.workspace_size()
-            << " host_plan_us=" << elapsed);
-  return plan;
+  return cached(context, equation, options, {&a, &b, &d},
+                static_cast<int32_t>(op),
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_plan(context, parsed, op, a, b, d, resolved);
+                });
 }
 
 std::shared_ptr<const Plan> cached_plan(const Context& context,
@@ -891,26 +860,20 @@ std::shared_ptr<const Plan> cached_plan(const Context& context,
                                         const ConstTensorRef& a,
                                         const ConstTensorRef& d,
                                         std::optional<PlanOptions> options) {
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(
-      plan_key(equation, resolved, {&a, &d}, static_cast<int32_t>(reduce)),
-      [&] {
-        return make_plan(context, Equation::parse(equation), reduce, a, d,
-                         resolved);
-      });
+  return cached(context, equation, options, {&a, &d},
+                static_cast<int32_t>(reduce),
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_plan(context, parsed, reduce, a, d, resolved);
+                });
 }
 
 std::shared_ptr<const Plan> cached_permutation_plan(
     const Context& context, std::string_view equation, const ConstTensorRef& a,
     const ConstTensorRef& d, std::optional<PlanOptions> options) {
-  const PlanOptions resolved =
-      options.value_or(context.impl().config().plan_options);
-  return context.impl().cached(
-      plan_key(equation, resolved, {&a, &d}, permutation_key), [&] {
-        return make_permutation_plan(context, Equation::parse(equation), a, d,
-                                     resolved);
-      });
+  return cached(context, equation, options, {&a, &d}, permutation_key,
+                [&](const Equation& parsed, const PlanOptions& resolved) {
+                  return make_permutation_plan(context, parsed, a, d, resolved);
+                });
 }
 
 }  // namespace katal

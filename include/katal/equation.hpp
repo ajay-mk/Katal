@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <vector>
 
 #include <katal/error.hpp>
@@ -46,10 +45,6 @@ class Equation {
   /// Throws `Error` with `Errc::ParseError` or `Errc::RankMismatch`.
   static Equation parse(std::string_view text);
 
-  /// Same grammar, reporting through `ec` instead. Returns an equation with no
-  /// operands on failure.
-  static Equation parse(std::string_view text, std::error_code& ec) noexcept;
-
   std::size_t n_operands() const noexcept { return operands_.size(); }
 
   /// Number of labels on one operand, which must match that tensor's extents.
@@ -75,26 +70,17 @@ class Equation {
   /// declines to lower, naming the labels responsible.
   Classification classify() const;
 
-  /// Same, reporting through `ec`.
-  Classification classify(std::error_code& ec) const noexcept;
-
   /// Checks the equation as an elementwise operation on two inputs, which
   /// pairs elements by label rather than summing over shared ones. A label an
   /// input lacks is broadcast; every input label must appear in the result.
   /// Throws `Errc::UnsupportedPattern` otherwise, naming the labels.
   Classification classify_elementwise() const;
 
-  /// Same, reporting through `ec`.
-  Classification classify_elementwise(std::error_code& ec) const noexcept;
-
   /// Checks the equation as a permutation of one input, which may also
   /// broadcast it along result labels it lacks but sums over nothing. The
   /// kind is `Permute`, or `Copy` when the result repeats the input.
   /// Throws `Errc::UnsupportedPattern` otherwise, naming the labels.
   Classification classify_permutation() const;
-
-  /// Same, reporting through `ec`.
-  Classification classify_permutation(std::error_code& ec) const noexcept;
 
  private:
   util::Index make_index(std::string_view piece) const;
@@ -103,8 +89,7 @@ class Equation {
   Classification classify_binary() const;
   void check_result() const;
 
-  /// Renders an index for a diagnostic. Multi-character labels come back
-  /// space separated, which is how they were written.
+  /// Renders an index for a diagnostic, in quotes.
   static std::string quoted(const util::Index& i) {
     return "\"" + std::string(i) + "\"";
   }
@@ -131,13 +116,6 @@ class Equation {
     for (const util::Index& o : operands_)
       c.diagonal = c.diagonal | repeated(o);
     return c;
-  }
-
-  static bool has_repeated_label(const util::Index& i) {
-    for (std::size_t x = 0; x < i.rank(); ++x)
-      for (std::size_t y = x + 1; y < i.rank(); ++y)
-        if (i[x] == i[y]) return true;
-    return false;
   }
 
   std::string text_;
@@ -220,22 +198,6 @@ inline util::Index Equation::implicit_result() const {
   return r;
 }
 
-inline Equation Equation::parse(std::string_view text,
-                                std::error_code& ec) noexcept {
-  // The throwing path is the implementation and this wraps it, so no
-  // exception escapes. That serves an -fno-exceptions caller only once these
-  // layers sit behind the compiled library boundary.
-  try {
-    ec.clear();
-    return parse(text);
-  } catch (const Error& e) {
-    ec = make_error_code(e.code());
-  } catch (...) {
-    ec = make_error_code(Errc::ParseError);
-  }
-  return Equation{};
-}
-
 inline Classification Equation::classify_binary() const {
   const util::Index a = unique(operands_[0]), b = unique(operands_[1]);
   const util::Index& d = result_;
@@ -282,7 +244,7 @@ inline void Equation::check_result() const {
   if (operands_.empty())
     throw Error(Errc::ParseError, text_, "the equation has no operands");
 
-  if (has_repeated_label(result_))
+  if (repeated(result_).rank() > 0)
     throw Error(Errc::UnsupportedPattern, text_,
                 "the result " + quoted(result_) +
                     " repeats a label; writing a diagonal is not expressible");
@@ -295,18 +257,6 @@ inline Classification Equation::classify() const {
   if (operands_.size() == 2) return classify_binary();
   throw Error(Errc::UnsupportedPattern, text_,
               "more than two operands requires a contraction path");
-}
-
-inline Classification Equation::classify(std::error_code& ec) const noexcept {
-  try {
-    ec.clear();
-    return classify();
-  } catch (const Error& e) {
-    ec = make_error_code(e.code());
-  } catch (...) {
-    ec = make_error_code(Errc::UnsupportedPattern);
-  }
-  return Classification{};
 }
 
 inline Classification Equation::classify_elementwise() const {
@@ -335,19 +285,6 @@ inline Classification Equation::classify_elementwise() const {
   return with_diagonal(c);
 }
 
-inline Classification Equation::classify_elementwise(
-    std::error_code& ec) const noexcept {
-  try {
-    ec.clear();
-    return classify_elementwise();
-  } catch (const Error& e) {
-    ec = make_error_code(e.code());
-  } catch (...) {
-    ec = make_error_code(Errc::UnsupportedPattern);
-  }
-  return Classification{};
-}
-
 inline Classification Equation::classify_permutation() const {
   check_result();
   if (operands_.size() != 1)
@@ -367,19 +304,6 @@ inline Classification Equation::classify_permutation() const {
   c.kind = (a == d) ? Lowering::Copy : Lowering::Permute;
   c.broadcast = d - a;
   return with_diagonal(c);
-}
-
-inline Classification Equation::classify_permutation(
-    std::error_code& ec) const noexcept {
-  try {
-    ec.clear();
-    return classify_permutation();
-  } catch (const Error& e) {
-    ec = make_error_code(e.code());
-  } catch (...) {
-    ec = make_error_code(Errc::UnsupportedPattern);
-  }
-  return Classification{};
 }
 
 }  // namespace katal

@@ -136,7 +136,7 @@ class Tensor {
 
   explicit Tensor(Dtype type, Extents extent, Allocator allocator = {})
       : type_(type), extent_(std::move(extent)), size_(volume()) {
-    const std::size_t element_bytes = size_of(type_);
+    const std::size_t element_bytes = util::size_of(type_);
     // Too large to allocate is out of memory, as the allocators report it.
     if (size_ > std::numeric_limits<std::size_t>::max() / element_bytes)
       throw std::bad_array_new_length();
@@ -247,22 +247,6 @@ class Tensor {
     std::size_t bytes_;
     typename Traits::pointer data_;
   };
-
-  static std::size_t size_of(Dtype type) {
-    switch (type) {
-      case Dtype::F16:
-      case Dtype::Bf16:
-        return 2;
-      case Dtype::F32:
-        return 4;
-      case Dtype::F64:
-      case Dtype::C32:
-        return 8;
-      case Dtype::C64:
-        return 16;
-    }
-    throw Error(Errc::DtypeMismatch, {}, "unrecognized tensor data type");
-  }
 
   /// Every extent must be positive: an empty tensor has nothing for a GPU
   /// operation to read, and rejecting it here is clearer than at planning.

@@ -45,6 +45,27 @@ struct DtypeOf<std::complex<double>> {
 template <class T>
 inline constexpr Dtype dtype_of = DtypeOf<T>::value;
 
+namespace util {
+
+/// Bytes in one element of `type`.
+inline std::size_t size_of(Dtype type) {
+  switch (type) {
+    case Dtype::F16:
+    case Dtype::Bf16:
+      return 2;
+    case Dtype::F32:
+      return 4;
+    case Dtype::F64:
+    case Dtype::C32:
+      return 8;
+    case Dtype::C64:
+      return 16;
+  }
+  throw Error(Errc::DtypeMismatch, {}, "unrecognized tensor data type");
+}
+
+}  // namespace util
+
 /// Which mode varies fastest in memory: the last one for RowMajor, the first
 /// for ColumnMajor. The flag declares the convention the extent and stride
 /// arrays are written in, whether or not those strides are dense.
