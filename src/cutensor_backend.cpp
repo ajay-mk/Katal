@@ -105,11 +105,34 @@ class CutensorKernel final : public Kernel {
 
     switch (operation.kind) {
       case OpKind::Contraction: {
-        if (operation.inputs.size() != 2)
+        if (operation.inputs.size() != 2 && operation.inputs.size() != 3)
           throw Error(Errc::UnsupportedPattern, operation.equation,
-                      "a contraction takes two inputs");
+                      "a contraction takes two or three inputs");
         const Operand& b = operation.inputs[1];
         describe(&desc_b_, b);
+        if (operation.inputs.size() == 3) {
+#if CUTENSOR_VERSION < 20200
+          throw Error(Errc::UnsupportedPattern, operation.equation,
+                      "a three-operand contraction needs cuTENSOR 2.2 or "
+                      "newer, but Katal was built against " +
+                          std::to_string(CUTENSOR_MAJOR) + "." +
+                          std::to_string(CUTENSOR_MINOR));
+#else
+          const Operand& c = operation.inputs[2];
+          describe(&desc_c_, c);
+          // cuTENSOR requires E to share D's descriptor and modes for now,
+          // which is how beta scales the output in place anyway.
+          KATAL_CHECK(
+              cutensorCreateContractionTrinary(
+                  handle_, &op_, desc_a_, a.modes.data(), to_cutensor(a.op),
+                  desc_b_, b.modes.data(), to_cutensor(b.op), desc_c_,
+                  c.modes.data(), to_cutensor(c.op), desc_d_, d.modes.data(),
+                  CUTENSOR_OP_IDENTITY, desc_d_, d.modes.data(), compute),
+              equation_);
+          trinary_ = true;
+          break;
+#endif
+        }
         // C and D share a descriptor: beta scales the output in place.
         KATAL_CHECK(cutensorCreateContraction(
                         handle_, &op_, desc_a_, a.modes.data(),
@@ -169,6 +192,7 @@ class CutensorKernel final : public Kernel {
     if (pref_ != nullptr) cutensorDestroyPlanPreference(pref_);
     if (op_ != nullptr) cutensorDestroyOperationDescriptor(op_);
     if (desc_d_ != nullptr) cutensorDestroyTensorDescriptor(desc_d_);
+    if (desc_c_ != nullptr) cutensorDestroyTensorDescriptor(desc_c_);
     if (desc_b_ != nullptr) cutensorDestroyTensorDescriptor(desc_b_);
     if (desc_a_ != nullptr) cutensorDestroyTensorDescriptor(desc_a_);
   }
@@ -191,6 +215,16 @@ class CutensorKernel final : public Kernel {
     const util::ScalarBytes beta_bytes(scalars[1], scalar_type_);
     switch (kind_) {
       case OpKind::Contraction:
+        if (trinary_) {
+#if CUTENSOR_VERSION >= 20200
+          KATAL_CHECK(cutensorContractTrinary(
+                          handle_, plan_, alpha_bytes.data(), inputs[0],
+                          inputs[1], inputs[2], beta_bytes.data(), c, d,
+                          workspace.ptr, workspace.size, stream.get()),
+                      equation_);
+#endif
+          return;
+        }
         KATAL_CHECK(
             cutensorContract(handle_, plan_, alpha_bytes.data(), inputs[0],
                              inputs[1], beta_bytes.data(), c, d, workspace.ptr,
@@ -282,8 +316,12 @@ class CutensorKernel final : public Kernel {
   int device_ = 0;
   std::string equation_;
   OpKind kind_ = OpKind::Contraction;
+  /// A contraction of three inputs rather than two.
+  bool trinary_ = false;
   cutensorTensorDescriptor_t desc_a_ = nullptr;
   cutensorTensorDescriptor_t desc_b_ = nullptr;
+  /// The third input of a three-operand contraction.
+  cutensorTensorDescriptor_t desc_c_ = nullptr;
   cutensorTensorDescriptor_t desc_d_ = nullptr;
   cutensorOperationDescriptor_t op_ = nullptr;
   cutensorPlanPreference_t pref_ = nullptr;
