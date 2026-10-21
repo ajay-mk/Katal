@@ -88,7 +88,7 @@ TEST_CASE("equation parsing", "[equation]") {
     REQUIRE(eq.operand(0) == katal::util::Index("ij"));
     REQUIRE(eq.operand(1) == katal::util::Index("jk"));
     REQUIRE(eq.result() == katal::util::Index("ik"));
-    REQUIRE(code_of("ij,\njk->ik") == std::nullopt);
+    REQUIRE_NOTHROW(Equation::parse("ij,\njk->ik").classify());
   }
 }
 
