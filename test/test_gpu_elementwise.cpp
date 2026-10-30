@@ -84,7 +84,7 @@ TEST_CASE("elementwise add permutes one input against the other",
           "[elementwise][gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
 
-  // d[i][j][a] = t[j][i][a] - t[i][j][a], row-major 3x3x4.
+  // d[i][j][a] = t[j][i][a] - t[i][j][a], column-major 3x3x4.
   constexpr std::int64_t n = 3, v = 4;
   const std::array<std::int64_t, 3> e{n, n, v};
   const std::vector<double> t = iota<double>(n * n * v);
@@ -97,8 +97,8 @@ TEST_CASE("elementwise add permutes one input against the other",
   for (std::int64_t i = 0; i < n; ++i)
     for (std::int64_t j = 0; j < n; ++j)
       for (std::int64_t a = 0; a < v; ++a)
-        REQUIRE(got[(i * n + j) * v + a] ==
-                t[(j * n + i) * v + a] - t[(i * n + j) * v + a]);
+        REQUIRE(got[i + n * (j + n * a)] ==
+                t[j + n * (i + n * a)] - t[i + n * (j + n * a)]);
 }
 
 TEST_CASE("elementwise broadcast and accumulate", "[elementwise][gpu]") {
@@ -118,8 +118,8 @@ TEST_CASE("elementwise broadcast and accumulate", "[elementwise][gpu]") {
                   0.5, dd, ea, katal::Dtype::F64);
   for (std::int64_t i = 0; i < rows; ++i)
     for (std::int64_t j = 0; j < cols; ++j)
-      REQUIRE(got[i * cols + j] ==
-              2.0 * a[i * cols + j] + 3.0 * b[j] + 0.5 * d0[i * cols + j]);
+      REQUIRE(got[i + rows * j] ==
+              2.0 * a[i + rows * j] + 3.0 * b[j] + 0.5 * d0[i + rows * j]);
 }
 
 TEST_CASE("an outer sum broadcasts both inputs into a separate output",
@@ -150,7 +150,7 @@ TEST_CASE("an outer sum broadcasts both inputs into a separate output",
   const std::vector<double> got = dd.to_host();
   for (std::int64_t i = 0; i < rows; ++i)
     for (std::int64_t j = 0; j < cols; ++j)
-      REQUIRE(got[i * cols + j] == a[i] + 2.0 * b[j] + c[i * cols + j]);
+      REQUIRE(got[i + rows * j] == a[i] + 2.0 * b[j] + c[i + rows * j]);
   REQUIRE(dc.to_host() == c);
 }
 

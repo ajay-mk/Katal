@@ -57,12 +57,12 @@ TEST_CASE("plan cache distinguishes execution descriptors and options",
   if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0)
     SKIP("no CUDA device");
   const katal::Context context;
-  const std::array<std::int64_t, 2> extent{2, 2}, padded{3, 1};
+  const std::array<std::int64_t, 2> extent{2, 2}, padded{1, 3};
   const auto tensor = katal::make_ref(nullptr, katal::Dtype::F64, extent);
   const auto original =
       katal::cached_plan(context, "ij,jk->ik", tensor, tensor, tensor);
   auto changed = tensor;
-  changed.layout = katal::Layout::ColumnMajor;
+  changed.layout = katal::Layout::RowMajor;
   REQUIRE(katal::cached_plan(context, "ij,jk->ik", changed, tensor, tensor) !=
           original);
   changed = tensor;
