@@ -132,14 +132,14 @@ int run() {
     const double alpha = 1.0;
     const double beta = 0.0;
 
-    // Row-major C = A B computed as column-major C' = B' A'.
+    // Column-major C = A B, the same layout as the Katal runs above.
     const double milliseconds = time_best([&] {
       check(cublasDgemm(
-          blas, CUBLAS_OP_N, CUBLAS_OP_N, static_cast<int>(n),
-          static_cast<int>(m), static_cast<int>(k), &alpha,
-          static_cast<const double*>(b.get()), static_cast<int>(n),
-          static_cast<const double*>(a.get()), static_cast<int>(k), &beta,
-          static_cast<double*>(c.get()), static_cast<int>(n)));
+          blas, CUBLAS_OP_N, CUBLAS_OP_N, static_cast<int>(m),
+          static_cast<int>(n), static_cast<int>(k), &alpha,
+          static_cast<const double*>(a.get()), static_cast<int>(m),
+          static_cast<const double*>(b.get()), static_cast<int>(k), &beta,
+          static_cast<double*>(c.get()), static_cast<int>(m)));
     });
 
     char label[64];

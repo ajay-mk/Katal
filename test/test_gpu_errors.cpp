@@ -64,8 +64,7 @@ TEST_CASE("cleanup during sticky-fault unwinding does not terminate", "[gpu]") {
     void* const unmapped = reinterpret_cast<void*>(std::uintptr_t{1} << 46);
     const std::array<std::int64_t, 2> extent{64, 64};
     const auto input = pooled.ref();
-    const auto output = katal::make_ref(unmapped, katal::Dtype::F64, extent,
-                                        katal::Layout::ColumnMajor);
+    const auto output = katal::make_ref(unmapped, katal::Dtype::F64, extent);
     std::exception_ptr launch_error;
     try {
       katal::einsum("ij,jk->ik", 1.0, input, input, 0.0, output);
