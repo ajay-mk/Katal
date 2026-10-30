@@ -337,7 +337,7 @@ class CutensorBackend final : public Backend {
     std::unique_ptr<std::remove_pointer_t<cutensorHandle_t>,
                     decltype(&cutensorDestroy)>
         guard(handle_, &cutensorDestroy);
-    if (config.plan_cache_capacity > 0)
+    if (config.plan_cache_capacity >= 0)
       KATAL_CHECK(
           cutensorHandleResizePlanCache(
               handle_, static_cast<uint32_t>(config.plan_cache_capacity)),

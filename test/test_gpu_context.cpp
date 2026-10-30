@@ -82,6 +82,20 @@ TEST_CASE("a full plan cache evicts the least recently used plan", "[gpu]") {
   REQUIRE(katal::cached_plan(context, "ij,kj->ik", t, t, t) != second);
 }
 
+TEST_CASE("cuTENSOR's plan cache can be turned off or left at its default",
+          "[gpu]") {
+  if (device_count() == 0) SKIP("no CUDA device");
+  const std::array<std::int64_t, 2> extent{2, 2};
+  const auto t = katal::make_ref(nullptr, katal::Dtype::F64, extent);
+  const auto equation = katal::Equation::parse("ij,jk->ik");
+  for (const std::int32_t capacity : {0, -1}) {
+    katal::Config config;
+    config.plan_cache_capacity = capacity;
+    const katal::Context context(config);
+    REQUIRE_NOTHROW(katal::make_plan(context, equation, t, t, t));
+  }
+}
+
 TEST_CASE("a context sets the pool release threshold only when asked",
           "[gpu]") {
   if (device_count() == 0) SKIP("no CUDA device");

@@ -22,8 +22,8 @@ MSVC). These flags are private and never reach a consumer of `Katal::katal`.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `plan_cache_entries` | `128` | plans Katal keeps by equation and shape; `0` disables the cache, and a full cache evicts the least recently used plan |
-| `plan_cache_capacity` | `256` | entries in cuTENSOR's own kernel-selection cache |
+| `plan_cache_entries` | `4096` | plans Katal keeps by equation and shape; `0` disables the cache, and a full cache evicts the least recently used plan |
+| `plan_cache_capacity` | `256` | entries in cuTENSOR's own kernel-selection cache; `0` disables it and a negative value keeps cuTENSOR's default of 64 |
 | `plan_options` | `{}` | the `PlanOptions` that `einsum`, the other one-shot calls and `cached_plan` use unless a call passes its own |
 
 ## Plan options

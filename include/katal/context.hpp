@@ -35,7 +35,8 @@ class StreamRef {
 /// one moment configuration takes effect.
 struct Config {
   /// Entries in cuTENSOR's own plan cache, which stores kernel selections so a
-  /// repeated `make_plan` skips the search. cuTENSOR's own default is 64.
+  /// repeated `make_plan` skips the search. cuTENSOR's own default is 64; a
+  /// negative value leaves it, and 0 turns the cache off.
   int32_t plan_cache_capacity = 256;
 
   /// How cached_plan and einsum plan through this context, unless a call
@@ -47,8 +48,11 @@ struct Config {
   /// what cuTENSOR's cache cannot: its keys are the descriptors themselves, so
   /// they must be rebuilt before it can be consulted. Only the one-shot
   /// `einsum` path benefits; a hoisted Plan already skips all of it. 0 disables
-  /// it. When full, the least recently used plan is evicted.
-  std::size_t plan_cache_entries = 128;
+  /// it. When full, the least recently used plan is evicted. The default
+  /// leaves room for workloads that repeat many distinct contractions, some
+  /// needing over 1,500 plans per iteration: a cache smaller than that set
+  /// misses on every iteration, not just the first.
+  std::size_t plan_cache_entries = 4096;
 
   /// When set, the device's default CUDA memory pool keeps up to this many
   /// freed bytes instead of returning them to the driver at every
