@@ -42,7 +42,7 @@ reviews:
     enabled: true
     drafts: false
     # Review once when a PR opens; ask with `@coderabbitai review` after that.
-    auto_incremental_review: false
+    auto_incremental_review: true
     # Spelled out because CodeRabbit didn't detect main as the default branch.
     base_branches:
       - "^main$"
