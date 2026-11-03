@@ -55,7 +55,7 @@ TEST_CASE("a conjugated input in a contraction", "[unary][gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
   using C = std::complex<double>;
 
-  // d[i][k] = sum_j conj(a[i][j]) * b[j][k], row-major 2x3 by 3x2.
+  // d[i][k] = sum_j conj(a[i][j]) * b[j][k], column-major 2x3 by 3x2.
   const std::array<std::int64_t, 2> ea{2, 3}, eb{3, 2}, ed{2, 2};
   const std::vector<C> a{{1, 1}, {2, -1}, {0, 3}, {1, 0}, {-2, 2}, {1, 1}};
   const std::vector<C> b{{1, 0}, {0, 1}, {2, 1}, {1, -1}, {0, 2}, {3, 0}};
@@ -70,8 +70,8 @@ TEST_CASE("a conjugated input in a contraction", "[unary][gpu]") {
     for (int k = 0; k < 2; ++k) {
       C want{};
       for (int j = 0; j < 3; ++j)
-        want += std::conj(a[i * 3 + j]) * b[j * 2 + k];
-      REQUIRE(got[i * 2 + k] == want);
+        want += std::conj(a[i + 2 * j]) * b[j + 3 * k];
+      REQUIRE(got[i + 2 * k] == want);
     }
 }
 
@@ -96,10 +96,11 @@ TEST_CASE("an operator on an elementwise input", "[unary][gpu]") {
 TEST_CASE("reductions other than a sum", "[unary][gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
 
-  // Row-major 3x4, reduced over j.
+  // Rows {3, -1, 4, 1}, {-5, 9, 2, 6} and {5, 3, -5, 8}, reduced over j.
+  // Column-major, so listed column by column.
   const std::array<std::int64_t, 2> ea{3, 4};
   const std::array<std::int64_t, 1> ed{3};
-  const std::vector<double> a{3, -1, 4, 1, -5, 9, 2, 6, 5, 3, -5, 8};
+  const std::vector<double> a{3, -5, 5, -1, 9, 3, 4, 2, -5, 1, 6, 8};
   const DeviceBuffer<double> da(a);
   const katal::ConstTensorRef ar = katal::make_ref(da.get(), Dtype::F64, ea);
 
@@ -120,8 +121,8 @@ TEST_CASE("reductions other than a sum", "[unary][gpu]") {
                   katal::make_ref(dd.get(), Dtype::F64, ed));
     const std::vector<double> got = dd.to_host();
     for (int i = 0; i < 3; ++i) {
-      double want = a[i * 4];
-      for (int j = 1; j < 4; ++j) want = c.combine(want, a[i * 4 + j]);
+      double want = a[i];
+      for (int j = 1; j < 4; ++j) want = c.combine(want, a[i + 3 * j]);
       REQUIRE(got[i] == want);
     }
   }
@@ -139,6 +140,7 @@ TEST_CASE("a dedicated permutation", "[unary][gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
 
   const std::array<std::int64_t, 2> e23{2, 3}, e32{3, 2};
+  // [[1, 3, 5], [2, 4, 6]], column-major.
   const std::vector<double> a{1, 2, 3, 4, 5, 6};
   const DeviceBuffer<double> da(a);
   const katal::ConstTensorRef ar = katal::make_ref(da.get(), Dtype::F64, e23);
@@ -147,7 +149,7 @@ TEST_CASE("a dedicated permutation", "[unary][gpu]") {
     const DeviceBuffer<double> dd(std::vector<double>(6));
     katal::permute("ij->ji", 2.0, katal::apply(katal::UnaryOp::Neg, ar),
                    katal::make_ref(dd.get(), Dtype::F64, e32));
-    REQUIRE(dd.to_host() == std::vector<double>{-2, -8, -4, -10, -6, -12});
+    REQUIRE(dd.to_host() == std::vector<double>{-2, -6, -10, -4, -8, -12});
   }
 
   SECTION("a broadcast along a new label") {
@@ -156,14 +158,14 @@ TEST_CASE("a dedicated permutation", "[unary][gpu]") {
     const DeviceBuffer<double> dd(std::vector<double>(6));
     katal::permute("j->ij", 1.0, katal::make_ref(dv.get(), Dtype::F64, e3),
                    katal::make_ref(dd.get(), Dtype::F64, e23));
-    REQUIRE(dd.to_host() == std::vector<double>{7, 8, 9, 7, 8, 9});
+    REQUIRE(dd.to_host() == std::vector<double>{7, 7, 8, 8, 9, 9});
   }
 
   SECTION("a conversion to a narrower type") {
     const DeviceBuffer<float> dd(std::vector<float>(6));
     katal::permute("ij->ji", 1.0, ar,
                    katal::make_ref(dd.get(), Dtype::F32, e32));
-    REQUIRE(dd.to_host() == std::vector<float>{1, 4, 2, 5, 3, 6});
+    REQUIRE(dd.to_host() == std::vector<float>{1, 3, 5, 2, 4, 6});
   }
 
   SECTION("a conversion to a wider type") {
@@ -171,7 +173,7 @@ TEST_CASE("a dedicated permutation", "[unary][gpu]") {
     const DeviceBuffer<double> dd(std::vector<double>(6));
     katal::permute("ij->ji", 1.0, katal::make_ref(df.get(), Dtype::F32, e23),
                    katal::make_ref(dd.get(), Dtype::F64, e32));
-    REQUIRE(dd.to_host() == std::vector<double>{1, 4, 2, 5, 3, 6});
+    REQUIRE(dd.to_host() == std::vector<double>{1, 3, 5, 2, 4, 6});
   }
 }
 

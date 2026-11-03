@@ -57,13 +57,14 @@ TEST_CASE("a contraction on offset pointers is correct", "[gpu]") {
   REQUIRE(cudaMemcpy(got.data(), dd, n * n * sizeof(double),
                      cudaMemcpyDeviceToHost) == cudaSuccess);
 
-  // Row-major, the make_ref default. Small integers, so the sums are exact.
+  // Column-major, the make_ref default. Small integers, so the sums are
+  // exact.
   for (std::size_t i = 0; i < n; ++i)
     for (std::size_t k = 0; k < n; ++k) {
       double expected = 0;
       for (std::size_t j = 0; j < n; ++j)
-        expected += a[i * n + j] * b[j * n + k];
-      REQUIRE(got[i * n + k] == expected);
+        expected += a[i + n * j] * b[j + n * k];
+      REQUIRE(got[i + n * k] == expected);
     }
 }
 

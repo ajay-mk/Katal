@@ -12,9 +12,10 @@ const std::int64_t extent[] = {m, n};
 auto a = katal::make_ref(device_ptr, katal::Dtype::F64, extent);
 ```
 
-`make_ref` describes the buffer as row-major unless you pass
-`katal::Layout::ColumnMajor` as a fourth argument; `Tensor` storage is always
-column-major. The data must stay alive until the GPU work that reads it is
+`make_ref` describes the buffer as column-major, the same as `Tensor`
+storage, unless you pass `katal::Layout::RowMajor` as a fourth argument. Pass
+it for C-ordered data, such as a NumPy array or a C array copied to the
+device. The data must stay alive until the GPU work that reads it is
 done, and the `extent` array as long as the reference is used.
 
 ## Use managed memory for a tensor

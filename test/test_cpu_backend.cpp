@@ -38,7 +38,7 @@ using Shape = std::vector<std::int64_t>;
 
 template <class T>
 TensorRef ref(std::vector<T>& v, const Shape& shape,
-              Layout layout = Layout::RowMajor) {
+              Layout layout = Layout::ColumnMajor) {
   return make_ref(static_cast<void*>(v.data()), dtype_of<T>, shape, layout);
 }
 
@@ -46,7 +46,7 @@ TensorRef ref(std::vector<T>& v, const Shape& shape,
 /// backend, against reference_einsum on the same data.
 template <class T>
 void check_contraction(const char* equation, const Shape& sa, const Shape& sb,
-                       const Shape& sd, Layout layout = Layout::RowMajor) {
+                       const Shape& sd, Layout layout = Layout::ColumnMajor) {
   CAPTURE(equation, layout);
   const Context context = cpu_context();
   std::vector<T> a = random_values<T>(count(sa), 1);
@@ -68,7 +68,7 @@ void check_contraction(const char* equation, const Shape& sa, const Shape& sb,
 template <class T>
 void check_trinary(const char* equation, const Shape& sa, const Shape& sb,
                    const Shape& sc, const Shape& se,
-                   Layout layout = Layout::RowMajor) {
+                   Layout layout = Layout::ColumnMajor) {
   CAPTURE(equation, layout);
   const Context context = cpu_context();
   std::vector<T> a = random_values<T>(count(sa), 1);
@@ -114,8 +114,7 @@ TEMPLATE_TEST_CASE("the CPU backend contracts as the reference does",
   using T = TestType;
   SECTION("a matrix product, in either layout") {
     check_contraction<T>("ij,jk->ik", {3, 4}, {4, 5}, {3, 5});
-    check_contraction<T>("ij,jk->ik", {3, 4}, {4, 5}, {3, 5},
-                         Layout::ColumnMajor);
+    check_contraction<T>("ij,jk->ik", {3, 4}, {4, 5}, {3, 5}, Layout::RowMajor);
   }
   SECTION("a batched product with a permuted result") {
     check_contraction<T>("bij,bjk->kib", {2, 3, 4}, {2, 4, 5}, {5, 3, 2});
@@ -148,7 +147,7 @@ TEMPLATE_TEST_CASE(
   SECTION("a chain of two matrix products, in either layout") {
     check_trinary<T>("ij,jk,kl->il", {2, 3}, {3, 4}, {4, 5}, {2, 5});
     check_trinary<T>("ij,jk,kl->il", {2, 3}, {3, 4}, {4, 5}, {2, 5},
-                     Layout::ColumnMajor);
+                     Layout::RowMajor);
   }
   SECTION("a label shared by all three inputs is summed once") {
     check_trinary<T>("ij,jk,jl->ikl", {2, 3}, {3, 4}, {3, 5}, {2, 4, 5});
@@ -175,10 +174,11 @@ TEMPLATE_TEST_CASE(
 TEST_CASE("the CPU backend runs a three-operand plan into e apart from d",
           "[cpu_backend][trinary]") {
   // [[1, 2], [3, 4]] times the identity times [[1, 0], [0, 2]], plus half
-  // of d, written to e with d left alone.
+  // of d, written to e with d left alone. Buffers are listed column by
+  // column.
   const Context context = cpu_context();
-  std::vector<double> a{1, 2, 3, 4}, b{1, 0, 0, 1}, c{1, 0, 0, 2};
-  std::vector<double> d{10, 20, 30, 40}, e(4, -1.0);
+  std::vector<double> a{1, 3, 2, 4}, b{1, 0, 0, 1}, c{1, 0, 0, 2};
+  std::vector<double> d{10, 30, 20, 40}, e(4, -1.0);
   const Shape s{2, 2};
   // d and e share the output's planned alignment, so plan for the lesser.
   TensorRef out = ref(e, s);
@@ -186,8 +186,8 @@ TEST_CASE("the CPU backend runs a three-operand plan into e apart from d",
   const Plan plan = make_plan(context, Equation::parse("ij,jk,kl->il"),
                               ref(a, s), ref(b, s), ref(c, s), out);
   plan.execute(1.0, a.data(), b.data(), c.data(), 0.5, d.data(), e.data(), {});
-  CHECK(e == std::vector<double>{6, 14, 18, 28});
-  CHECK(d == std::vector<double>{10, 20, 30, 40});
+  CHECK(e == std::vector<double>{6, 18, 14, 28});
+  CHECK(d == std::vector<double>{10, 30, 20, 40});
 }
 
 TEMPLATE_TEST_CASE("the CPU backend runs the one-operand einsum",
@@ -201,13 +201,13 @@ TEMPLATE_TEST_CASE("the CPU backend runs the one-operand einsum",
 }
 
 TEST_CASE("the CPU backend reads a strided view", "[cpu_backend]") {
-  // The top-left 3x4 block of a row-major 5x6 buffer, times a dense 4x2.
+  // The top-left 3x4 block of a column-major 5x6 buffer, times a dense 4x2.
   const Context context = cpu_context();
   std::vector<double> big = random_values<double>(5 * 6, 6);
   std::vector<double> b = random_values<double>(4 * 2, 7);
   std::vector<double> got(3 * 2, 0.0), want(3 * 2, 0.0);
   const Shape sa{3, 4}, sb{4, 2}, sd{3, 2};
-  const std::array<std::int64_t, 2> stride{6, 1};
+  const std::array<std::int64_t, 2> stride{1, 5};
 
   TensorRef a = ref(big, sa);
   a.stride = stride;
@@ -241,8 +241,8 @@ TEMPLATE_TEST_CASE("the CPU backend reduces with each operator",
     std::vector<T> got{T(1), T(2), T(3)};
     std::vector<T> want(3);
     for (std::size_t i = 0; i < 3; ++i) {
-      T r = a[i * 4];
-      for (std::size_t j = 1; j < 4; ++j) r = c.combine(r, a[i * 4 + j]);
+      T r = a[i];
+      for (std::size_t j = 1; j < 4; ++j) r = c.combine(r, a[i + 3 * j]);
       // alpha scales the reduced value, then beta * d is added.
       want[i] = T(2) * r + T(0.5) * got[i];
     }
@@ -267,8 +267,8 @@ TEMPLATE_TEST_CASE("the CPU backend combines elementwise", "[cpu_backend]",
     std::vector<T> want(got.size());
     for (std::size_t i = 0; i < 3; ++i)
       for (std::size_t j = 0; j < 4; ++j)
-        want[i * 4 + j] =
-            alpha * a[i * 4 + j] + beta * b[j] + gamma * before[i * 4 + j];
+        want[i + 3 * j] =
+            alpha * a[i + 3 * j] + beta * b[j] + gamma * before[i + 3 * j];
     elementwise("ij,j->ij", BinaryOp::Add, alpha, ref(a, sd), beta, ref(b, sb),
                 gamma, ref(got, sd), {}, {}, context, HostAllocator{});
     CHECK(close(got, want));
@@ -279,9 +279,9 @@ TEMPLATE_TEST_CASE("the CPU backend combines elementwise", "[cpu_backend]",
       std::vector<T> lo(got.size()), want_hi(got.size()), want_lo(got.size());
       for (std::size_t i = 0; i < 3; ++i)
         for (std::size_t j = 0; j < 4; ++j) {
-          const T x = alpha * a[i * 4 + j], y = beta * b[j];
-          want_hi[i * 4 + j] = std::fmax(x, y);
-          want_lo[i * 4 + j] = std::fmin(x, y);
+          const T x = alpha * a[i + 3 * j], y = beta * b[j];
+          want_hi[i + 3 * j] = std::fmax(x, y);
+          want_lo[i + 3 * j] = std::fmin(x, y);
         }
       max("ij,j->ij", alpha, ref(a, sd), beta, ref(b, sb), ref(got, sd), {}, {},
           context, HostAllocator{});
@@ -299,7 +299,7 @@ TEMPLATE_TEST_CASE("the CPU backend combines elementwise", "[cpu_backend]",
     std::vector<T> want(got.size());
     for (std::size_t i = 0; i < 3; ++i)
       for (std::size_t j = 0; j < 4; ++j)
-        want[i * 4 + j] = (alpha * a[j * 3 + i]) * (beta * b2[i * 4 + j]);
+        want[i + 3 * j] = (alpha * a[j + 4 * i]) * (beta * b2[i + 3 * j]);
     multiply("ji,ij->ij", alpha, ref(a, st), beta, ref(b2, sd), ref(got, sd),
              {}, {}, context, HostAllocator{});
     CHECK(close(got, want));
@@ -327,7 +327,7 @@ TEST_CASE("the CPU backend permutes, broadcasts and converts",
     std::vector<double> a{1, 2, 3}, got(6);
     permute("i->ij", 1.0, ref(a, sa), ref(got, sd), {}, {}, context,
             HostAllocator{});
-    CHECK(got == std::vector<double>{1, 1, 2, 2, 3, 3});
+    CHECK(got == std::vector<double>{1, 2, 3, 1, 2, 3});
   }
 
   SECTION("F64 to F32") {
@@ -353,7 +353,7 @@ TEST_CASE("the CPU backend applies unary operators to inputs",
     for (std::size_t i = 0; i < 2; ++i)
       for (std::size_t k = 0; k < 2; ++k)
         for (std::size_t j = 0; j < 3; ++j)
-          want[i * 2 + k] += std::conj(a[i * 3 + j]) * b[j * 2 + k];
+          want[i + 2 * k] += std::conj(a[i + 2 * j]) * b[j + 3 * k];
     einsum("ij,jk->ik", 1.0, conj(ref(a, sa)), ref(b, sb), 0.0, ref(got, sd),
            {}, {}, context, HostAllocator{});
     CHECK(close(got, want));
@@ -370,7 +370,8 @@ TEST_CASE("the CPU backend applies unary operators to inputs",
 
   SECTION("the largest magnitude in each row") {
     const Shape sa{2, 3}, sd{2};
-    std::vector<double> a{1, -7, 3, -2, 5, 4}, got(2);
+    // Rows {1, -7, 3} and {-2, 5, 4}, listed column by column.
+    std::vector<double> a{1, -2, -7, 5, 3, 4}, got(2);
     reduce("ij->i", BinaryOp::Max, 1.0, apply(UnaryOp::Abs, ref(a, sa)), 0.0,
            ref(got, sd), {}, {}, context, HostAllocator{});
     CHECK(got == std::vector<double>{7, 5});

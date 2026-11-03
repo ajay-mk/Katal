@@ -173,6 +173,27 @@ TEST_CASE("make_ref derives the alignment from the address", "[tensor_ref]") {
           256);
 }
 
+TEST_CASE("column-major is the default layout", "[tensor_ref]") {
+  std::array<double, 120> storage{};
+  const std::array<double, 120>& read_only = storage;
+  REQUIRE(Layout{} == Layout::ColumnMajor);
+  REQUIRE(TensorRef{}.layout == Layout::ColumnMajor);
+  REQUIRE(katal::ConstTensorRef{}.layout == Layout::ColumnMajor);
+  REQUIRE(katal::make_ref(storage.data(), Dtype::F64, span_of(shape)).layout ==
+          Layout::ColumnMajor);
+  REQUIRE(
+      katal::make_ref(read_only.data(), Dtype::F64, span_of(shape)).layout ==
+      Layout::ColumnMajor);
+  REQUIRE(katal::make_ref(nullptr, Dtype::F64, span_of(shape)).layout ==
+          Layout::ColumnMajor);
+  // Column-major is cuTENSOR's own order, so nothing is reversed.
+  const auto order =
+      mode_order(Index("ijkl"), katal::make_ref(nullptr, Dtype::F64, shape));
+  REQUIRE(order.modes == Index("ijkl"));
+  REQUIRE(std::vector<std::int64_t>(order.stride.begin(), order.stride.end()) ==
+          std::vector<std::int64_t>{1, 2, 6, 24});
+}
+
 TEST_CASE("inputs are const-correct", "[tensor_ref]") {
   std::array<double, 120> storage{};
   const std::array<double, 120>& read_only = storage;

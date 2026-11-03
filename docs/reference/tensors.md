@@ -25,7 +25,9 @@ tensor contracted with an F64 one into C64.
 - `TensorRef` borrows data and shape/stride metadata. Keep the data alive
   until GPU work completes, and the metadata alive while using the view.
   In particular, `tensor.ref()` borrows that Tensor object's extents, even
-  when another Tensor still owns the shared allocation.
+  when another Tensor still owns the shared allocation. A `TensorRef` is
+  column-major unless its `layout` says otherwise, as is one from `make_ref`;
+  C-ordered data needs `Layout::RowMajor`.
 - `ConstTensorRef` is the read-only form. Inputs and planning take it, and a
   `TensorRef` converts to it, so only the output of `einsum` must be writable.
   `make_ref` returns a `ConstTensorRef` for a pointer to const, and a const

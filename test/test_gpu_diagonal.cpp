@@ -69,7 +69,7 @@ std::size_t elements(std::span<const std::int64_t> extent) {
 void check_binary(std::string_view equation, std::span<const std::int64_t> ea,
                   std::span<const std::int64_t> eb,
                   std::span<const std::int64_t> ed,
-                  katal::Layout layout = katal::Layout::RowMajor,
+                  katal::Layout layout = katal::Layout::ColumnMajor,
                   bool abs_a = false) {
   std::vector<double> a = ramp(elements(ea), abs_a ? -3.0 : 1.0);
   std::vector<double> b = ramp(elements(eb), -2.0);
@@ -139,11 +139,11 @@ TEST_CASE("a diagonal inside a contraction", "[diagonal][gpu]") {
   check_binary("iij,jk->ik", ea, eb, ed);
 }
 
-TEST_CASE("a diagonal in column-major order", "[diagonal][gpu]") {
+TEST_CASE("a diagonal in row-major order", "[diagonal][gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
   const std::array<std::int64_t, 3> ea{3, 3, 4};
   const std::array<std::int64_t, 2> eb{4, 5}, ed{3, 5};
-  check_binary("iij,jk->ik", ea, eb, ed, katal::Layout::ColumnMajor);
+  check_binary("iij,jk->ik", ea, eb, ed, katal::Layout::RowMajor);
 }
 
 TEST_CASE("a free reduction fused into a contraction", "[diagonal][gpu]") {
@@ -155,16 +155,16 @@ TEST_CASE("a free reduction fused into a contraction", "[diagonal][gpu]") {
     check_binary("ij,k->k", ea, eb, ed);
   }
 
-  SECTION("in column-major order") {
+  SECTION("in row-major order") {
     const std::array<std::int64_t, 3> ea{3, 4, 5};
     const std::array<std::int64_t, 2> eb{5, 2}, ed{3, 2};
-    check_binary("ijk,kl->il", ea, eb, ed, katal::Layout::ColumnMajor);
+    check_binary("ijk,kl->il", ea, eb, ed, katal::Layout::RowMajor);
   }
 
   SECTION("with an operator applied before the sum") {
     const std::array<std::int64_t, 3> ea{3, 4, 5};
     const std::array<std::int64_t, 2> eb{5, 2}, ed{3, 2};
-    check_binary("ijk,kl->il", ea, eb, ed, katal::Layout::RowMajor, true);
+    check_binary("ijk,kl->il", ea, eb, ed, katal::Layout::ColumnMajor, true);
   }
 
   SECTION("on one input") {

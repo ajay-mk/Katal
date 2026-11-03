@@ -116,12 +116,11 @@ TEST_CASE("complex padded tensors execute across layouts", "[gpu]") {
   DeviceBuffer<Complex> da(a), db(b), dd(initial);
   const std::array<std::int64_t, 2> ea{2, 3}, eb{3, 2}, ed{2, 2};
   const std::array<std::int64_t, 2> sa{5, 1}, sd{1, 4};
-  auto ar = katal::make_ref(da.get(), katal::Dtype::C64, ea);
+  auto ar =
+      katal::make_ref(da.get(), katal::Dtype::C64, ea, katal::Layout::RowMajor);
   ar.stride = sa;
-  auto br = katal::make_ref(db.get(), katal::Dtype::C64, eb,
-                            katal::Layout::ColumnMajor);
-  auto dr = katal::make_ref(dd.get(), katal::Dtype::C64, ed,
-                            katal::Layout::ColumnMajor);
+  auto br = katal::make_ref(db.get(), katal::Dtype::C64, eb);
+  auto dr = katal::make_ref(dd.get(), katal::Dtype::C64, ed);
   dr.stride = sd;
   const Complex alpha{0.75, -0.5}, beta{-0.25, 0.5};
   katal::einsum("ij,jk->ik", alpha, ar, br, beta, dr);
@@ -160,7 +159,8 @@ TEST_CASE("a retained plan executes after cache eviction", "[gpu]") {
   retained->execute(1.0, a.get(), b.get(), 0.0, d.get(), d.get(),
                     scratch.get());
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
-  REQUIRE(d.to_host() == std::vector<double>{19, 22, 43, 50});
+  // [[1, 3], [2, 4]] times [[5, 7], [6, 8]], listed column by column.
+  REQUIRE(d.to_host() == std::vector<double>{23, 34, 31, 46});
 }
 
 TEST_CASE("gpu contraction matches the host reference", "[gpu]") {
@@ -301,7 +301,7 @@ TEST_CASE("a plan can be built once and executed many times", "[gpu]") {
   for (std::int64_t i = 0; i < ea[0]; ++i)
     for (std::int64_t j = 0; j < eb[1]; ++j)
       for (std::int64_t k = 0; k < ea[1]; ++k)
-        expected[i * eb[1] + j] += a[i * ea[1] + k] * b[k * eb[1] + j];
+        expected[i + ea[0] * j] += a[i + ea[0] * k] * b[k + eb[0] * j];
 
   plan.execute(1.0, da.get(), db.get(), 0.0, dd.get(), dd.get(), ws);
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);

@@ -78,7 +78,7 @@ class DeviceBuffer {
 /// so the cases below keep them distinct.
 struct Shapes {
   std::span<const std::int64_t> a, b, c, e;
-  katal::Layout layout = katal::Layout::RowMajor;
+  katal::Layout layout = katal::Layout::ColumnMajor;
 };
 
 /// Runs the equation through the three-operand einsum and again through the
@@ -148,11 +148,10 @@ TEST_CASE("gpu three-operand contraction matches the host reference",
                                   1e-12);
   }
 
-  SECTION("column-major operands") {
+  SECTION("row-major operands") {
     const std::array<std::int64_t, 2> a{2, 3}, b{3, 4}, c{4, 5}, e{2, 5};
-    agrees_with_reference<double>("ij,jk,kl->il",
-                                  {a, b, c, e, katal::Layout::ColumnMajor}, 1.0,
-                                  0.0, 1e-12);
+    agrees_with_reference<double>(
+        "ij,jk,kl->il", {a, b, c, e, katal::Layout::RowMajor}, 1.0, 0.0, 1e-12);
   }
 
   SECTION("alpha and beta accumulate into the output") {
@@ -206,11 +205,12 @@ TEST_CASE("gpu three-operand contraction matches the host reference",
 TEST_CASE("a three-operand plan writes e apart from d", "[gpu][trinary]") {
   if (!have_gpu()) SKIP("no CUDA device");
   require_trinary();
-  // [[1, 2], [3, 4]] times the identity times [[1, 0], [0, 2]].
-  DeviceBuffer<double> a(std::vector<double>{1, 2, 3, 4});
+  // [[1, 2], [3, 4]] times the identity times [[1, 0], [0, 2]], plus half
+  // of d. Buffers are listed column by column.
+  DeviceBuffer<double> a(std::vector<double>{1, 3, 2, 4});
   DeviceBuffer<double> b(std::vector<double>{1, 0, 0, 1});
   DeviceBuffer<double> c(std::vector<double>{1, 0, 0, 2});
-  DeviceBuffer<double> d(std::vector<double>{10, 20, 30, 40});
+  DeviceBuffer<double> d(std::vector<double>{10, 30, 20, 40});
   DeviceBuffer<double> e(std::vector<double>(4, -1.0));
   const std::array<std::int64_t, 2> extent{2, 2};
   const auto ref = [&](const DeviceBuffer<double>& t) {
@@ -224,6 +224,6 @@ TEST_CASE("a three-operand plan writes e apart from d", "[gpu][trinary]") {
   plan.execute(1.0, a.get(), b.get(), c.get(), 0.5, d.get(), e.get(),
                scratch.get());
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
-  REQUIRE(e.to_host() == std::vector<double>{6, 14, 18, 28});
-  REQUIRE(d.to_host() == std::vector<double>{10, 20, 30, 40});
+  REQUIRE(e.to_host() == std::vector<double>{6, 18, 14, 28});
+  REQUIRE(d.to_host() == std::vector<double>{10, 30, 20, 40});
 }

@@ -140,7 +140,7 @@ TEST_CASE("a complex tensor contracts with a real one", "[gpu]") {
   if (!have_gpu()) SKIP("no CUDA device");
   using C = std::complex<double>;
 
-  // d[i][k] = sum_j a[i][j] * b[j][k], complex a, real b, row-major.
+  // d[i][k] = sum_j a[i][j] * b[j][k], complex a, real b, column-major.
   const std::array<std::int64_t, 2> ea{2, 3}, eb{3, 2}, ed{2, 2};
   const std::vector<C> a{{1, 1}, {2, -1}, {0, 3}, {1, 0}, {-2, 2}, {1, 1}};
   const std::vector<double> b{1, 2, 3, 4, 5, 6};
@@ -156,7 +156,7 @@ TEST_CASE("a complex tensor contracts with a real one", "[gpu]") {
   for (int i = 0; i < 2; ++i)
     for (int k = 0; k < 2; ++k) {
       C want{};
-      for (int j = 0; j < 3; ++j) want += a[i * 3 + j] * b[j * 2 + k];
-      REQUIRE(got[i * 2 + k] == want);
+      for (int j = 0; j < 3; ++j) want += a[i + 2 * j] * b[j + 3 * k];
+      REQUIRE(got[i + 2 * k] == want);
     }
 }

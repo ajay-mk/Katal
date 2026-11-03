@@ -117,10 +117,11 @@ TEST_CASE("a contraction lowers to an operation in descriptor order",
   const auto f64 = katal::Dtype::F64;
 
   SECTION("row-major operands have their modes reversed") {
+    const auto row = katal::Layout::RowMajor;
     katal::make_plan(context, katal::Equation::parse("ij,jk->ik"),
-                     katal::make_ref(nullptr, f64, ea),
-                     katal::make_ref(nullptr, f64, eb),
-                     katal::make_ref(nullptr, f64, ed));
+                     katal::make_ref(nullptr, f64, ea, row),
+                     katal::make_ref(nullptr, f64, eb, row),
+                     katal::make_ref(nullptr, f64, ed, row));
     REQUIRE(record->operation);
     const Operation& op = *record->operation;
     CHECK(op.kind == OpKind::Contraction);
@@ -137,12 +138,11 @@ TEST_CASE("a contraction lowers to an operation in descriptor order",
     CHECK(op.output.alignment == 256);
   }
 
-  SECTION("column-major operands keep the equation's order") {
-    katal::make_plan(
-        context, katal::Equation::parse("ij,jk->ik"),
-        katal::make_ref(nullptr, f64, ea, katal::Layout::ColumnMajor),
-        katal::make_ref(nullptr, f64, eb, katal::Layout::ColumnMajor),
-        katal::make_ref(nullptr, f64, ed, katal::Layout::ColumnMajor));
+  SECTION("column-major operands, the default, keep the equation's order") {
+    katal::make_plan(context, katal::Equation::parse("ij,jk->ik"),
+                     katal::make_ref(nullptr, f64, ea),
+                     katal::make_ref(nullptr, f64, eb),
+                     katal::make_ref(nullptr, f64, ed));
     REQUIRE(record->operation);
     CHECK(record->operation->inputs[0].modes == ids("ij"));
     CHECK(list(record->operation->inputs[0].stride) ==
@@ -198,7 +198,7 @@ TEST_CASE("one operand lowers to a reduction", "[backend]") {
   REQUIRE(record->operation);
   CHECK(record->operation->kind == OpKind::Reduction);
   REQUIRE(record->operation->inputs.size() == 1);
-  CHECK(record->operation->inputs[0].modes == ids("ji"));
+  CHECK(record->operation->inputs[0].modes == ids("ij"));
   CHECK(record->operation->output.modes == ids("i"));
 }
 
@@ -268,7 +268,7 @@ TEST_CASE("three operands lower to one contraction", "[backend]") {
   const std::array<std::int64_t, 2> ea{2, 3}, eb{3, 4}, ec{4, 5}, ee{2, 5};
   const auto f64 = katal::Dtype::F64;
   const auto ref = [&](std::span<const std::int64_t> extent) {
-    return katal::make_ref(nullptr, f64, extent, katal::Layout::ColumnMajor);
+    return katal::make_ref(nullptr, f64, extent);
   };
 
   SECTION("each input in descriptor order") {
@@ -427,7 +427,7 @@ TEST_CASE("an elementwise plan passes c apart from d", "[backend]") {
     CHECK(record->operation->binary == katal::BinaryOp::Add);
     CHECK(record->operation->inputs[0].modes == ids("i"));
     CHECK(record->operation->inputs[1].modes == ids("j"));
-    CHECK(record->operation->output.modes == ids("ji"));
+    CHECK(record->operation->output.modes == ids("ij"));
 
     sum.execute(1.0, buffer_a.data(), 0.0, buffer_b.data(), 1.0,
                 buffer_c.data(), buffer_d.data(), none);
@@ -628,14 +628,14 @@ TEST_CASE("a label in one input is summed out of it first", "[backend]") {
     REQUIRE(record->operations.size() == 2);
     const Operation& reduce = record->operations[0];
     CHECK(reduce.kind == OpKind::Reduction);
-    CHECK(reduce.output.modes == ids("ki"));
+    CHECK(reduce.output.modes == ids("ik"));
     CHECK(reduce.output.alignment == 256);
     // The contraction's compute type is not the reduction's.
     CHECK(reduce.compute == f64);
     CHECK_FALSE(record->options[0].compute);
     const Operation& contract = record->operations[1];
     CHECK(contract.kind == OpKind::Contraction);
-    CHECK(contract.inputs[0].modes == ids("ki"));
+    CHECK(contract.inputs[0].modes == ids("ik"));
     CHECK(contract.compute == katal::Dtype::F32);
     CHECK(p.workspace_size() == 256 + 512);
   }

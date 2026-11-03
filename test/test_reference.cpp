@@ -22,7 +22,7 @@ using katal::test::reference_einsum;
 namespace {
 
 TensorRef ref_of(std::vector<double>& v, std::span<const std::int64_t> extent,
-                 Layout layout = Layout::RowMajor) {
+                 Layout layout = Layout::ColumnMajor) {
   return katal::make_ref(v.data(), Dtype::F64, extent, layout);
 }
 
@@ -50,8 +50,8 @@ TEST_CASE("reference matmul agrees with an explicit loop", "[reference]") {
   for (std::int64_t i = 0; i < m; ++i)
     for (std::int64_t j = 0; j < n; ++j) {
       double want = 0.0;
-      for (std::int64_t p = 0; p < k; ++p) want += a[i * k + p] * b[p * n + j];
-      REQUIRE_THAT(d[i * n + j], WithinRel(want, 1e-14));
+      for (std::int64_t p = 0; p < k; ++p) want += a[i + m * p] * b[p + k * j];
+      REQUIRE_THAT(d[i + m * j], WithinRel(want, 1e-14));
     }
 }
 
@@ -71,8 +71,8 @@ TEST_CASE("reference handles the unary lowerings", "[reference]") {
       for (std::int64_t j = 0; j < 3; ++j)
         for (std::int64_t k = 0; k < 4; ++k)
           for (std::int64_t l = 0; l < 5; ++l)
-            REQUIRE(d[((i * 4 + k) * 3 + j) * 5 + l] ==
-                    a[((i * 3 + j) * 4 + k) * 5 + l]);
+            REQUIRE(d[i + 2 * (k + 4 * (j + 3 * l))] ==
+                    a[i + 2 * (j + 3 * (k + 4 * l))]);
   }
 
   SECTION("reduction sums the dropped modes") {
@@ -87,8 +87,8 @@ TEST_CASE("reference handles the unary lowerings", "[reference]") {
         double want = 0.0;
         for (std::int64_t k = 0; k < 4; ++k)
           for (std::int64_t l = 0; l < 5; ++l)
-            want += a[((i * 3 + j) * 4 + k) * 5 + l];
-        REQUIRE_THAT(d[i * 3 + j], WithinRel(want, 1e-13));
+            want += a[i + 2 * (j + 3 * (k + 4 * l))];
+        REQUIRE_THAT(d[i + 2 * j], WithinRel(want, 1e-13));
       }
   }
 
@@ -128,12 +128,12 @@ TEST_CASE("reference agrees across layouts", "[reference]") {
     for (std::int64_t j = 0; j < n; ++j) b_col[j * k + i] = b_row[i * n + j];
 
   std::vector<double> d_row(m * n, 0.0), d_col(m * n, 0.0);
-  TensorRef dr_row = ref_of(d_row, de);
-  TensorRef dr_col = ref_of(d_col, de, Layout::ColumnMajor);
+  TensorRef dr_row = ref_of(d_row, de, Layout::RowMajor);
+  TensorRef dr_col = ref_of(d_col, de);
 
-  const std::array<TensorRef, 2> row{ref_of(a_row, ae), ref_of(b_row, be)};
-  const std::array<TensorRef, 2> col{ref_of(a_col, ae, Layout::ColumnMajor),
-                                     ref_of(b_col, be, Layout::ColumnMajor)};
+  const std::array<TensorRef, 2> row{ref_of(a_row, ae, Layout::RowMajor),
+                                     ref_of(b_row, be, Layout::RowMajor)};
+  const std::array<TensorRef, 2> col{ref_of(a_col, ae), ref_of(b_col, be)};
 
   const Equation eq = Equation::parse("ik,kj->ij");
   reference_einsum<double>(eq, 1.0, row, 0.0, dr_row);
@@ -151,11 +151,9 @@ TEST_CASE("reference works in complex arithmetic", "[reference]") {
   std::vector<c64> b{{1, 0}, {0, 1}, {2, 2}, {1, 1}};
   std::vector<c64> d(4, c64{});
 
-  const TensorRef ar =
-      katal::make_ref(a.data(), Dtype::C64, e, Layout::RowMajor);
-  const TensorRef br =
-      katal::make_ref(b.data(), Dtype::C64, e, Layout::RowMajor);
-  TensorRef dr = katal::make_ref(d.data(), Dtype::C64, e, Layout::RowMajor);
+  const TensorRef ar = katal::make_ref(a.data(), Dtype::C64, e);
+  const TensorRef br = katal::make_ref(b.data(), Dtype::C64, e);
+  TensorRef dr = katal::make_ref(d.data(), Dtype::C64, e);
 
   const std::array<TensorRef, 2> in{ar, br};
   reference_einsum<c64>(Equation::parse("ik,kj->ij"), c64{1, 0}, in, c64{}, dr);
@@ -163,9 +161,9 @@ TEST_CASE("reference works in complex arithmetic", "[reference]") {
   for (int i = 0; i < 2; ++i)
     for (int j = 0; j < 2; ++j) {
       c64 want{};
-      for (int p = 0; p < 2; ++p) want += a[i * 2 + p] * b[p * 2 + j];
-      REQUIRE_THAT(d[i * 2 + j].real(), WithinRel(want.real(), 1e-14));
-      REQUIRE_THAT(d[i * 2 + j].imag(), WithinRel(want.imag(), 1e-14));
+      for (int p = 0; p < 2; ++p) want += a[i + 2 * p] * b[p + 2 * j];
+      REQUIRE_THAT(d[i + 2 * j].real(), WithinRel(want.real(), 1e-14));
+      REQUIRE_THAT(d[i + 2 * j].imag(), WithinRel(want.imag(), 1e-14));
     }
 }
 

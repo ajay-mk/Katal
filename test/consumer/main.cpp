@@ -34,8 +34,9 @@ int main() {
   const std::array<std::int64_t, 4> extent{2, 3, 4, 5};
   const katal::TensorRef tensor =
       katal::make_ref(nullptr, katal::Dtype::F64, extent);
+  // Column-major, the default, is cuTENSOR's own order: nothing is reversed.
   if (katal::mode_order(equation.operand(0), tensor).extent !=
-      katal::Extents{5, 4, 3, 2})
+      katal::Extents{2, 3, 4, 5})
     return 3;
 
   using Tensor = katal::Tensor<std::allocator<std::byte>>;

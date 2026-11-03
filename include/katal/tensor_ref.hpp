@@ -69,7 +69,10 @@ inline std::size_t size_of(Dtype type) {
 /// Which mode varies fastest in memory: the last one for RowMajor, the first
 /// for ColumnMajor. The flag declares the convention the extent and stride
 /// arrays are written in, whether or not those strides are dense.
-enum class Layout { RowMajor, ColumnMajor };
+/// ColumnMajor is the default for `TensorRef`, `make_ref` and a
+/// value-initialized `Layout{}`, as it is for `Tensor` storage, cuTENSOR,
+/// hipTensor, Eigen and BLAS.
+enum class Layout { ColumnMajor, RowMajor };
 
 /// An elementwise function applied to a tensor as it is read, without
 /// changing its data. These are cuTENSOR's unary operators. Which ones a
@@ -127,7 +130,7 @@ struct BasicTensorRef {
   /// `layout`, which is the usual case.
   std::span<const std::int64_t> stride;
   /// Which convention `extent` and `stride` are written in.
-  Layout layout = Layout::RowMajor;
+  Layout layout = Layout::ColumnMajor;
   /// Alignment required by the plan, in bytes. Execution rejects pointers
   /// that do not satisfy it.
   /// `make_ref` and `Tensor::ref` derive it from the address.
@@ -175,14 +178,14 @@ inline std::uint32_t alignment_of(const void* data) noexcept {
 
 inline TensorRef make_ref(void* data, Dtype type,
                           std::span<const std::int64_t> extent,
-                          Layout layout = Layout::RowMajor) {
+                          Layout layout = Layout::ColumnMajor) {
   return TensorRef{data, type, extent, {}, layout, alignment_of(data)};
 }
 
 /// For an input that is only read.
 inline ConstTensorRef make_ref(const void* data, Dtype type,
                                std::span<const std::int64_t> extent,
-                               Layout layout = Layout::RowMajor) {
+                               Layout layout = Layout::ColumnMajor) {
   return ConstTensorRef{data, type, extent, {}, layout, alignment_of(data)};
 }
 
@@ -190,7 +193,7 @@ inline ConstTensorRef make_ref(const void* data, Dtype type,
 /// pointer would match both forms above.
 inline TensorRef make_ref(std::nullptr_t, Dtype type,
                           std::span<const std::int64_t> extent,
-                          Layout layout = Layout::RowMajor) {
+                          Layout layout = Layout::ColumnMajor) {
   return make_ref(static_cast<void*>(nullptr), type, extent, layout);
 }
 
