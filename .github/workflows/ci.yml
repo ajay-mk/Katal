@@ -10,6 +10,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+# CI builds as C++23, the future target (#35). Katal itself still requires only
+# C++20, the cxx_std_20 floor that CMAKE_CXX_STANDARD raises; the C++20
+# cuda-build run below keeps that promise checked. tools/test-install.sh reads
+# this variable from the environment.
+env:
+  CMAKE_CXX_STANDARD: '23'
+
 jobs:
   host-build:
     runs-on: ubuntu-latest
@@ -41,6 +48,7 @@ jobs:
           cmake -S . -B build -GNinja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
           -DKATAL_WARNINGS_AS_ERRORS=ON
 
       - name: Build
@@ -73,17 +81,17 @@ jobs:
   # Pinned to 24.04: ubuntu-latest is now 26.04, and NVIDIA's ubuntu2604 apt
   # repository has no CUDA 12.6 packages.
   #
-  # C++20 is the standard Katal requires; the C++23 run checks that the whole
-  # library, tests and benchmarks also build and pass as C++23, the future
-  # target (#35). CMAKE_CXX_STANDARD only raises the cxx_std_20 floor. The
-  # C++20 run keeps the plain name cuda-build, which branch protection requires.
+  # A second run builds as C++20, the standard Katal requires, so nothing that
+  # needs C++23 slips into the library, the tests or the installed consumer.
+  # It is this job because this job compiles the most. The C++23 run keeps the
+  # plain name cuda-build, which branch protection requires.
   cuda-build:
-    name: ${{ matrix.cxx-standard == '20' && 'cuda-build' || format('cuda-build (C++{0})', matrix.cxx-standard) }}
+    name: ${{ matrix.cxx-standard == '23' && 'cuda-build' || format('cuda-build (C++{0})', matrix.cxx-standard) }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        cxx-standard: ['20', '23']
+        cxx-standard: ['23', '20']
     env:
       CMAKE_CXX_STANDARD: ${{ matrix.cxx-standard }}
       CUDA_VERSION: '12-6'
@@ -130,7 +138,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCUDAToolkit_ROOT=${{ env.CUDA_ROOT }}
-          -DCMAKE_CXX_STANDARD=${{ matrix.cxx-standard }}
+          -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
           -DKATAL_WARNINGS_AS_ERRORS=ON
           -DKATAL_BUILD_BENCHMARKS=ON
           -DKATAL_ENABLE_LOGGING=ON
@@ -187,6 +195,7 @@ jobs:
         run: >-
           cmake -S . -B build -GNinja
           -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
           -DKATAL_WARNINGS_AS_ERRORS=ON
           "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined
           -fno-omit-frame-pointer -fno-sanitize-recover=all"
