@@ -1,11 +1,13 @@
 """Runs Katal's GPU tests on a Modal T4.
 
     modal run tools/modal_gpu.py
+    modal run tools/modal_gpu.py --cxx-standard 23
 
 Needs MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in the environment, or a token
 from `modal token new`. The checkout is uploaded as it stands, built in the
 container against the CUDA and cuTENSOR it installs, and `ctest -L gpu` runs
-there. A failing test makes `modal run` exit nonzero.
+there. A failing test makes `modal run` exit nonzero. --cxx-standard sets
+CMAKE_CXX_STANDARD; left out, the build uses C++20, the standard Katal requires.
 """
 
 import pathlib
@@ -49,12 +51,14 @@ def run(*command: str) -> None:
 
 
 @app.function(gpu="T4", timeout=30 * 60)
-def gpu_tests() -> None:
+def gpu_tests(cxx_standard: str = "") -> None:
     run("nvidia-smi")
+    standard = [f"-DCMAKE_CXX_STANDARD={cxx_standard}"] if cxx_standard else []
     run(
         "cmake", "-S", "/src", "-B", "/tmp/build", "-GNinja",
         "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
         "-DKATAL_WARNINGS_AS_ERRORS=ON",
+        *standard,
     )
     run("cmake", "--build", "/tmp/build")
     # Without cuTENSOR the gpu tests are never built, and ctest would pass
@@ -66,5 +70,5 @@ def gpu_tests() -> None:
 
 
 @app.local_entrypoint()
-def main() -> None:
-    gpu_tests.remote()
+def main(cxx_standard: str = "") -> None:
+    gpu_tests.remote(cxx_standard)
