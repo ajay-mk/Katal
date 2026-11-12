@@ -8,17 +8,19 @@ set -euo pipefail
 
 readonly source_dir="$(cd "$(dirname "$0")/.." && pwd)"
 readonly work="$(mktemp -d)"
-readonly standard=(${CMAKE_CXX_STANDARD:+"-DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}"})
+# Bash before 4.4 (macOS /bin/bash) treats an empty array as unbound under
+# set -u, hence the ${standard[@]+...} expansions below.
+standard=(${CMAKE_CXX_STANDARD:+"-DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}"})
 trap 'rm -rf "${work}"' EXIT
 
 cmake -S "${source_dir}" -B "${work}/build" -GNinja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo -DKATAL_BUILD_TESTS=OFF \
-  -DCMAKE_INSTALL_PREFIX="${work}/prefix" "${standard[@]}" >/dev/null
+  -DCMAKE_INSTALL_PREFIX="${work}/prefix" ${standard[@]+"${standard[@]}"} >/dev/null
 cmake --build "${work}/build" >/dev/null
 cmake --install "${work}/build" >/dev/null
 
 cmake -S "${source_dir}/test/consumer" -B "${work}/consumer" -GNinja \
-  -DCMAKE_PREFIX_PATH="${work}/prefix" "${standard[@]}" >/dev/null
+  -DCMAKE_PREFIX_PATH="${work}/prefix" ${standard[@]+"${standard[@]}"} >/dev/null
 cmake --build "${work}/consumer" >/dev/null
 
 "${work}/consumer/consumer"
