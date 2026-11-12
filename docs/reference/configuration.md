@@ -10,6 +10,7 @@
 | `KATAL_MAX_RANK` | `12` | largest describable tensor rank |
 | `KATAL_ASSERT_BEHAVIOR` | empty | what a failed internal [assertion](errors.md#assertions) does: `THROW`, `ABORT` or `IGNORE`; empty picks `IGNORE` for `Release` and `MinSizeRel` and `ABORT` otherwise |
 | `KATAL_WARNINGS_AS_ERRORS` | `OFF` | treat compiler warnings in Katal's own targets as errors; CI turns it on |
+| `CMAKE_CXX_STANDARD` | `23` | the standard Katal builds itself with when it is the top-level project; Katal requires only `20`, which is also all it asks of a consumer |
 | `KATAL_CUTENSOR_ROOT` | empty | cuTENSOR install root; `$CUTENSOR_ROOT` and an NVHPC tree under `$NVHPC` are also searched |
 
 Katal's own targets always build with `-Wall -Wextra -Wpedantic` (`/W4` on
