@@ -69,8 +69,11 @@ jobs:
   # somewhere; gpu.yml builds with it off, the default. KATAL_ASSERT throws
   # here, so the tests can check a failed assertion, which aborts in the other
   # jobs.
+  #
+  # Pinned to 24.04: ubuntu-latest is now 26.04, and NVIDIA's ubuntu2604 apt
+  # repository has no CUDA 12.6 packages.
   cuda-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CUDA_VERSION: '12-6'
       CUDA_ROOT: /usr/local/cuda-12.6
