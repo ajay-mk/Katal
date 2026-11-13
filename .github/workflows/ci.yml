@@ -72,9 +72,22 @@ jobs:
   #
   # Pinned to 24.04: ubuntu-latest is now 26.04, and NVIDIA's ubuntu2604 apt
   # repository has no CUDA 12.6 packages.
+  #
+  # Every job builds as C++23, CMakeLists.txt's default for a top-level build.
+  # A second run of this one builds as C++20, the standard Katal requires, so
+  # nothing that needs C++23 slips into the library, the tests or the installed
+  # consumer; it is this job because this job compiles the most. The C++23 run
+  # keeps the plain name cuda-build, which branch protection requires.
+  # tools/test-install.sh reads CMAKE_CXX_STANDARD from the environment.
   cuda-build:
+    name: ${{ matrix.cxx-standard == '23' && 'cuda-build' || format('cuda-build (C++{0})', matrix.cxx-standard) }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        cxx-standard: ['23', '20']
     env:
+      CMAKE_CXX_STANDARD: ${{ matrix.cxx-standard }}
       CUDA_VERSION: '12-6'
       CUDA_ROOT: /usr/local/cuda-12.6
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -110,8 +123,8 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .ccache
-          key: ccache-cuda-${{ runner.os }}-${{ github.sha }}
-          restore-keys: ccache-cuda-${{ runner.os }}-
+          key: ccache-cuda-cxx${{ matrix.cxx-standard }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-cuda-cxx${{ matrix.cxx-standard }}-${{ runner.os }}-
 
       - name: Configure
         run: >-
@@ -119,6 +132,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCUDAToolkit_ROOT=${{ env.CUDA_ROOT }}
+          -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
           -DKATAL_WARNINGS_AS_ERRORS=ON
           -DKATAL_BUILD_BENCHMARKS=ON
           -DKATAL_ENABLE_LOGGING=ON

@@ -4,6 +4,14 @@ project(
   VERSION 0.1.0
   LANGUAGES CXX)
 
+# Katal requires C++20 (the cxx_std_20 below, which consumers inherit) but
+# builds itself as C++23, the future target, when it is the top-level project
+# and the standard was not chosen on the command line. A compiler without C++23
+# falls back to an older standard, never below C++20.
+if(PROJECT_IS_TOP_LEVEL AND NOT DEFINED CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 23)
+endif()
+
 # clang-tidy reads build/compile_commands.json; the pre-commit hook needs it.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
