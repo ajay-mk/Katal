@@ -69,10 +69,8 @@ struct Path {
 /// its operands for the fastest kernels.
 inline constexpr std::uint64_t path_alignment = 256;
 
-namespace path_detail {
-
-inline std::uint64_t round_up(std::uint64_t n, std::uint64_t to,
-                              std::string_view text) {
+inline std::uint64_t path_align_up(std::uint64_t n, std::uint64_t to,
+                                   std::string_view text) {
   if (n > std::numeric_limits<std::uint64_t>::max() - (to - 1))
     throw Error(Errc::ExtentMismatch, text,
                 "an intermediate is too large to address");
@@ -80,9 +78,9 @@ inline std::uint64_t round_up(std::uint64_t n, std::uint64_t to,
 }
 
 /// Bytes of a dense tensor with these labels. Throws on overflow.
-inline std::uint64_t bytes_of(const util::Index& labels,
-                              const std::array<std::int64_t, 256>& extent,
-                              std::size_t element, std::string_view text) {
+inline std::uint64_t path_bytes(const util::Index& labels,
+                                const std::array<std::int64_t, 256>& extent,
+                                std::size_t element, std::string_view text) {
   std::uint64_t n = element;
   for (const util::Label l : labels) {
     const auto e =
@@ -95,8 +93,6 @@ inline std::uint64_t bytes_of(const util::Index& labels,
   }
   return n;
 }
-
-}  // namespace path_detail
 
 /// Lowers `equation` along `path` into binary steps over intermediates whose
 /// elements are `type`.
@@ -224,8 +220,7 @@ inline Path lower_path(const Equation& equation,
     for (std::size_t c = 0; c < in_step.size(); ++c)
       if (in_step[c]) step.multiply_adds *= static_cast<double>(extent[c]);
     out.multiply_adds += step.multiply_adds;
-    if (!last)
-      step.bytes = path_detail::bytes_of(step.labels, extent, element, text);
+    if (!last) step.bytes = path_bytes(step.labels, extent, element, text);
 
     labels_of.push_back(step.labels);
     pending.push_back(n + k);
@@ -253,8 +248,7 @@ inline Path lower_path(const Equation& equation,
     std::uint64_t offset = 0;
     for (const auto& [begin, end] : taken) {
       if (offset + step.bytes <= begin) break;
-      offset =
-          std::max(offset, path_detail::round_up(end, path_alignment, text));
+      offset = std::max(offset, path_align_up(end, path_alignment, text));
     }
     if (offset > std::numeric_limits<std::uint64_t>::max() - step.bytes)
       throw Error(Errc::ExtentMismatch, text,
