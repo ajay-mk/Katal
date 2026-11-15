@@ -156,6 +156,37 @@ TEST_CASE("two intermediates read by the same step are both kept", "[path]") {
   CHECK(p.workspace == katal::detail::path_alignment + 4 * 4 * 8);
 }
 
+TEST_CASE("label sets may outnumber the rank limit", "[path]") {
+  if (katal::max_rank > 12) SKIP("needs more labels than max_rank");
+
+  SECTION("labels still pending across many operands") {
+    // Thirteen rank-2 operands: no tensor exceeds rank 2, but the labels
+    // later operands still need do.
+    std::string text;
+    std::vector<std::vector<std::int64_t>> extents;
+    for (char c = 'a'; c < 'n'; ++c) {
+      if (!text.empty()) text += ',';
+      text += std::string{c, static_cast<char>(c + 1)};
+      extents.push_back({2, 2});
+    }
+    text += "->an";
+    std::vector<std::span<const std::int64_t>> spans(extents.begin(),
+                                                     extents.end());
+    std::vector<PathPair> path(12, PathPair{0, 1});
+    const Path p = lower_path(Equation::parse(text), spans, path, Dtype::F64);
+    CHECK(p.steps.size() == 12);
+    CHECK(p.steps.back().equation.ends_with("->an"));
+  }
+
+  SECTION("a step whose two inputs share no label") {
+    const Shapes shapes{{2, 2, 2, 2, 2, 2, 2}, {2, 2, 2, 2, 2, 2, 2}, {2, 2}};
+    const Path p = lower("abcdefg,hijklmn,ah->", shapes, {{0, 1}, {0, 1}});
+    REQUIRE(equations(p) ==
+            std::vector<std::string>{"abcdefg,hijklmn->ah", "ah,ah->"});
+    CHECK(p.steps[0].multiply_adds == 16384.0);
+  }
+}
+
 TEST_CASE("bad paths and shapes are refused", "[path]") {
   const Shapes three{{2, 3}, {3, 4}, {4, 5}};
   const auto code = [](auto&& f) { return thrown_code(f); };

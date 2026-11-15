@@ -96,14 +96,6 @@ inline std::uint64_t bytes_of(const util::Index& labels,
   return n;
 }
 
-/// Each label once, in first-seen order.
-inline util::Index unique(const util::Index& i) {
-  util::Index u;
-  for (const util::Label l : i)
-    if (!u.contains(l)) u.push_back(l);
-  return u;
-}
-
 }  // namespace path_detail
 
 /// Lowers `equation` along `path` into binary steps over intermediates whose
@@ -124,7 +116,6 @@ inline util::Index unique(const util::Index& i) {
 inline Path lower_path(const Equation& equation,
                        std::span<const std::span<const std::int64_t>> extents,
                        std::span<const PathPair> path, Dtype type) {
-  using path_detail::unique;
   const std::string_view text = equation.text();
   const std::size_t n = equation.n_operands();
 
@@ -196,12 +187,25 @@ inline Path lower_path(const Equation& equation,
     const util::Index& a = labels_of[step.a];
     const util::Index& b = labels_of[step.b];
     const bool last = k + 1 == path.size();
+    // Label sets are tables over every byte, not Index: the labels still
+    // pending, or both inputs of a step together, can outnumber max_rank even
+    // when no tensor does.
+    std::array<bool, 256> in_step{};
+    for (const util::Label l : a) in_step[static_cast<unsigned char>(l)] = true;
+    for (const util::Label l : b) in_step[static_cast<unsigned char>(l)] = true;
     if (last) {
       step.labels = equation.result();
     } else {
-      util::Index needed = equation.result();
-      for (const std::size_t id : pending) needed = needed | labels_of[id];
-      step.labels = unique(a | b) & needed;
+      std::array<bool, 256> needed{};
+      for (const util::Label l : equation.result())
+        needed[static_cast<unsigned char>(l)] = true;
+      for (const std::size_t id : pending)
+        for (const util::Label l : labels_of[id])
+          needed[static_cast<unsigned char>(l)] = true;
+      for (const util::Index* input : {&a, &b})
+        for (const util::Label l : *input)
+          if (needed[static_cast<unsigned char>(l)] && !step.labels.contains(l))
+            step.labels.push_back(l);
     }
     step.equation =
         std::string(a) + "," + std::string(b) + "->" + std::string(step.labels);
@@ -217,9 +221,8 @@ inline Path lower_path(const Equation& equation,
     }
 
     step.multiply_adds = 1;
-    for (const util::Label l : unique(a | b))
-      step.multiply_adds *=
-          static_cast<double>(extent[static_cast<unsigned char>(l)]);
+    for (std::size_t c = 0; c < in_step.size(); ++c)
+      if (in_step[c]) step.multiply_adds *= static_cast<double>(extent[c]);
     out.multiply_adds += step.multiply_adds;
     if (!last)
       step.bytes = path_detail::bytes_of(step.labels, extent, element, text);
