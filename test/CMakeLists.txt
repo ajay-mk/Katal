@@ -50,8 +50,9 @@ foreach(src IN LISTS KATAL_TEST_SOURCES)
   target_link_libraries(${name} PRIVATE Katal::katal Catch2::Catch2WithMain
                                         enumstr::enumstr)
   katal_target_warnings(${name})
-  if(name STREQUAL "test_backend")
-    # Reaches past the public headers to swap in a recording backend.
+  if(name STREQUAL "test_backend" OR name STREQUAL "test_path")
+    # Reaches past the public headers: to swap in a recording backend, or to
+    # check the header-only path lowering, which needs no compiled library.
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
   endif()
   if(name MATCHES "cpu_backend")
